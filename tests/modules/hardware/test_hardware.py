@@ -2,15 +2,17 @@
 # SPDX-License-Identifier: EPL-2.0
 
 """Tests for the hardware module: ``BlockDevices``, ``CpuInfo``, ``Cpus``,
-``DiskStats``, ``DmiInfo``, ``Ipv4Addrs``, ``Ipv6Addrs``, ``LsBlk``,
-``NetworkDevices`` and ``SmbiosInfo``.
+``DefaultIpv4Address``, ``DiskStats``, ``DmiInfo``, ``Ipv4Addrs``,
+``Ipv6Addrs``, ``LsBlk``, ``NetworkDevices`` and ``SmbiosInfo``.
 
 Covers ``reemote.modules.hardware.hardware``: the baseline's own fixtures over
 the real-transport path, the documented example results, ``df`` parsing
 edge cases (header and ``none`` rows, unmatched rows, repeated devices),
 ``lscpu`` parsing edge cases (flag lists, colon-less lines, the
 second-colon truncation), ``getconf`` parsing edge cases (first-line-only,
-non-integer output), ``/proc/diskstats`` parsing edge cases (the
+non-integer output), the ``DefaultIpv4Address`` route/inventory pair (JSON,
+``ip route`` and legacy ``route -n`` parsing, the no-default-route and
+interface-without-address edges), ``/proc/diskstats`` parsing edge cases (the
 discard/flush counter groups, short and non-integer rows, extra future
 columns), sysfs DMI parsing edge cases (uevent/modalias skipping, empty
 values, colons inside values), ``dmidecode -q`` parsing edge cases
@@ -21,7 +23,8 @@ edge cases (the JSON sniff, alias ordering, other-family-only interfaces,
 malformed JSON, duplicate sections, mask normalization, the state
 heuristic), empty output, the ``SimulatedHost`` seams (read, default,
 copy semantics) and the ``gather_fact`` fan-out across hosts. The entry
-TypedDicts (``BlockDevice``, ``DiskStat``, ``LsBlkNode``,
+TypedDicts (``BlockDevice``, ``DefaultIpv4AddressInfo``, ``DiskStat``,
+``LsBlkNode``,
 ``NetworkDevice``, ``Ipv4Address``, ``Ipv6Address``) are covered through
 the same literal-dict assertions -- a TypedDict entry IS a plain dict at
 runtime -- plus the namespace export identity checks.
@@ -35,6 +38,8 @@ from reemote.modules.hardware.hardware import (
     BlockDevices,
     CpuInfo,
     Cpus,
+    DefaultIpv4Address,
+    DefaultIpv4AddressInfo,
     DiskStat,
     DiskStats,
     DmiInfo,
@@ -2082,6 +2087,224 @@ def test_network_devices_is_exported_through_the_namespace():
     assert "Ipv4Address" in hardware.__all__
     assert hardware.Ipv6Address is Ipv6Address
     assert "Ipv6Address" in hardware.__all__
+
+
+# --- DefaultIpv4Address --------------------------------------------------------
+
+
+class RoutingStubHost(Host):
+    """Answers the route and interface reads with different canned output.
+
+    ``DefaultIpv4Address.process`` runs two shells -- the routing-table
+    read and the sibling ``NetworkDevices`` read -- so a single-stdout
+    ``CannedShellHost`` cannot serve it. Each needle selects which
+    canned stdout a shell matches on.
+    """
+
+    def __init__(self, route: str, devices: str):
+        super().__init__(name="routing")
+        self._route = route
+        self._devices = devices
+        self.shells: list[str] = []
+
+    async def run_shell(self, shell: str, *, check: bool = False) -> str:
+        self.shells.append(shell)
+        if "route show default" in shell:
+            return self._route
+        return self._devices
+
+
+async def test_default_ipv4_address_pairs_json_route_with_the_inventory():
+    host = RoutingStubHost(
+        '[{"dst": "default", "gateway": "192.168.1.1", "dev": "eth0"}]',
+        """[
+  {
+    "ifname": "eth0",
+    "operstate": "UP",
+    "addr_info": [
+      {"family": "inet", "local": "192.168.1.100", "prefixlen": 24}
+    ]
+  }
+]
+""",
+    )
+    assert await DefaultIpv4Address.process(host) == {
+        "address": "192.168.1.100",
+        "mask_bits": 24,
+        "interface": "eth0",
+        "gateway": "192.168.1.1",
+    }
+    assert host.shells == [
+        (
+            "ip -j route show default 2> /dev/null || ip route show default 2"
+            "> /dev/null || route -n 2> /dev/null || true"
+        ),
+        "ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a",
+    ]
+
+
+async def test_default_ipv4_address_pairs_ip_route_text_with_the_inventory():
+    host = RoutingStubHost(
+        "default via 10.0.0.1 dev wlan0 proto dhcp src 10.0.0.5 metric 600",
+        """4: wlan0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP
+    inet 10.0.0.5/24 brd 10.0.0.255 scope global dynamic noprefixroute wlan0
+""",
+    )
+    assert await DefaultIpv4Address.process(host) == {
+        "address": "10.0.0.5",
+        "mask_bits": 24,
+        "interface": "wlan0",
+        "gateway": "10.0.0.1",
+    }
+
+
+async def test_default_ipv4_address_pairs_route_n_text_with_the_inventory():
+    # The legacy fallback: the default row is the one with a 0.0.0.0
+    # Destination and a 0.0.0.0 Genmask; the interface is its last
+    # column and the gateway its second.
+    host = RoutingStubHost(
+        """Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+0.0.0.0         172.17.0.1      0.0.0.0         UG    0      0        0 eth0
+172.17.0.0      0.0.0.0         255.255.0.0     U     0      0        0 eth0
+""",
+        "eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n"
+        "        inet 172.17.0.10  netmask 255.255.0.0  broadcast 172.17.255.255\n",
+    )
+    assert await DefaultIpv4Address.process(host) == {
+        "address": "172.17.0.10",
+        "mask_bits": 16,
+        "interface": "eth0",
+        "gateway": "172.17.0.1",
+    }
+
+
+async def test_default_ipv4_address_reports_no_gateway_for_a_direct_route():
+    # A directly connected default route carries no gateway in any of
+    # the three shapes -- `ip route show default` omits the `via`
+    # token, `route -n` prints a 0.0.0.0 gateway column, `ip -j` drops
+    # the `gateway` key.
+    host = RoutingStubHost(
+        "default dev eth0 scope link",
+        "eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP\n"
+        "    inet 192.168.0.50/24 brd 192.168.0.255 scope global eth0\n",
+    )
+    assert await DefaultIpv4Address.process(host) == {
+        "address": "192.168.0.50",
+        "mask_bits": 24,
+        "interface": "eth0",
+        "gateway": None,
+    }
+
+
+async def test_default_ipv4_address_keeps_the_route_when_the_interface_lacks_an_address():
+    # The interface-and-gateway half of the record survives an address
+    # lookup that finds nothing -- a route to an interface with no
+    # IPv4 row reads address None, mask_bits absent.
+    host = RoutingStubHost(
+        "default via 192.168.1.1 dev eth0",
+        "2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state DOWN\n",
+    )
+    assert await DefaultIpv4Address.process(host) == {
+        "address": None,
+        "interface": "eth0",
+        "gateway": "192.168.1.1",
+    }
+
+
+def test_default_ipv4_address_parse_route_reads_the_json_dev_and_gateway():
+    assert DefaultIpv4Address.parse_route(
+        ['[{"dst": "default", "gateway": "10.0.0.1", "dev": "eth0"}]']
+    ) == ("eth0", "10.0.0.1")
+
+
+def test_default_ipv4_address_parse_route_json_skips_a_non_default_dst():
+    # `ip -j route show default` already filters to the default route,
+    # but a hand-seeded listing carrying a non-default entry is skipped
+    # rather than trusted.
+    assert (
+        DefaultIpv4Address.parse_route(['[{"dst": "10.0.0.0/8", "dev": "eth0"}]']) is None
+    )
+
+
+def test_default_ipv4_address_parse_route_text_falls_back_to_route_n():
+    assert DefaultIpv4Address.parse_route(
+        [
+            "Kernel IP routing table",
+            "Destination     Gateway         Genmask         Flags Metric Ref    Use Iface",
+            "0.0.0.0         0.0.0.0         0.0.0.0         U     0      0        0 eth0",
+        ]
+    ) == ("eth0", None)
+
+
+def test_default_ipv4_address_parse_route_no_default_route_reads_as_none():
+    # An empty listing, malformed JSON, a non-list JSON document and a
+    # route-only listing with no default row all read as None -- the
+    # fact's absent-record fallback, not the collection facts' {}. Empty
+    # output included.
+    assert DefaultIpv4Address.parse_route([]) is None
+    assert DefaultIpv4Address.parse_route(["not json at all", "default"]) is None
+    assert DefaultIpv4Address.parse_route(['{"dst": "default", "dev": "eth0"}']) is None
+    assert DefaultIpv4Address.parse_route(["[", "    1.2.3.0/24 dev eth0 proto kernel scope link"]) is None
+
+
+async def test_default_ipv4_address_is_none_without_a_default_route():
+    # A host with no `ip`, no `route` binary and no default route at all
+    # -- every branch guarded, the chain ending in `|| true` -- reads as
+    # None, the absent-record fallback, without ever reaching the
+    # inventory read.
+    host = RoutingStubHost("", "")
+    assert await DefaultIpv4Address.process(host) is None
+
+
+async def test_default_ipv4_address_reads_the_simulated_seam():
+    info: DefaultIpv4AddressInfo = {
+        "address": "192.168.1.100",
+        "mask_bits": 24,
+        "interface": "eth0",
+        "gateway": "192.168.1.1",
+    }
+    host = SimulatedHost(name="h", default_ipv4_addr=info)
+    assert await DefaultIpv4Address.process(host) == info
+    # The seam defaults to {}: a simulated host with no routing table
+    # seeded reads None, the fact's absent-record fallback.
+    assert await DefaultIpv4Address.process(SimulatedHost(name="h")) is None
+
+
+async def test_default_ipv4_address_seam_returns_a_copy():
+    host = SimulatedHost(
+        name="h",
+        default_ipv4_addr={
+            "address": "192.168.1.100",
+            "mask_bits": 24,
+            "interface": "eth0",
+            "gateway": "192.168.1.1",
+        },
+    )
+    info = await DefaultIpv4Address.process(host)
+    assert info is not None
+    info["address"] = "10.9.9.9"
+    assert host.default_ipv4_addr["address"] == "192.168.1.100"
+
+
+async def test_default_ipv4_address_gather_fact_across_hosts():
+    info: DefaultIpv4AddressInfo = {"address": "10.0.0.2", "interface": "eth0", "gateway": None}
+    hosts = [
+        SimulatedHost(name="web1", default_ipv4_addr=info),
+        SimulatedHost(name="web2"),
+    ]
+    assert await gather_fact(hosts, DefaultIpv4Address) == {"web1": info, "web2": None}
+
+
+def test_default_ipv4_address_is_exported_through_the_namespace():
+    # Both import paths resolve to the same class: hardware.DefaultIpv4Address
+    # through the package and DefaultIpv4Address through the module
+    # source, with the DefaultIpv4AddressInfo entry TypedDict riding the
+    # same two paths.
+    assert hardware.DefaultIpv4Address is DefaultIpv4Address
+    assert "DefaultIpv4Address" in hardware.__all__
+    assert hardware.DefaultIpv4AddressInfo is DefaultIpv4AddressInfo
+    assert "DefaultIpv4AddressInfo" in hardware.__all__
 
 
 # --- SmbiosInfo ----------------------------------------------------------------

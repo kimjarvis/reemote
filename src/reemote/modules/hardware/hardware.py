@@ -2,12 +2,15 @@
 # SPDX-License-Identifier: EPL-2.0
 
 # """The ``hardware`` module: ``BlockDevices``, ``CpuInfo``, ``Cpus``,
-# ``DiskStats``, ``DmiInfo``, ``Ipv4Addrs``, ``Ipv6Addrs``, ``LsBlk``,
-# ``NetworkDevices`` and ``SmbiosInfo``.
+# ``DefaultIpv4Address``, ``DiskStats``, ``DmiInfo``, ``Ipv4Addrs``,
+# ``Ipv6Addrs``, ``LsBlk``, ``NetworkDevices`` and ``SmbiosInfo``.
 #
 # Fact side: ``BlockDevices`` (the mounted block devices and their disk usage,
 # parsed from ``df``), ``CpuInfo`` (the CPU details reported by ``lscpu``),
 # ``Cpus`` (the number of online CPUs reported by ``getconf``),
+# ``DefaultIpv4Address`` (the interface carrying the default route and its
+# primary IPv4 address, parsed from the routing table paired with the
+# ``NetworkDevices`` inventory),
 # ``DiskStats`` (the per-device IO counters read from ``/proc/diskstats``),
 # ``DmiInfo`` (the system identity, BIOS and chassis fields exposed under
 # ``/sys/class/dmi/id/``), ``Ipv4Addrs`` (the IPv4 addresses per network
@@ -17,7 +20,8 @@
 # ether, mtu, state and both address families with their mask/broadcast
 # details), the last three parsed from ``ip addr show`` or ``ifconfig -a``,
 # and ``SmbiosInfo`` (the full SMBIOS/DMI tables decoded by ``dmidecode``).
-# ``DiskStats``, ``DmiInfo``, ``LsBlk`` and ``SmbiosInfo`` are reemote
+# ``DefaultIpv4Address``, ``DiskStats``, ``DmiInfo``, ``LsBlk`` and
+# ``SmbiosInfo`` are reemote
 # originals: ``DiskStats`` and ``LsBlk``
 # complement ``BlockDevices``, whose ``df`` listing only shows mounted
 # filesystems, while ``DmiInfo`` and ``SmbiosInfo`` report the machine's
@@ -1388,6 +1392,187 @@ class NetworkDevices:
         return cls.parse(stdout.splitlines())
 
 
+class DefaultIpv4AddressInfo(TypedDict):
+    """
+    Attributes:
+        address: The default interface's primary IPv4 address, or None
+            when the routing table names an interface the inventory
+            carries no IPv4 address for.
+        mask_bits: The address's prefix length in bits, when the
+            interface listing carried a mask token.
+        interface: The interface carrying the default route.
+        gateway: The default gateway, or None when the default route is
+            directly connected (no ``via``/gateway column).
+    """
+
+    # The single record ``DefaultIpv4Address`` returns, as a plain dict.
+    #
+    # A TypedDict rather than a class instance, like ``BlockDevice``:
+    # entries are ordinary dicts, so equality against a literal dict
+    # works and ``json.dumps`` serializes them directly. ``address`` and
+    # ``gateway`` are always present but may be None; ``mask_bits`` is
+    # NotRequired because it only rides along when an address was found
+    # and the interface listing carried a mask token for it.
+
+    address: str | None
+    mask_bits: NotRequired[int]
+    interface: str
+    gateway: str | None
+
+
+class DefaultIpv4Address:
+    """The interface carrying the default route and its primary IPv4 address.
+
+    **Commands:**
+
+    ```bash
+    ip -j route show default 2> /dev/null || ip route show default 2> /dev/null || route -n 2> /dev/null || true
+    ```
+
+    ```bash
+    ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a
+    ```
+
+    **Returns:**
+
+    ```python
+    DefaultIpv4AddressInfo | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/hardware/hardware_default_ipv4_address.py``.
+    """
+
+    # A reemote original (the ``ansible_default_ipv4`` counterpart, set
+    # alongside ``DiskStats``/``DmiInfo``/``LsBlk``, which already
+    # establish facts pyinfra does not have): the routing table, not the
+    # interface listing, decides which address is *the* default one, so
+    # this fact reads ``ip -j route show default`` (JSON) or, failing
+    # that, ``ip route show default`` / ``route -n`` (text), and pairs
+    # the interface it names with the sibling ``NetworkDevices``
+    # inventory's primary IPv4 address, for example::
+    #
+    #     {
+    #         "address": "192.168.1.100",
+    #         "mask_bits": 24,
+    #         "interface": "eth0",
+    #         "gateway": "192.168.1.1",
+    #     }
+    #
+    # The route read never raises on a missing tool (every branch is
+    # guarded with ``2> /dev/null`` and the chain ends in ``|| true``),
+    # so a host with no default route at all, no ``ip`` and no ``route``
+    # binary reads as ``None`` -- the same absent-record fallback the
+    # ``IptablesVersion`` sibling uses for an unparseable read, rather
+    # than the ``{}`` a collection fact falls back to. A default route
+    # whose interface carries no IPv4 address still resolves to a
+    # record, with ``address`` None: the interface and gateway are
+    # facts about the routing table that survive an unrelated
+    # address-lookup miss. A directly connected default route (``ip
+    # route show default`` printing ``default dev eth0 scope link``, or
+    # ``route -n`` showing a ``0.0.0.0`` gateway) reports ``gateway``
+    # None.
+    #
+    # ``parse_route`` is the pure half of that split -- it only ever
+    # reads the routing table and answers ``(interface, gateway)``,
+    # never touching an address; ``process`` then calls the sibling
+    # ``NetworkDevices.process`` (the second command above) to look the
+    # interface's own IPv4 block up, so the two facts stay consistent by
+    # construction rather than by duplicating the ``ip``/``ifconfig``
+    # parse. ``NetworkDevices.process`` is seam-aware itself, so a
+    # ``SimulatedHost`` seeding only ``default_ipv4_addr`` never reaches
+    # it -- this fact's own seam short-circuits first.
+
+    #: Shell used to gather the default route over SSH: JSON first, then
+    #: the plain-text `ip` and legacy `route` fallbacks; every branch is
+    #: guarded so a host without the tooling reads as no default route.
+    COMMAND = (
+        "ip -j route show default 2> /dev/null "
+        "|| ip route show default 2> /dev/null "
+        "|| route -n 2> /dev/null || true"
+    )
+
+    #: The ``ip route show default`` text shape: a leading ``default``
+    #: row with an optional ``via <gateway>`` and a ``dev <interface>``.
+    _IP_ROUTE_RE = re.compile(r"^default(?: via (\S+))? dev (\S+)", re.MULTILINE)
+
+    @classmethod
+    def parse_route(cls, output: Iterable[str]) -> tuple[str, str | None] | None:
+        """Parse a routing-table read into ``(interface, gateway)``. Pure.
+
+        A JSON sniff decides the branch, as the sibling network facts do:
+        ``ip -j route show default`` JSON is a list of route objects,
+        each with ``dev`` and an optional ``gateway`` (a directly
+        connected route carries none). Otherwise the text is tried as an
+        ``ip route show default`` row, then as a legacy ``route -n``
+        table whose default row is the one with both a ``0.0.0.0``
+        Destination and a ``0.0.0.0`` Genmask (the interface is its last
+        column, the gateway ``0.0.0.0`` reads as None). Malformed JSON,
+        a non-list document, an entry without ``dev``, an empty listing
+        and a listing with no default row all read as None; reemote
+        hardens the parser rather than raising.
+        """
+        lines = list(output)
+        if "".join(line.strip() for line in lines[:2]).startswith("[{"):
+            try:
+                decoded = json.loads("\n".join(lines))
+            except (json.JSONDecodeError, TypeError, UnicodeDecodeError, RecursionError):
+                return None
+            if not isinstance(decoded, list):
+                return None
+            for entry in decoded:
+                if not isinstance(entry, dict) or entry.get("dst") not in (None, "default"):
+                    continue
+                interface = entry.get("dev")
+                if not isinstance(interface, str):
+                    continue
+                gateway = entry.get("gateway")
+                return interface, gateway if isinstance(gateway, str) else None
+            return None
+        text = "\n".join(line.strip() for line in lines)
+        match = cls._IP_ROUTE_RE.search(text)
+        if match:
+            return match.group(2), match.group(1)
+        for line in lines:
+            columns = line.split()
+            if len(columns) >= 8 and columns[0] == "0.0.0.0" and columns[2] == "0.0.0.0":
+                gateway = columns[1]
+                return columns[-1], None if gateway == "0.0.0.0" else gateway
+        return None
+
+    @classmethod
+    async def process(cls, host: Host) -> DefaultIpv4AddressInfo | None:
+        state = getattr(host, "default_ipv4_addr", None)
+        if state is not None:
+            # SimulatedHost seam: read the in-memory state directly; the
+            # empty dict models an unseeded (None-reading) host, the
+            # same convention the IptablesVersion sibling's seam uses.
+            return dict(state) if state else None  # type: ignore[return-value]
+        # Real transport: the routing table read, then the sibling
+        # NetworkDevices inventory (itself seam-aware) for the address.
+        stdout = await host.run_shell(cls.COMMAND)
+        route = cls.parse_route(stdout.splitlines())
+        if route is None:
+            return None
+        interface, gateway = route
+        device = (await NetworkDevices.process(host)).get(interface)
+        ipv4 = device.get("ipv4") if device is not None else None
+        info: DefaultIpv4AddressInfo = {
+            "address": ipv4["address"] if ipv4 is not None else None,
+            "interface": interface,
+            "gateway": gateway,
+        }
+        if ipv4 is not None and "mask_bits" in ipv4:
+            info["mask_bits"] = ipv4["mask_bits"]
+        return info
+
+
 class SmbiosInfo:
     """The decoded SMBIOS/DMI tables, as a dict of section -> field dict.
 
@@ -1532,6 +1717,8 @@ __all__ = [
     "BlockDevices",
     "CpuInfo",
     "Cpus",
+    "DefaultIpv4Address",
+    "DefaultIpv4AddressInfo",
     "DiskStat",
     "DiskStats",
     "DmiInfo",

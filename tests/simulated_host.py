@@ -35,7 +35,7 @@ a real asyncssh transport is missing:
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``rpm_gpg_keys`` / ``services`` / ``enabled_services``
   / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_update_stamp`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``deb_files``
-  / ``date`` / ``disk_stats`` / ``dmi_info`` / ``os_env``
+  / ``date`` / ``default_ipv4_addr`` / ``disk_stats`` / ``dmi_info`` / ``os_env``
   / ``firewalld_default_zone``
   / ``firewalld_ipsets`` / ``firewalld_lockdown`` / ``firewalld_panic_mode``
   / ``firewalld_permanent_ipsets`` / ``firewalld_permanent_policies``
@@ -101,7 +101,7 @@ a real asyncssh transport is missing:
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``, ``RpmGpgKeys``,
   ``SystemdServiceState``, ``SystemdServiceEnabled``, ``SystemdStatus``, ``SystemdEnabled``, ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState``, ``SystemdDependencies``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``ApkRepositoriesFile``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpdateStamp``, ``AptUpgradable``, ``Arch``,
   ``AuthorizedKeys``, ``AuthorizedKeysFile``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``, ``DebPackage``,
-  ``DiskStats``, ``DmiInfo``, ``Env``, ``EtcHosts`` (parses the shared
+  ``DefaultIpv4Address``, ``DiskStats``, ``DmiInfo``, ``Env``, ``EtcHosts`` (parses the shared
   ``remote_files`` seam at the hosts-file path), ``FirewalldStatus``, ``FirewalldDefaultZone``,
   ``FirewalldZones``, ``FirewalldServices``, ``FirewalldIpSets``,
   ``FirewalldPolicies`` (the firewalld-local ``_FirewalldLockdown`` and
@@ -335,6 +335,7 @@ from reemote.modules.gpg.gpg import (
 )
 from reemote.modules.hardware.hardware import (
     BlockDevice,
+    DefaultIpv4AddressInfo,
     DiskStat,
     LsBlkNode,
     NetworkDevice,
@@ -1005,6 +1006,18 @@ class SimulatedHost(Host):
     # answers ``date``, so the seam never falls through to the shell, and a
     # fixed default keeps simulated reads deterministic.
     date: datetime = datetime(2019, 1, 1, tzinfo=UTC)
+    # The default-route IPv4 record (the ``DefaultIpv4AddressInfo`` the
+    # fact returns -- {address, interface, gateway} plus an optional
+    # ``mask_bits``), backing ``DefaultIpv4Address``. Defaults to {} --
+    # a simulated host whose routing table has not been seeded, which
+    # the fact projects to None (the same empty-dict-means-absent
+    # convention the ``iptables_version`` seam uses), like a machine
+    # with no default route at all. ``network_devices`` answers the
+    # same question through a different path: seeding ``network_devices``
+    # alone does not populate this seam -- the fact reads this field
+    # directly on a simulated host and only falls back to composing a
+    # route read with a ``NetworkDevices`` gather on the real transport.
+    default_ipv4_addr: DefaultIpv4AddressInfo = field(default_factory=dict)
     # Per-device IO counters (device -> the ``DiskStat`` int counter entry
     # the fact returns), backing ``DiskStats``. Each value holds whichever
     # counter groups the simulated kernel prints -- the eleven classic

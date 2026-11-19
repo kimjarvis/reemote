@@ -8,6 +8,8 @@
         - BlockDevices
         - CpuInfo
         - Cpus
+        - DefaultIpv4Address
+        - DefaultIpv4AddressInfo
         - DiskStat
         - DiskStats
         - DmiInfo
@@ -28,21 +30,28 @@
 `reemote.modules.hardware.hardware` holds the hardware facts — `BlockDevices`,
 the mounted block devices and their disk usage read from `df`, `CpuInfo`,
 the CPU details reported by `lscpu`, `Cpus`, the number of online CPUs
-reported by `getconf`, `DiskStats`, the per-device IO counters read from
+reported by `getconf`, `DefaultIpv4Address`, the interface carrying the
+default route and its primary IPv4 address read from the routing table,
+`DiskStats`, the per-device IO counters read from
 `/proc/diskstats`, `DmiInfo`, the system identity, BIOS and chassis fields
 exposed under `/sys/class/dmi/id/`, `Ipv4Addrs`/`Ipv6Addrs`, the IPv4/IPv6
 addresses per network interface, `LsBlk`, the complete block device tree
 reported by `lsblk -J`, `NetworkDevices`, the full network device
 details, the last three read from `ip addr show` or `ifconfig -a`, and
 `SmbiosInfo`, the full SMBIOS/DMI tables decoded by `dmidecode`.
-`DiskStats`, `DmiInfo`, `LsBlk` and `SmbiosInfo` are reemote originals
-with no baseline counterpart: `DiskStats` and `LsBlk` complement
+`DefaultIpv4Address`, `DiskStats`, `DmiInfo`, `LsBlk` and `SmbiosInfo` are reemote originals
+with no baseline counterpart: `DefaultIpv4Address` answers the question
+`Ipv4Addrs` and `NetworkDevices` deliberately leave open — which of the
+listed interfaces is the routable one — by reading the routing table and
+pairing it with the device inventory; `DiskStats` and `LsBlk` complement
 `BlockDevices`, whose `df` listing only shows mounted filesystems, while
 `DmiInfo` and `SmbiosInfo` report the machine's firmware identity —
 manufacturer, product name, serial number, BIOS version and chassis
 type — for asset tracking and conditional execution.
-`BlockDevices`, `DiskStats`, `LsBlk` and `NetworkDevices` type their
-record dicts as the exported `BlockDevice`, `DiskStat`, `LsBlkNode` and
+`BlockDevices`, `DiskStats`, `LsBlk`, `NetworkDevices` and
+`DefaultIpv4Address` type their
+record dicts as the exported `BlockDevice`, `DefaultIpv4AddressInfo`,
+`DiskStat`, `LsBlkNode` and
 `NetworkDevice` TypedDicts (the latter with `Ipv4Address`/`Ipv6Address`
 address blocks), keeping the outer device-keyed mappings unchanged.
 `CpuInfo`, `DmiInfo` and `SmbiosInfo` keep plain dicts because their keys
@@ -207,6 +216,31 @@ validation. Empty or undecodable output reads as `{}`, the baseline's
 them through its logger) and non-dict JSON devices or address entries
 are skipped rather than raising — reemote hardens the parser.
 
+`DefaultIpv4Address` also takes no arguments: it runs
+`ip -j route show default 2> /dev/null || ip route show default 2> /dev/null || route -n 2> /dev/null || true`
+to find the interface carrying the default route and its gateway, then
+runs the sibling `NetworkDevices` read to look that interface's own
+primary IPv4 address up, and returns a `DefaultIpv4AddressInfo` record
+`{address, mask_bits, interface, gateway}` — a reemote original with no
+baseline counterpart, the `ansible_default_ipv4` counterpart the
+`hosts`-file and similar "name this host's own address" templates
+need. The routing table, not the interface listing, decides which
+address is *the* default one: `Ipv4Addrs` and `NetworkDevices`
+intentionally carry no routing semantics, so a control-side heuristic
+over their listings can name the wrong interface on a multi-homed
+host. A default route whose interface carries no IPv4 address still
+resolves to a record with `address` `None` and no `mask_bits` — the
+interface and gateway are facts about the routing table that survive an
+unrelated address-lookup miss — and a directly connected default route
+(an `ip route show default` row without a `via` token, or a `route -n`
+row with a `0.0.0.0` gateway) reports `gateway` `None`. Malformed JSON,
+a non-list document and an entry without `dev` are skipped rather than
+raising. Unlike the collection facts on this page, a host with no
+default route at all — or with neither `ip` nor `route` installed, every
+branch guarded, the chain ending in `|| true` — reads as `None`, the
+same absent-record fallback the `IptablesVersion` sibling uses, rather
+than an empty dict.
+
 `SmbiosInfo` also takes no arguments: it runs
 `dmidecode -q 2> /dev/null || sudo -n dmidecode -q 2> /dev/null || true`
 and maps each SMBIOS section's
@@ -241,13 +275,14 @@ set — the agreed dynamic-key exception, the same as `CpuInfo`.
 ## Example
 
 The read-only fact-gathering scripts `hardware_block_devices.py`,
-`hardware_cpu_info.py`, `hardware_cpus.py`, `hardware_disk_stats.py`,
+`hardware_cpu_info.py`, `hardware_cpus.py`, `hardware_default_ipv4_address.py`,
+`hardware_disk_stats.py`,
 `hardware_dmi_info.py`, `hardware_ipv4_addrs.py`,
 `hardware_ipv6_addrs.py`, `hardware_lsblk.py`,
 `hardware_network_devices.py` and `hardware_smbios_info.py`
 under
 [`examples/modules/hardware/`](../examples/modules/hardware.md) gather
-`BlockDevices`, `CpuInfo`, `Cpus`, `DiskStats`, `DmiInfo`, `Ipv4Addrs`,
+`BlockDevices`, `CpuInfo`, `Cpus`, `DefaultIpv4Address`, `DiskStats`, `DmiInfo`, `Ipv4Addrs`,
 `Ipv6Addrs`, `LsBlk`, `NetworkDevices` and `SmbiosInfo` respectively
 across an inventory with
 [`gather_fact`][reemote.drivers.gather_fact] and print each host's result

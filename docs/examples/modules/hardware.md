@@ -7,7 +7,8 @@ warning and the error-reporting contract every script follows.
 
 The read-only fact-gathering examples (`hardware_block_devices.py` reading
 `BlockDevices`, `hardware_cpu_info.py` reading `CpuInfo`,
-`hardware_cpus.py` reading `Cpus`, `hardware_disk_stats.py` reading
+`hardware_cpus.py` reading `Cpus`, `hardware_default_ipv4_address.py` reading
+`DefaultIpv4Address`, `hardware_disk_stats.py` reading
 `DiskStats`, `hardware_dmi_info.py` reading `DmiInfo`,
 `hardware_ipv4_addrs.py` reading `Ipv4Addrs`,
 `hardware_ipv6_addrs.py` reading `Ipv6Addrs`, `hardware_lsblk.py` reading

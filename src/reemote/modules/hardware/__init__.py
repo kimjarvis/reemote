@@ -5,10 +5,12 @@
 
 Re-exports everything from ``hardware.py`` so the facts
 (``hardware.BlockDevices``, ``hardware.CpuInfo``, ``hardware.Cpus``,
-``hardware.DiskStats``, ``hardware.DmiInfo``, ``hardware.Ipv4Addrs``,
+``hardware.DefaultIpv4Address``, ``hardware.DiskStats``, ``hardware.DmiInfo``,
+``hardware.Ipv4Addrs``,
 ``hardware.Ipv6Addrs``, ``hardware.LsBlk``, ``hardware.NetworkDevices``,
 ``hardware.SmbiosInfo``) and their entry TypedDicts
-(``hardware.BlockDevice``, ``hardware.DiskStat``, ``hardware.LsBlkNode``,
+(``hardware.BlockDevice``, ``hardware.DefaultIpv4AddressInfo``,
+``hardware.DiskStat``, ``hardware.LsBlkNode``,
 ``hardware.NetworkDevice``, ``hardware.Ipv4Address``,
 ``hardware.Ipv6Address``)
 are reachable through the package name alone.
@@ -20,6 +22,8 @@ from .hardware import (
     BlockDevices,
     CpuInfo,
     Cpus,
+    DefaultIpv4Address,
+    DefaultIpv4AddressInfo,
     DiskStat,
     DiskStats,
     DmiInfo,
@@ -39,6 +43,8 @@ __all__ = [
     "BlockDevices",
     "CpuInfo",
     "Cpus",
+    "DefaultIpv4Address",
+    "DefaultIpv4AddressInfo",
     "DiskStat",
     "DiskStats",
     "DmiInfo",
