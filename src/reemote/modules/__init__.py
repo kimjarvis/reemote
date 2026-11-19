@@ -64,6 +64,10 @@ facts beside the ``database``, ``dump``, ``index``, ``kill``, ``load``,
 ``optimize``, ``plugin``, ``privileges``, ``replica``, ``role``, ``sql``,
 ``table``, ``user`` and ``variable`` operations and the typed command
 descriptors they yield,
+``modules/npm/npm.py`` holds the ``NpmPackages`` fact (with its
+``NpmPackageInfo`` entry type) beside the ``packages`` operation and the
+``NpmInstallCommand``/``NpmUpdateCommand``/``NpmRemoveCommand``/
+``NpmPackageJsonCommand`` descriptors it yields,
 ``modules/openrc/openrc.py`` holds the ``OpenrcEnabled``,
 ``OpenrcRunlevels``, ``OpenrcServices``, ``OpenrcStatus`` and
 ``OpenrcVersion`` facts beside the ``service``, ``runlevel`` and
@@ -113,10 +117,10 @@ descriptors it yields, and
 ``modules/server/server.py`` holds the ``wait_service`` operation (which
 polls the relocated ``systemd.SystemdServiceState`` fact). The subpackages
 are re-exported here, so a deploy can keep writing
-``from reemote.modules import apk, apt, dnf, files, firewalld, flatpak, git, gpg, hardware, iptables, lxd, mysql, openrc, pip, postgresql, selinux, snap, sysctl, systemd, ufw, server``
+``from reemote.modules import apk, apt, dnf, files, firewalld, flatpak, git, gpg, hardware, iptables, lxd, mysql, npm, openrc, pip, postgresql, selinux, snap, sysctl, systemd, ufw, server``
 and read ``apk.ApkInstalledPackages`` / ``apt.AptKeys`` / ``dnf.packages`` /
 ``files.link`` / ``firewalld.FirewalldZones`` / ``git.GitBranch`` / ``gpg.GpgKeys`` / ``hardware.BlockDevices`` /
-``iptables.IptablesChains`` / ``lxd.LxdInstances`` / ``mysql.MysqlDatabases`` / ``openrc.OpenrcStatus`` / ``postgresql.PostgresqlRoles`` /
+``iptables.IptablesChains`` / ``lxd.LxdInstances`` / ``mysql.MysqlDatabases`` / ``npm.NpmPackages`` / ``openrc.OpenrcStatus`` / ``postgresql.PostgresqlRoles`` /
 ``selinux.Mode`` / ``sysctl.setting`` / ``systemd.service`` / ``ufw.UfwRules`` / ``server.wait_service``.
 """
 
@@ -133,6 +137,7 @@ from . import (
     iptables,
     lxd,
     mysql,
+    npm,
     openrc,
     pip,
     postgresql,
@@ -157,6 +162,7 @@ __all__ = [
     "iptables",
     "lxd",
     "mysql",
+    "npm",
     "openrc",
     "pip",
     "postgresql",

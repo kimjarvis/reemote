@@ -97,6 +97,7 @@ from .modules import (
     iptables,
     lxd,
     mysql,
+    npm,
     openrc,
     pip,
     postgresql,
@@ -467,6 +468,14 @@ from .modules.mysql.mysql import (
     MysqlUsers,
     MysqlVariableCommand,
     MysqlVariables,
+)
+from .modules.npm.npm import (
+    NpmInstallCommand,
+    NpmPackageInfo,
+    NpmPackageJsonCommand,
+    NpmPackages,
+    NpmRemoveCommand,
+    NpmUpdateCommand,
 )
 from .modules.openrc.openrc import (
     OpenrcConfigFile,
@@ -1063,6 +1072,12 @@ __all__ = [
     "MysqlVariables",
     "NetworkDevice",
     "NetworkDevices",
+    "NpmInstallCommand",
+    "NpmPackageInfo",
+    "NpmPackageJsonCommand",
+    "NpmPackages",
+    "NpmRemoveCommand",
+    "NpmUpdateCommand",
     "OpContext",
     "OpenrcConfigFile",
     "OpenrcConfigInstallCommand",
@@ -1264,6 +1279,7 @@ __all__ = [
     "iptables",
     "lxd",
     "mysql",
+    "npm",
     "op",
     "openrc",
     "pip",

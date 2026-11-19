@@ -71,7 +71,8 @@ a real asyncssh transport is missing:
   / ``mysql_plugins`` / ``mysql_replication`` / ``mysql_status``
   / ``mysql_tables`` / ``mysql_user_grants`` / ``mysql_users``
   / ``mysql_variables``
-  / ``network_devices`` / ``openrc_runlevels`` / ``openrc_service_states``
+  / ``network_devices`` / ``npm_packages`` / ``openrc_runlevels``
+  / ``openrc_service_states``
   / ``openrc_version`` / ``pip_packages``
   / ``processes``
   / ``postgres_connections`` / ``postgres_databases``
@@ -131,6 +132,7 @@ a real asyncssh transport is missing:
   ``MysqlConnections``, ``MysqlDatabases``, ``MysqlEngines``, ``MysqlIndexes``,
   ``MysqlPlugins``, ``MysqlReplication``, ``MysqlStatus``, ``MysqlTables``,
   ``MysqlUserGrants``, ``MysqlUsers``, ``MysqlVariables``, ``NetworkDevices``,
+  ``NpmPackages``,
   ``OpenrcConfigFile``, ``OpenrcEnabled``,
   ``OpenrcRunlevels``, ``OpenrcServices``, ``OpenrcStatus``, ``OpenrcVersion``,
   ``PipPackages`` (the pip-local ``_VirtualenvPython`` probe reads the
@@ -166,6 +168,7 @@ the mutation.
 
 import hashlib
 import io
+import json
 import posixpath
 import re
 from dataclasses import dataclass, field
@@ -411,6 +414,14 @@ from reemote.modules.mysql.mysql import (
     MysqlUser,
     MysqlUserCommand,
     MysqlVariableCommand,
+)
+from reemote.modules.npm.npm import (
+    NpmInstallCommand,
+    NpmPackageJsonCommand,
+    NpmRemoveCommand,
+    NpmUpdateCommand,
+    _environment_key,
+    _npm_split_spec,
 )
 from reemote.modules.openrc.openrc import (
     OpenrcConfigInstallCommand,
@@ -1148,6 +1159,24 @@ class SimulatedHost(Host):
     # ``flatpak install``/``uninstall``) maintain one store for both facts and
     # they can never disagree.
     flatpak_package_info: dict[str, FlatpakPackageInfo] = field(default_factory=dict)
+    # Installed npm packages -- the state store the fact reads, kept as one
+    # mapping of npm scope (named by the library's own ``_environment_key``:
+    # ``"global"``, ``"global@<prefix>"`` or ``"directory=<path>"``) to that
+    # scope's name -> version mapping, which ``NpmPackages.process`` projects
+    # into the sorted ``NpmPackageInfo`` entries it returns for the scope a
+    # request addresses (the ``pip_packages`` mutated-dict-store precedent,
+    # widened because npm genuinely keeps a separate tree per global prefix
+    # and per project). Names are stored exactly as npm spells them -- no
+    # normalization, as ``NpmPackages.parse`` performs none -- and the version
+    # is the placeholder ``""`` when an unpinned install carries no registry
+    # metadata to resolve from. Defaults to {} -- a simulated machine with no
+    # npm installed anywhere, so the fact answers ``[]`` for every scope. A
+    # test seeds it directly;
+    # ``install_npm_packages``/``remove_npm_packages``/
+    # ``apply_npm_package_json`` (the simulated ``npm install``/``uninstall``
+    # and manifest install) mutate the scope they address, leaving the others
+    # untouched, so a global and a project request can never cross-contaminate.
+    npm_packages: dict[str, dict[str, str]] = field(default_factory=dict)
     # Installed pip packages -- the state store the fact reads, kept as the
     # PEP 503-normalized name -> version mapping the mutators edit (e.g.
     # ``six`` -> ``"1.16.0"``), which ``PipPackages.process`` projects into the
@@ -2564,6 +2593,18 @@ class SimulatedHost(Host):
                 self.create_virtualenv(cmd)
             case PipVenvRemoveCommand(path=path):
                 self.remove_virtualenv(path)
+            case NpmInstallCommand(
+                packages=packages, directory=directory, prefix=prefix
+            ):
+                self.install_npm_packages(packages, directory, prefix)
+            case NpmUpdateCommand():
+                pass  # the simulation tracks no newer versions to update to
+            case NpmRemoveCommand(
+                packages=packages, directory=directory, prefix=prefix
+            ):
+                self.remove_npm_packages(packages, directory, prefix)
+            case NpmPackageJsonCommand(path=path):
+                self.apply_npm_package_json(path)
             case SnapInstallCommand(packages=packages, channel=channel):
                 self.install_snap_packages(packages, channel)
             case SnapRefreshCommand(packages=packages, channel=channel):
@@ -7282,6 +7323,85 @@ class SimulatedHost(Host):
         way).
         """
         self.virtualenv_python_versions.pop(path, None)
+
+    def install_npm_packages(
+        self, packages: tuple[str, ...], directory: str | None, prefix: str | None
+    ) -> None:
+        """Record a simulated ``npm install``: mark the packages installed.
+
+        ``npm.packages``' install mutation, in whichever scope the command
+        addressed (``_environment_key`` names it, exactly as the fact's seam
+        reads it, so a global install never lands in a project tree). Each
+        npm token is split with the library's own ``_npm_split_spec``: a
+        ``<pkg>@<version>`` pin records exactly that version in
+        ``npm_packages`` -- OVERWRITING any version already there, as npm
+        replaces a package on a re-pin, so a repeat pinned install is a
+        no-op -- and an unpinned name carries no registry metadata to resolve
+        a version from, so it gets the ``""`` placeholder (pip's and apk's
+        precedent) while an installed name keeps its recorded version. Names
+        are stored verbatim, as npm spells them.
+        """
+        store = self.npm_packages.setdefault(_environment_key(directory, prefix), {})
+        for package in packages:
+            name, version = _npm_split_spec(package)
+            if version is None:
+                store.setdefault(name, "")
+            else:
+                store[name] = version
+
+    def remove_npm_packages(
+        self, packages: tuple[str, ...], directory: str | None, prefix: str | None
+    ) -> None:
+        """Record a simulated ``npm uninstall``: drop the packages.
+
+        The ``present=False`` direction of ``npm.packages``. Each token's
+        bare name pops its entry from the addressed scope's store, so
+        ``NpmPackages`` no longer reports it: npm's uninstall drops the
+        dependency whatever version selector rode with it, and the operation
+        only yields tokens whose version the fact matched. An absent name, or
+        a scope the simulation holds no tree for, is tolerated (the real
+        command would exit non-zero, but the operation's fact check never
+        yields that removal).
+        """
+        store = self.npm_packages.get(_environment_key(directory, prefix))
+        if store is None:
+            return
+        for package in packages:
+            store.pop(_npm_split_spec(package)[0], None)
+
+    def apply_npm_package_json(self, path: str) -> None:
+        """Record a simulated ``npm install`` driven by a package.json.
+
+        ``npm.packages``' ``package_json`` mutation, the counterpart of
+        ``apply_pip_requirements``. The manifest's text is read from the
+        shared ``remote_files`` store, so a ``files.put`` earlier in the
+        deploy is visible here; a path the simulation does not hold, text
+        that is not a JSON object, and a manifest with no dependency maps
+        apply nothing -- the real npm would exit non-zero, but the simulated
+        effect stays a pure function of seeded content. Both ``dependencies``
+        and ``devDependencies`` land, since a plain ``npm install`` in a
+        project directory installs both. Each declared name gets the ``""``
+        placeholder: a manifest pins a *range* (``^1.2.3``) and the
+        simulation has no registry to resolve it against, so it records that
+        the name is installed, not at which version. The scope is the
+        manifest's own directory, so a later ``npm.packages`` on that
+        directory sees the tree npm built.
+        """
+        data = self.remote_files.get(path)
+        if data is None:
+            return
+        try:
+            manifest = json.loads(data.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
+            return
+        if not isinstance(manifest, dict):
+            return
+        declared: list[str] = []
+        for key in ("dependencies", "devDependencies"):
+            dependencies = manifest.get(key)
+            if isinstance(dependencies, dict):
+                declared.extend(str(name) for name in dependencies)
+        self.install_npm_packages(tuple(declared), posixpath.dirname(path), None)
 
     def install_snap_packages(self, packages: tuple[str, ...], channel: str) -> None:
         """Record a simulated ``snap install``: mark the snaps installed.

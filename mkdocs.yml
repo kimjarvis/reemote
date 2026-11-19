@@ -51,6 +51,7 @@ plugins:
             - examples/modules/iptables
             - examples/modules/lxd
             - examples/modules/mysql
+            - examples/modules/npm
             - examples/modules/openrc
             - examples/modules/pip
             - examples/modules/postgresql
@@ -127,6 +128,7 @@ nav:
           - iptables: modules/iptables.md
           - lxd: modules/lxd.md
           - mysql: modules/mysql.md
+          - npm: modules/npm.md
           - openrc: modules/openrc.md
           - pip: modules/pip.md
           - postgresql: modules/postgresql.md
@@ -157,6 +159,7 @@ nav:
           - iptables: examples/modules/iptables.md
           - lxd: examples/modules/lxd.md
           - mysql: examples/modules/mysql.md
+          - npm: examples/modules/npm.md
           - openrc: examples/modules/openrc.md
           - pip: examples/modules/pip.md
           - postgresql: examples/modules/postgresql.md
