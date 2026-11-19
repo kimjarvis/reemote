@@ -2187,6 +2187,135 @@ class Port:
         return cls.parse(stdout.splitlines(), tool)
 
 
+def _check_url(url: str) -> None:
+    # The URL is interpolated into a curl invocation, so it is validated up
+    # front and ``shlex``-quoted in ``HttpEndpoint.command``, and the scheme is
+    # pinned to ``http``/``https``: a readiness poll should never reach a
+    # ``file://`` or another local scheme through the host's curl. Rejected
+    # identically on both transports.
+    if not isinstance(url, str):
+        raise TypeError(f"url must be a str, got {url!r}")
+    if not url.startswith(("http://", "https://")):
+        raise ValueError(f"url must be an http or https endpoint, got {url!r}")
+
+
+class HttpEndpointInfo(TypedDict):
+    """
+    Attributes:
+        status: The HTTP status code the endpoint returned, or ``None`` when it
+            could not be reached (curl exits non-zero and prints the ``000``
+            write-out for "no response") -- the answer
+            ``server.wait_url`` polls through ``EndpointReady``.
+        body: The response body as text, empty when the endpoint sent none or
+            was unreachable. ``EndpointReady`` matches ``contains``/``absent``
+            substrings against it.
+    """
+
+    # The single record ``HttpEndpoint`` returns. ``status`` separates "answered
+    # with a code" from "reached nothing" (the ``000`` curl prints for a
+    # refused connection or a failed transfer is normalised to ``None``), so a
+    # wait can tell a not-yet-up server from one answering 503; ``body`` is the
+    # verbatim text, which the readiness slice checks for markers such as
+    # Jenkins' "Please wait while" upgrade page.
+
+    status: int | None
+    body: str
+
+
+class HttpEndpoint:
+    """The HTTP status code and body of a URL, read on the host with ``curl``.
+
+    **Commands:**
+
+    ```bash
+    curl -s -w '\\n%{http_code}' <url>
+    ```
+
+    **Returns:**
+
+    ```python
+    HttpEndpointInfo
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, TypeError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_wait_url.py``.
+    """
+
+    # The host-local half of the Ansible ``uri`` + ``until`` readiness slice
+    # (#43): exactly one GET, whose status code and body are read back so a
+    # module-level predicate can decide. Deliberately *not* a control-side
+    # ``urllib`` read like ``files.fetch_url`` (#20): running curl on the target
+    # keeps a ``localhost`` URL meaning the host's own loopback -- what a role
+    # like ``geerlingguy.jenkins`` checks against its freshly started daemon --
+    # where the controller could not reach it. Unlike ``fetch_url`` a non-2xx
+    # response is no error here: the status code is the answer, so the accepted
+    # states (``200`` *or* ``403`` for Jenkins' ``/cli/``) are observable rather
+    # than raised. Only a missing curl (exit 127) raises,
+    # ``CommandNotFoundError`` -- like ``Port`` needing ``ss``/``netstat``.
+    #
+    # The status rides the write-out: curl appends ``\n%{http_code}`` after the
+    # body, so the last newline is the separator and the body keeps any of its
+    # own. ``-s`` silences the progress meter (it would otherwise corrupt the
+    # body) but not fatal errors, which go to stderr and leave stdout as the
+    # ``\n000`` write-out of a failed transfer.
+
+    #: Shell reading one URL's body and status code on the host; the URL is
+    #: appended ``shlex``-quoted by ``command``. Kept as a concatenation prefix
+    #: rather than a ``{url}`` template because ``str.format`` would choke on
+    #: curl's own ``%{http_code}`` braces.
+    COMMAND = "curl -s -w '\\n%{http_code}' "
+
+    @classmethod
+    def command(cls, url: str) -> str:
+        """Shell reading the endpoint's body and status code.
+
+        The URL is validated by ``_check_url`` and quoted, so a URL carrying
+        shell metacharacters can never reach the command line.
+        """
+        _check_url(url)
+        return cls.COMMAND + shlex.quote(url)
+
+    @classmethod
+    def parse(cls, output: str) -> HttpEndpointInfo:
+        """Split curl's body-plus-write-out into the record. Pure.
+
+        The status is whatever follows the last newline; a non-numeric trailing
+        line (no write-out) or the ``000`` curl prints for "no response" reads
+        as ``None``. Everything before the last newline is the body, verbatim.
+        """
+        body, _, code = output.rpartition("\n")
+        code = code.strip()
+        status = int(code) if code.isdigit() else None
+        if status == 0:
+            status = None
+        return HttpEndpointInfo(status=status, body=body)
+
+    @classmethod
+    async def process(cls, host: Host, url: str) -> HttpEndpointInfo:
+        # Validate even on the simulated path so a bad URL is rejected
+        # identically on both transports (like ``Port.process``).
+        _check_url(url)
+        endpoints = getattr(host, "http_endpoints", None)
+        if endpoints is not None:
+            # SimulatedHost seam: url -> HttpEndpointInfo. Copy the record so
+            # callers never mutate the simulated state; an unlisted url reads as
+            # "no answer", like a curl that reached nothing.
+            info = endpoints.get(url)
+            if info is not None:
+                return dict(info)  # type: ignore[return-value]
+            return HttpEndpointInfo(status=None, body="")
+        # Real transport: curl runs on the host, so a localhost URL means the
+        # host's own loopback; the output is parsed the same way.
+        stdout = await host.run_shell(cls.command(url))
+        return cls.parse(stdout)
+
+
 def _check_pid(pid: int | None) -> None:
     # The BusyBox branch interpolates the pid into an awk program, where
     # shell quoting cannot protect it, so a non-int pid is rejected outright.
@@ -5172,6 +5301,47 @@ def is_listening(info: PortInfo) -> bool:
 
 
 @dataclass(frozen=True)
+class EndpointReady:
+    """The HTTP readiness predicate: the endpoint answered as requested.
+
+    A module-level *class*, instantiated with the accepted status codes and the
+    body markers to match, so it stays hashable and value-equal across the two
+    deploy phases -- like :func:`is_active` and :func:`is_listening` it must be
+    the same object each phase, and a frozen dataclass compares by value where
+    a freshly built lambda would not. Ready means:
+
+    * ``status`` is one of ``statuses`` (a refused/unreachable endpoint reports
+      ``None`` and so is never ready), and
+    * every ``contains`` substring is present in the body, and
+    * no ``absent`` substring is present in the body.
+
+    The ``geerlingguy.jenkins`` ``uri`` + ``until`` task is
+    ``EndpointReady(statuses=(200, 403), absent="Please wait while")``: the
+    port answers with 200 or 403 once Jenkins is up, but keeps serving
+    "Please wait while" while it upgrades.
+    """
+
+    #: Status codes that count as ready. Defaults to a plain success.
+    statuses: tuple[int, ...] = (200,)
+
+    #: Substrings that must each appear in the body, or ``None`` (unchecked).
+    contains: str | None = None
+
+    #: Substrings that must each be gone from the body, or ``None`` (unchecked).
+    absent: str | None = None
+
+    def __call__(self, info: HttpEndpointInfo) -> bool:
+        if info["status"] not in self.statuses:
+            return False
+        body = info["body"]
+        if self.contains is not None and self.contains not in body:
+            return False
+        if self.absent is not None:
+            return self.absent not in body
+        return True
+
+
+@dataclass(frozen=True)
 class WaitForFactCommand(WaitCommand):
     """Poll a fact until ``predicate(value)`` holds, or time out.
 
@@ -5196,7 +5366,11 @@ class WaitForFactCommand(WaitCommand):
 
     def __str__(self) -> str:
         args = ", ".join(repr(arg) for arg in self.args)
-        predicate = getattr(self.predicate, "__name__", "predicate")
+        # Function predicates (``is_listening``, ``is_active``) carry a
+        # ``__name__``; a predicate object (the ``EndpointReady`` dataclass)
+        # does not, so fall back to its class name -- mirroring how the fact
+        # above is named by its class.
+        predicate = getattr(self.predicate, "__name__", type(self.predicate).__name__)
         return (
             f"wait for {self.fact_cls.__name__}({args}) <{predicate}> "
             f"every {self.interval}s up to {self.timeout}s"
@@ -5337,6 +5511,86 @@ async def wait_service(
     )
 
 
+async def wait_url(
+    ctx: OpContext,
+    url: str,
+    status: tuple[int, ...] = (200,),
+    contains: str | None = None,
+    absent: str | None = None,
+    timeout: float = 300.0,
+    interval: float = 5.0,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Wait for an HTTP endpoint to become ready, polling it on the host.
+
+    The application-readiness half of the wait family, the HTTP counterpart to
+    ``server.wait`` (a port) and ``server.wait_service`` (a unit): it replaces
+    an Ansible ``uri`` + ``until`` readiness task (issue #43). It is a thin
+    composition of the generic :class:`WaitForFactCommand` over the
+    :class:`HttpEndpoint` fact and the :class:`EndpointReady` predicate, so a
+    single named request polls the URL with ``curl`` every ``interval`` seconds
+    until the status and body answer as requested or ``timeout`` expires
+    (raising ``WaitTimeoutError``). The check runs **host-locally**, so a
+    ``localhost`` URL means the target's own loopback -- the freshly started
+    daemon a role such as ``geerlingguy.jenkins`` gates on -- which the
+    controller could not reach.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        url (str): The ``http``/``https`` endpoint to poll; a bad scheme or
+            type is rejected at plan time.
+        status (tuple[int, ...], optional): Status codes that count as ready.
+            ``geerlingguy.jenkins`` accepts ``(200, 403)``. Defaults to
+            ``(200,)``. Pass a tuple, never a list (the request must hash).
+        contains (str, optional): A substring that must be present in the body
+            for the endpoint to count as ready. Defaults to ``None`` (unchecked).
+        absent (str, optional): A substring that must be gone from the body for
+            the endpoint to count as ready -- Jenkins' ``"Please wait while"``
+            upgrade page. Defaults to ``None`` (unchecked).
+        timeout (float, optional): Seconds to keep polling before raising
+            ``WaitTimeoutError``. Defaults to 300.0.
+        interval (float, optional): Seconds between polls. Defaults to 5.0.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The wait command, always (a wait is not idempotent).
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, TypeError, ValueError, WaitTimeoutError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_wait_url.py``.
+    """
+
+    # Like every wait this reads no facts and always yields: a plan-time fact
+    # read would reflect pre-deployment state in the prepare phase and
+    # post-deployment state in the apply phase, and branching on it would break
+    # the determinism guard, so the plan always shows the wait as a change and
+    # the driver performs the polling. The condition is discovered by the first
+    # poll -- a zero ``timeout`` still polls once, so an already-ready endpoint
+    # always succeeds. ``_check_url`` rejects a bad URL here, at plan time,
+    # rather than from inside the descriptor deep in the apply phase. The
+    # :class:`EndpointReady` predicate is rebuilt from these arguments in both
+    # phases; because it is a frozen dataclass it compares by value, so the
+    # yielded :class:`WaitForFactCommand` is identical across them (a lambda
+    # would not be). ``**kwargs`` absorbs any further global arguments (``op()``
+    # already strips ``name``/``sudo``/``su``).
+    _check_url(url)
+    predicate = EndpointReady(statuses=tuple(status), contains=contains, absent=absent)
+    ctx.changed = True
+    ctx.reason = f"wait for {url} to be ready"
+    yield WaitForFactCommand(
+        fact_cls=HttpEndpoint,
+        args=(url,),
+        predicate=predicate,
+        timeout=timeout,
+        interval=interval,
+    )
+
+
 __all__ = [
     "Arch",
     "AuthorizedKeys",
@@ -5344,6 +5598,7 @@ __all__ = [
     "AuthorizedKeysInstallCommand",
     "AuthorizedKeysUploadCommand",
     "Date",
+    "EndpointReady",
     "Env",
     "EtcHosts",
     "EtcHostsInstallCommand",
@@ -5354,6 +5609,8 @@ __all__ = [
     "HasGui",
     "Home",
     "Hostname",
+    "HttpEndpoint",
+    "HttpEndpointInfo",
     "Kernel",
     "KernelModules",
     "KernelVersion",
@@ -5408,4 +5665,5 @@ __all__ = [
     "user_authorized_keys",
     "wait",
     "wait_service",
+    "wait_url",
 ]

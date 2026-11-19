@@ -506,6 +506,8 @@ from reemote.modules.server.server import (
     EtcHostsUploadCommand,
     GroupAddCommand,
     GroupDelCommand,
+    HttpEndpoint,
+    HttpEndpointInfo,
     KillCommand,
     LocaleGenCommand,
     LocaleInstallCommand,
@@ -1721,6 +1723,15 @@ class SimulatedHost(Host):
     # steps -- or lets a command arm (``start_service``, a future listener
     # simulator) add it.
     listening_ports: dict[tuple[str, int], PortInfo] = field(default_factory=dict)
+    # HTTP endpoint reads (url -> the ``HttpEndpointInfo`` record the fact
+    # returns), backing ``HttpEndpoint`` and polled through ``server.wait_url``
+    # with the ``EndpointReady`` predicate. An unlisted url reads as "no answer"
+    # (status None, empty body), like a curl that reached nothing; the read
+    # copies the record, so a test can seed these directly. A read-only seam:
+    # nothing in the library serves HTTP, so no command ever mutates it -- a
+    # test that wants an endpoint to become ready seeds it between steps, or
+    # lets the simulated ``check_wait`` hold-or-fail at once.
+    http_endpoints: dict[str, HttpEndpointInfo] = field(default_factory=dict)
     # Running processes (PID -> {user, state, cpu_percent, mem_percent,
     # command, args}), backing ``Processes``. Each value is the parsed form
     # the fact returns -- the seam holds the joined record regardless of
@@ -7497,6 +7508,11 @@ class SimulatedHost(Host):
                 (protocol, port),
                 PortInfo(listening=False, process=None, pid=None),
             )
+        elif cmd.fact_cls is HttpEndpoint:
+            # The same seam ``HttpEndpoint.process`` reads, with the same
+            # no-answer record it returns for an unlisted url.
+            (url,) = cmd.args
+            value = self.http_endpoints.get(url, HttpEndpointInfo(status=None, body=""))
         else:
             raise TypeError(f"unsupported simulated wait fact: {cmd.fact_cls!r}")
         if not cmd.predicate(value):

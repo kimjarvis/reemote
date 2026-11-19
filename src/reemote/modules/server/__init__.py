@@ -9,7 +9,7 @@ Re-exports everything from ``server.py`` so the operations
 ``server.modprobe``, ``server.mount``, ``server.security_limit``,
 ``server.service``,
 ``server.timezone``, ``server.user``, ``server.user_authorized_keys``,
-``server.wait``, ``server.wait_service``), the facts
+``server.wait``, ``server.wait_service``, ``server.wait_url``), the facts
 (``server.Arch``, ``server.AuthorizedKeys``, ``server.AuthorizedKeysFile``,
 ``server.Date``,
 ``server.Env``,
@@ -75,6 +75,7 @@ from .server import (
     AuthorizedKeysInstallCommand,
     AuthorizedKeysUploadCommand,
     Date,
+    EndpointReady,
     Env,
     EtcHosts,
     EtcHostsInstallCommand,
@@ -86,6 +87,8 @@ from .server import (
     HasGui,
     Home,
     Hostname,
+    HttpEndpoint,
+    HttpEndpointInfo,
     Kernel,
     KernelModules,
     KernelVersion,
@@ -140,6 +143,7 @@ from .server import (
     user_authorized_keys,
     wait,
     wait_service,
+    wait_url,
 )
 
 __all__ = [
@@ -149,6 +153,7 @@ __all__ = [
     "AuthorizedKeysInstallCommand",
     "AuthorizedKeysUploadCommand",
     "Date",
+    "EndpointReady",
     "Env",
     "EtcHosts",
     "EtcHostsInstallCommand",
@@ -160,6 +165,8 @@ __all__ = [
     "HasGui",
     "Home",
     "Hostname",
+    "HttpEndpoint",
+    "HttpEndpointInfo",
     "Kernel",
     "KernelModules",
     "KernelVersion",
@@ -216,4 +223,5 @@ __all__ = [
     "user_authorized_keys",
     "wait",
     "wait_service",
+    "wait_url",
 ]

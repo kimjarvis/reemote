@@ -159,6 +159,7 @@ from reemote.modules.server.server import (
     AuthorizedKeysInstallCommand,
     AuthorizedKeysUploadCommand,
     Date,
+    EndpointReady,
     Env,
     EtcHosts,
     EtcHostsInstallCommand,
@@ -170,6 +171,8 @@ from reemote.modules.server.server import (
     HasGui,
     Home,
     Hostname,
+    HttpEndpoint,
+    HttpEndpointInfo,
     Kernel,
     KernelModules,
     KernelVersion,
@@ -7933,4 +7936,248 @@ async def test_security_limit_dry_run_sends_nothing():
     for host in hosts:
         assert host.remote_files == {SL_PATH: SL_FILE.encode()}
         assert SL_PATH not in host.file_stats
+
+
+# --- HttpEndpoint fact -------------------------------------------------------
+
+URL = "http://localhost:8080/cli/"
+# The geerlingguy.jenkins ``uri`` + ``until`` task: accept 200 or 403, and keep
+# polling while the upgrade page is served.
+JENKINS_READY = EndpointReady(statuses=(200, 403), absent="Please wait while")
+
+
+class FlippingEndpointHost(Host):
+    """A host whose ``curl`` answer becomes ready after ``flip_after`` reads.
+
+    Drives the real poll loop without a transport: ``HttpEndpoint.process``
+    has no ``http_endpoints`` seam here (a plain ``Host``), so it falls through
+    to ``run_shell``; each read is counted so the test can assert how many
+    polls the loop made.
+    """
+
+    def __init__(self, flip_after: int):
+        super().__init__(name="flipping")
+        self.flip_after = flip_after
+        self.reads = 0
+
+    async def run_shell(self, shell: str, *, check: bool = False) -> str:
+        self.reads += 1
+        if self.reads >= self.flip_after:
+            return "<html>Jenkins</html>\n200"
+        return "Please wait while Jenkins upgrades\n200"
+
+
+async def test_http_endpoint_parses_status_and_body():
+    host = CannedShellHost("<html>Jenkins</html>\n200")
+    assert await HttpEndpoint.process(host, URL) == HttpEndpointInfo(
+        status=200, body="<html>Jenkins</html>"
+    )
+    assert host.shells == [HttpEndpoint.command(URL)]
+
+
+def test_http_endpoint_parse_normalises_the_no_response_code():
+    # curl prints ``000`` when it reached nothing -- that is "unreachable", the
+    # same ``None`` an unseeded seam reads, not status code zero.
+    assert HttpEndpoint.parse("\n000") == HttpEndpointInfo(status=None, body="")
+    # No write-out at all (the command failed before curl ran its -w) is no
+    # answer either.
+    assert HttpEndpoint.parse("") == HttpEndpointInfo(status=None, body="")
+
+
+def test_http_endpoint_parse_keeps_the_bodys_own_trailing_newline():
+    # Only the LAST newline -- the write-out separator -- is split off; a body
+    # that ends in a newline keeps it, so ``contains``/``absent`` see it whole.
+    assert HttpEndpoint.parse("line1\nline2\n\n403") == HttpEndpointInfo(
+        status=403, body="line1\nline2\n"
+    )
+
+
+def test_http_endpoint_command_quotes_the_url():
+    assert (
+        HttpEndpoint.command("http://host/a b;rm")
+        == "curl -s -w '\\n%{http_code}' 'http://host/a b;rm'"
+    )
+
+
+def test_http_endpoint_rejects_a_bad_url_scheme_and_type():
+    # A readiness poll never reaches a local or other scheme, and a non-str is
+    # rejected outright -- before anything is sent.
+    for bad in ("ftp://host/x", "file:///etc/passwd", "localhost:8080", ""):
+        with pytest.raises(ValueError, match="http or https"):
+            HttpEndpoint.command(bad)
+    with pytest.raises(TypeError):
+        HttpEndpoint.command(8080)  # type: ignore[arg-type]
+
+
+async def test_http_endpoint_rejects_a_bad_url_on_both_transports():
+    for bad in ("ftp://host/x", "file:///etc/passwd", ""):
+        with pytest.raises(ValueError, match="http or https"):
+            await HttpEndpoint.process(CannedShellHost(""), bad)
+        with pytest.raises(ValueError, match="http or https"):
+            await HttpEndpoint.process(SimulatedHost(name="h"), bad)
+
+
+async def test_http_endpoint_reads_the_simulated_seam():
+    record = HttpEndpointInfo(status=403, body="Jenkins")
+    host = SimulatedHost(name="h", http_endpoints={URL: record})
+    assert await HttpEndpoint.process(host, URL) == record
+    # An unlisted url reads as "no answer", like a curl that reached nothing.
+    assert await HttpEndpoint.process(host, "http://other/") == HttpEndpointInfo(
+        status=None, body=""
+    )
+
+
+async def test_http_endpoint_seam_returns_a_copy():
+    host = SimulatedHost(
+        name="h", http_endpoints={URL: HttpEndpointInfo(status=200, body="x")}
+    )
+    info = await HttpEndpoint.process(host, URL)
+    info["body"] = "mutated"
+    assert host.http_endpoints[URL] == HttpEndpointInfo(status=200, body="x")
+
+
+# --- EndpointReady predicate -------------------------------------------------
+
+
+def test_endpoint_ready_default_accepts_only_plain_success():
+    ready = EndpointReady()
+    assert ready(HttpEndpointInfo(status=200, body=""))
+    assert not ready(HttpEndpointInfo(status=403, body=""))
+    assert not ready(HttpEndpointInfo(status=503, body=""))
+
+
+def test_endpoint_ready_jenkins_status_and_absent_marker():
+    # 200/403 both accepted, but the upgrade page holds the wait open until it
+    # is gone -- exactly the ``uri`` + ``until`` semantics.
+    assert not JENKINS_READY(
+        HttpEndpointInfo(status=200, body="Please wait while Jenkins upgrades")
+    )
+    assert JENKINS_READY(HttpEndpointInfo(status=200, body="<html>Jenkins</html>"))
+    assert JENKINS_READY(HttpEndpointInfo(status=403, body=""))
+    assert not JENKINS_READY(HttpEndpointInfo(status=503, body=""))
+
+
+def test_endpoint_ready_requires_contains_and_rejects_unreachable():
+    pred = EndpointReady(statuses=(200,), contains="OK")
+    assert pred(HttpEndpointInfo(status=200, body="all OK"))
+    assert not pred(HttpEndpointInfo(status=200, body="nope"))
+    # A refused/unreachable endpoint (status None) is never ready, whatever the
+    # body says.
+    assert not EndpointReady(statuses=(200,))(HttpEndpointInfo(status=None, body="OK"))
+
+
+def test_endpoint_ready_is_hashable_and_value_equal():
+    assert hash(JENKINS_READY) == hash(
+        EndpointReady(statuses=(200, 403), absent="Please wait while")
+    )
+    assert JENKINS_READY == EndpointReady(statuses=(200, 403), absent="Please wait while")
+    assert JENKINS_READY != EndpointReady(statuses=(200,))
+
+
+# --- server.wait_url end to end ----------------------------------------------
+
+
+def wait_url_cmd(timeout: float = 0.0, interval: float = 0.0) -> WaitForFactCommand:
+    return WaitForFactCommand(
+        fact_cls=HttpEndpoint,
+        args=(URL,),
+        predicate=JENKINS_READY,
+        timeout=timeout,
+        interval=interval,
+    )
+
+
+async def test_wait_url_always_yields_and_reads_no_facts():
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.wait_url,
+            url=URL,
+            status=(200, 403),
+            absent="Please wait while",
+            timeout=60.0,
+            interval=2.0,
+        ),
+    )
+    assert ctx.changed
+    assert ctx.reason == f"wait for {URL} to be ready"
+    assert commands == [wait_url_cmd(timeout=60.0, interval=2.0)]
+
+
+def test_wait_url_renders_the_fact_and_predicate():
+    assert command_shell(wait_url_cmd(timeout=60.0, interval=2.0)) == (
+        f"wait for HttpEndpoint({URL!r}) <EndpointReady> every 2.0s up to 60.0s"
+    )
+
+
+async def test_wait_url_polls_until_the_endpoint_is_ready():
+    # Upgrade page on the first two reads, ready on the third.
+    host = FlippingEndpointHost(flip_after=3)
+    assert (
+        await wait_url_cmd(timeout=60.0).wait(host) == "condition met after 3 poll(s)"
+    )
+    assert host.reads == 3
+
+
+async def test_wait_url_times_out_on_an_endpoint_that_never_answers():
+    host = CannedShellHost("\n000")  # unreachable forever
+    with pytest.raises(WaitTimeoutError, match="None"):
+        await wait_url_cmd().wait(host)
+
+
+async def test_simulated_host_evaluates_an_endpoint_wait_once():
+    met = SimulatedHost(
+        name="h", http_endpoints={URL: HttpEndpointInfo(status=200, body="Jenkins")}
+    )
+    await send_command(met, wait_url_cmd(timeout=60.0))
+
+    upgrading = SimulatedHost(
+        name="h",
+        http_endpoints={
+            URL: HttpEndpointInfo(status=200, body="Please wait while Jenkins upgrades")
+        },
+    )
+    with pytest.raises(WaitTimeoutError, match="Please wait while"):
+        await send_command(upgrading, wait_url_cmd(timeout=60.0))
+
+
+def jenkins_ready_factory(entry: dict) -> Host:
+    host = SimulatedHost.from_inventory(entry)
+    host.http_endpoints = {URL: HttpEndpointInfo(status=403, body="<html>Jenkins</html>")}
+    return host
+
+
+def wait_url_deploy(host: Host) -> Generator[OperationRequest]:
+    yield op(
+        server.wait_url,
+        name="Wait for Jenkins to finish upgrading",
+        url=URL,
+        status=(200, 403),
+        absent="Please wait while",
+        timeout=60.0,
+        interval=2.0,
+    )
+
+
+async def test_wait_url_runs_end_to_end_across_hosts():
+    plans, report, _hosts = await run(
+        INVENTORY, wait_url_deploy, host_factory=jenkins_ready_factory
+    )
+    assert format_plan(plans).splitlines() == [
+        (
+            "web1: Wait for Jenkins to finish upgrading "
+            f"[changed: wait for {URL} to be ready]"
+        ),
+        (
+            "web2: Wait for Jenkins to finish upgrading "
+            f"[changed: wait for {URL} to be ready]"
+        ),
+    ]
+    assert report is not None
+    log = format_log(report)
+    assert (
+        f"$ wait for HttpEndpoint({URL!r}) <EndpointReady> every 2.0s up to 60.0s"
+        in log
+    )
 

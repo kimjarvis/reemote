@@ -50,6 +50,8 @@ back as an error `Result` (exit 127), never an exception. See the
         - HasGui
         - Home
         - Hostname
+        - HttpEndpoint
+        - HttpEndpointInfo
         - Kernel
         - KernelModules
         - KernelVersion
@@ -83,6 +85,7 @@ back as an error `Result` (exit 127), never an exception. See the
         - user_authorized_keys
         - wait
         - wait_service
+        - wait_url
 
 
 <!---
@@ -746,6 +749,33 @@ connections* — the port is the stronger claim, since a unit can report
 manage opens its port all the same. A bad port or protocol raises at plan
 time, before the wait is ever sent.
 
+Neither wait reads an HTTP response, which is what an application readiness
+gate needs: a daemon can hold its port open long before it can serve requests,
+and Jenkins keeps answering `"Please wait while"` *while it upgrades, port
+already listening*. For that slice `server.wait_url` is the third specialised
+wrapper — the HTTP counterpart to `wait`/`wait_service` — and it is a thin
+composition of the same generic `WaitForFactCommand` over two new primitives:
+the `HttpEndpoint` fact, which runs `curl -s -w '\n%{http_code}' <url>` **on
+the host** (so a `localhost` URL keeps its Ansible meaning — the target's own
+loopback, which the controller could not reach) and reports an
+[`HttpEndpointInfo`][reemote.modules.server.server.HttpEndpointInfo] record of
+the `status` code (`None` when nothing answered) and the `body`; and the
+`EndpointReady` predicate, which decides readiness from that record. Unlike
+`files.fetch_url` a non-`2xx` response is no error — the code is the answer,
+so the accepted states are observable rather than raised. `wait_url(url, status=,
+contains=, absent=)` builds an
+[`EndpointReady`][reemote.modules.server.server.EndpointReady] from its
+arguments: `status` is one of the accepted codes, every `contains` substring is
+present, and no `absent` substring is. Because the predicate is a frozen
+dataclass it compares by value across both phases, so the descriptor is
+identical in prepare and apply. The `geerlingguy.jenkins` `uri` + `until` task
+becomes `server.wait_url(url, status=(200, 403), absent="Please wait while")` —
+one named in-deploy request. The fact and predicate stay importable, so a
+deploy that needs a shape `wait_url` does not cover can compose its own
+`WaitForFactCommand` over them; `server.wait` and `server.wait_service` remain
+the `Port`/`is_listening` and `SystemdServiceState`/`is_active` wrappers, and
+the same constraints below apply to all three.
+
 Three constraints follow from the execution model:
 
 - **The operation body never polls.** The prepare phase never sends, and its
@@ -784,7 +814,10 @@ The test framework's `SimulatedHost` holds `services` (unit → `ActiveState`)
 and `enabled_services` as the seams the facts read, mutates them on
 `SystemctlCommand`, and holds `listening_ports` (the `(protocol, port)` →
 `PortInfo` table `Port.process` reads) as a read-only seam — nothing in the
-library's operation set opens a socket, so no command ever mutates it. Either
+library's operation set opens a socket, so no command ever mutates it. The
+`http_endpoints` seam (the `url` → `HttpEndpointInfo` table
+`HttpEndpoint.process` reads) is read-only for the same reason — no command
+serves HTTP — so a test seeds the readiness answer directly. Either
 way the simulated host evaluates a `WaitForFactCommand` *once* without
 sleeping: in-memory state never changes on its own, so the condition either
 already holds or the simulated wait raises `WaitTimeoutError` immediately.
@@ -795,6 +828,7 @@ already holds or the simulated wait raises `WaitTimeoutError` immediately.
       members:
         - is_active
         - is_listening
+        - EndpointReady
 
 ## Example
 
