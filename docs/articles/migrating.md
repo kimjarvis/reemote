@@ -92,7 +92,7 @@ This is a target a model can hit reliably, because "read `report.entries[i].chan
 
 ### Comprehensive modules — a one-to-one vocabulary with Ansible
 
-This is the single biggest reason Reemote translates well. A model can only map `apt_repository` onto something if that something exists. Reemote ships twenty modules, and each one implements the *whole* surface of its domain as operations and facts — not just the common verbs.
+This is the single biggest reason Reemote translates well. A model can only map `apt_repository` onto something if that something exists. Reemote ships a module per management domain, and each one implements the *whole* surface of its domain as operations and facts — not just the common verbs.
 
 Take `apt`. Ansible spreads package management across `apt`, `apt_key`, `apt_repository`, `apt_mark`, and a dozen parameters. Reemote's `apt` module covers the same ground with matching operations: `packages` (install/upgrade/remove by name, version-pinnable), `repo` and `sources_file` (legacy `.list` and modern deb822 sources), `ppa`, `key` (GPG keyrings), `deb` (a standalone `.deb`), `mark` (hold/unhold), `update`, `upgrade`, `dist_upgrade`, and `auto_remove`. Every operation reads a matching fact — what is installed, what is held, which sources are configured, which keys are trusted, what an upgrade would move, what an autoremove would clean — so nothing is faked with a shell one-liner and the read side is as complete as the write side.
 
@@ -114,7 +114,7 @@ That completeness is what makes translation near-mechanical:
 | `service` / `systemd` | `systemd.service` |
 | `notify` + handler | two deploys + `changed_hosts` / `restart_handler` |
 
-The twenty modules span package managers (`apt`, `dnf`, `apk`, `snap`, `flatpak`), files and version control (`files`, `git`), services (`systemd`, `openrc`), firewalls (`firewalld`, `iptables`, `ufw`), system configuration (`server`, `sysctl`, `selinux`, `hardware`), keys (`gpg`), databases (`mysql`, `postgresql`), and containers (`lxd`). When the destination vocabulary is this complete, the model spends its effort choosing the right operation instead of reimplementing a missing one.
+The modules span package managers, files and version control, services, firewalls, system configuration, keys, databases and containers. When the destination vocabulary is this complete, the model spends its effort choosing the right operation instead of reimplementing a missing one.
 
 ### Pure functional deploys
 
@@ -148,7 +148,7 @@ Honest boundaries, because overselling helps nobody:
 
 - **Not a deployment CLI.** There is no `reemote` command. You write the script.
 - **Not an inventory format.** Inventory is a Python list of dicts — load it from JSON, YAML, a database, or write it inline.
-- **Not a role ecosystem.** Twenty modules ship in the box, but there is no Ansible Galaxy equivalent to pull third-party roles from.
+- **Not a role ecosystem.** The modules ship in the box, but there is no Ansible Galaxy equivalent to pull third-party roles from.
 - **Not an OS translation layer.** Python does not make `nginx` installable by the same name on Alpine and Debian. You still pick the right module for the target — the AI still has to know `apk` from `apt`.
 - **Not an automatic transpiler.** Reemote is the *target*, not the translator. The AI does the mapping and you review it. The library's job is to make that mapping bounded, idiomatic, and testable — which is precisely the part that was impossible before.
 

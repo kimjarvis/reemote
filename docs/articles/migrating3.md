@@ -22,7 +22,7 @@ Async end to end on asyncssh — the runtime supplies fleet-wide concurrency wit
 
 Structured results — a run returns a plan and a per-operation report of what changed, why, and the exact commands sent; dry=True restores the lost dry-run as data a program can assert on.
 
-A one-to-one module vocabulary — twenty modules cover package managers, files, services, firewalls, system configuration, keys, databases and containers, so apt_repository maps to apt.repo, lineinfile to files.edit, get_url to files.download, service to systemd.service.
+A one-to-one module vocabulary — modules covering package managers, files, services, firewalls, system configuration, keys, databases and containers, so apt_repository maps to apt.repo, lineinfile to files.edit, get_url to files.download, service to systemd.service.
 
 Pure functional deploys — the runner executes every deploy twice, plan then apply, and raises if the passes disagree; typical model mistakes are caught at plan time, and the code is testable without servers.
 
