@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any, TypedDict, cast
 
-from ...commands import Command, TransferCommand
+from ...commands import Command, StringCommand, TransferCommand
 from ...core import OpContext
 from ...hosts import Host
 
@@ -1219,6 +1219,7 @@ async def service(
     user_mode: bool = False,
     machine: str | None = None,
     user_name: str | None = None,
+    sleep: int | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Manage the state of a systemd unit.
@@ -1253,10 +1254,19 @@ async def service(
         user_name (str | None, optional): Connect to a specific user's
             systemd session (``--machine=<user>@<machine>`` or
             ``<user>@.host``). Defaults to None.
+        sleep (int | None, optional): Seconds to pause between the stop and
+            the start of a ``restarted`` unit, splitting the restart into
+            ``systemctl stop`` / ``sleep N`` / ``systemctl start`` instead of
+            one ``systemctl restart``. Helps around badly-behaving init
+            scripts that exit immediately after stopping but have not
+            actually stopped. Honored on the restart path only -- a plain
+            start, stop, reload or enable is unaffected. Defaults to None
+            (the single restart command).
         **kwargs: Additional keyword arguments.
 
     Yields:
-        Command: Generated systemctl commands.
+        Command: Generated systemctl commands; with ``sleep`` the restart is
+            three of them -- ``stop``, the raw ``sleep N`` and ``start``.
 
     **Raises:**
 
@@ -1273,7 +1283,10 @@ async def service(
     # ``machine``/``user_name`` scope), with three reemote extensions:
     # ``reset_failed`` clears a failed state first, ``soft_reload`` swaps
     # ``reload`` for ``reload-or-try-restart``, and ``now`` adds ``--now`` to
-    # the enable/disable. An arbitrary ``command`` verb is
+    # the enable/disable. A fourth, ``sleep``, is Ansible's own option: it
+    # replaces the single restart with stop / ``sleep N`` / start, and is inert
+    # on every other path (``systemctl restart`` already waits for the stop
+    # job). An arbitrary ``command`` verb is
     # deliberately dropped -- ``service`` already accepts any unit suffix and
     # the dedicated operations cover the rest -- so that keyword is absorbed
     # by ``**kwargs`` with no effect.
@@ -1322,8 +1335,20 @@ async def service(
     # just started above, or is meant to stay stopped).
     if restarted and is_running:
         ctx.changed = True
-        reasons.append(f"{unit} will restart")
-        yield SystemctlCommand(action="restart", unit=unit, **scope)
+        if sleep is None:
+            reasons.append(f"{unit} will restart")
+            yield SystemctlCommand(action="restart", unit=unit, **scope)
+        else:
+            # Ansible's ``sleep``: split the restart into stop, pause, start.
+            # ``systemctl restart`` is synchronous -- systemd waits for the
+            # stop job before starting -- so this only matters for the SysV
+            # wrappers (and the init scripts behind them) that report a stop
+            # they have not finished; the pause is a raw ``sleep``, so it rides
+            # the request's own elevation like every other command here.
+            reasons.append(f"{unit} will restart (stop, sleep {sleep}s, start)")
+            yield SystemctlCommand(action="stop", unit=unit, **scope)
+            yield StringCommand(f"sleep {sleep}")
+            yield SystemctlCommand(action="start", unit=unit, **scope)
 
     if reloaded and is_running:
         ctx.changed = True

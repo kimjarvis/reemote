@@ -45,13 +45,14 @@ The library gaps this migration found are CLOSED on main
 * **#32** -- ``dnf.packages(enable_repos=...)`` is the additive
   ``yum: enablerepo=`` parity kwarg (``repos=`` would disable every other
   repo -- a different Ansible spelling).
+* **#44** (the former GAP-1) -- ``systemd.service(sleep=)`` is the ``service``
+  module's ``sleep:`` parity: it splits a restart into ``systemctl stop``, a
+  raw ``sleep N`` and ``systemctl start``. ``build_handler`` passes ``sleep=5``,
+  the role's own ``handlers/main.yml`` value.
 
-Two implementation gaps remain OPEN (workarounds tagged in the code)
---------------------------------------------------------------------
+One implementation gap remains OPEN (workaround tagged in the code)
+-------------------------------------------------------------------
 
-* **GAP-1 (#44)** -- ``systemd.service`` has no ``sleep:`` parity. The role's
-  handler sleeps 5s between stop and start; ``systemctl restart`` is
-  synchronous, so the sleep is dropped (see ``build_handler``).
 * **GAP-2 (#45)** -- ``postgresql.role`` reconciles all six boolean attribute
   flags unconditionally, while Ansible's ``role_attr_flags`` adjusts ONLY the
   listed flags. Workaround: gather ``PostgresqlRoles`` after the service is
@@ -88,7 +89,6 @@ Recorded at the point of use and in
 * ``login_host`` is ignored: Ansible's ``login_unix_socket`` wins over
   ``login_host`` in psycopg2, so the effective connection is always the
   socket (``psql_host=<socket dir>``).
-* the handler's ``sleep: 5`` is dropped (GAP-1, #44).
 * ``role_attr_flags`` partial reconciliation is reproduced control-side
   (GAP-2, #45); a duplicate user name fails fast instead of Ansible's
   last-item-wins, and a ``state: absent`` user is not created first (the
@@ -1132,11 +1132,13 @@ def build_handler(
 ) -> Callable[[Host], Generator[OperationRequest]]:
     """The handler: handlers/main.yml's ``restart postgresql``.
 
-    GAP-1 (#44): the role's ``sleep: 5`` is dropped -- systemd.service has no
-    sleep parity, and ``systemctl restart`` is synchronous (the sleep only
-    works around badly-behaving SysV init scripts, which this unit is not).
-    The notified set is frozen between runs; an empty set yields an empty
-    deploy, the converged no-op Ansible's handler gives for free.
+    Issue #44 closed the sleep gap: ``sleep=5`` is the role's own value, so
+    ``systemd.service`` renders stop / ``sleep 5`` / start instead of one
+    ``systemctl restart``. The pause is inert when the state is overridden to
+    something other than ``restarted`` -- exactly as in Ansible, where
+    ``sleep:`` only applies to a restart. The notified set is frozen between
+    runs; an empty set yields an empty deploy, the converged no-op Ansible's
+    handler gives for free.
     """
 
     def handler(host: Host) -> Generator[OperationRequest]:
@@ -1147,6 +1149,7 @@ def build_handler(
             (host.name,),
             (plan["daemon"],),
             action=plan["handler_action"],
+            sleep=5,
             when=is_centos,
         )(host)
 

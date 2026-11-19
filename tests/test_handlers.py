@@ -23,6 +23,7 @@ from reemote import (
     OperationRequest,
     Privilege,
     changed_hosts,
+    format_log,
     format_plan,
     op,
     reload_handler,
@@ -125,6 +126,24 @@ def test_restart_handler_forwards_privilege_and_guard():
 
     assert request.sudo is Privilege.OFF
     assert request.when == (is_centos,)
+
+
+def test_restart_handler_forwards_sleep():
+    # Ansible's ``sleep:`` on the handler's service task (issue #44).
+    (request,) = _requests(restart_handler({"web1"}, "nginx", sleep=5), Host(name="web1"))
+
+    assert request.kwargs["restarted"] is True
+    assert request.kwargs["sleep"] == 5
+    # The int keeps the request hashable, so the dedupe key still works.
+    hash(request)
+
+
+def test_restart_handler_without_sleep_omits_the_keyword():
+    # A handler built without ``sleep`` yields exactly the request arguments it
+    # yielded before the parameter existed, so existing plans are unchanged.
+    (request,) = _requests(restart_handler({"web1"}, "nginx"), Host(name="web1"))
+
+    assert "sleep" not in request.kwargs
 
 
 def test_restart_handler_yields_one_request_per_service():
@@ -313,6 +332,28 @@ async def test_reload_fires_only_on_the_changed_host():
     assert handler_report is not None
     assert [e.host for e in handler_report.log] == ["web2"]
     assert handler_report.log[0].changed
+
+
+async def test_restart_handler_sleep_splits_the_logged_commands():
+    # The handler half of issue #44: ``sleep`` reaches the operation, so the
+    # logged restart is three elevated commands instead of one.
+    _plans, report, _hosts = await run(
+        INVENTORY, ensure_nginx_enabled, host_factory=host_factory
+    )
+    assert report is not None
+
+    changed = changed_hosts(report, {"Ensure nginx enabled"})
+    restart = restart_handler(changed, "nginx", sleep=5, when=is_centos)
+    _plans, handler_report, _hosts = await run(
+        INVENTORY, restart, host_factory=host_factory
+    )
+
+    assert handler_report is not None
+    log = format_log(handler_report)
+    assert "$ sudo systemctl stop nginx.service" in log
+    assert "$ sudo sleep 5" in log
+    assert "$ sudo systemctl start nginx.service" in log
+    assert "$ sudo systemctl restart nginx.service" not in log
 
 
 async def test_handler_dry_run_is_an_honest_preview():

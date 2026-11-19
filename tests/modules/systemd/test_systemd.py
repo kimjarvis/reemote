@@ -6,8 +6,9 @@
 Covers ``reemote.modules.systemd.systemd``: the ``unit_name`` normalization
 helper; the per-unit ``SystemdServiceState``/``SystemdServiceEnabled`` probes
 and the ``service``/``daemon_reload`` operations (idempotence against the
-seams, seam mutation, the baseline operation-fixture parity and the
-backward-compatible ``server.service`` alias); the fleet-wide
+seams, seam mutation, the baseline operation-fixture parity, the Ansible
+``sleep`` restart split and the backward-compatible ``server.service``
+alias); the fleet-wide
 ``SystemdStatus``/``SystemdEnabled`` ports (the baseline fact-fixture parity over
 canned shell output, plus the seam projections); and the seven reemote
 originals -- ``SystemdUnitProperties``, ``SystemdFailedUnits``,
@@ -29,6 +30,7 @@ from collections.abc import Callable, Generator
 
 import pytest
 
+from reemote.commands import StringCommand
 from reemote.core import FactCache, OpContext, OperationRequest, op
 from reemote.drivers import (
     DeterminismError,
@@ -448,6 +450,74 @@ async def test_service_now_without_enabled_change_has_no_effect():
     assert commands == []
 
 
+async def test_service_sleep_splits_the_restart_into_stop_sleep_start():
+    # Ansible's ``sleep:`` parity (issue #44): the restart becomes three
+    # commands, the pause a raw ``sleep`` riding the request's elevation.
+    host = SimulatedHost(name="h", services={"httpd.service": "active"})
+    ctx, commands = await materialize(
+        host, op(systemd.service, service="httpd", restarted=True, sleep=5)
+    )
+    assert ctx.changed
+    assert ctx.reason == (
+        "httpd.service already running; "
+        "httpd.service will restart (stop, sleep 5s, start)"
+    )
+    assert commands == [
+        SystemctlCommand(action="stop", unit="httpd.service"),
+        StringCommand("sleep 5"),
+        SystemctlCommand(action="start", unit="httpd.service"),
+    ]
+    assert [command_shell(cmd, sudo=True) for cmd in commands] == [
+        "sudo systemctl stop httpd.service",
+        "sudo sleep 5",
+        "sudo systemctl start httpd.service",
+    ]
+
+
+async def test_service_sleep_none_keeps_the_single_restart():
+    # The default path is byte-identical to the pre-``sleep`` operation.
+    host = SimulatedHost(name="h", services={"httpd.service": "active"})
+    ctx, commands = await materialize(
+        host, op(systemd.service, service="httpd", restarted=True, sleep=None)
+    )
+    assert ctx.reason == "httpd.service already running; httpd.service will restart"
+    assert commands == [SystemctlCommand(action="restart", unit="httpd.service")]
+
+
+async def test_service_sleep_zero_still_splits_the_restart():
+    # ``sleep=0`` is a request for the split, not an absent sleep.
+    host = SimulatedHost(name="h", services={"httpd.service": "active"})
+    _ctx, commands = await materialize(
+        host, op(systemd.service, service="httpd", restarted=True, sleep=0)
+    )
+    assert commands == [
+        SystemctlCommand(action="stop", unit="httpd.service"),
+        StringCommand("sleep 0"),
+        SystemctlCommand(action="start", unit="httpd.service"),
+    ]
+
+
+async def test_service_sleep_is_inert_on_the_other_paths():
+    # A stopped unit is started rather than restarted, so there is no stop to
+    # pause after.
+    stopped = SimulatedHost(name="h", services={"httpd.service": "inactive"})
+    _ctx, commands = await materialize(
+        stopped, op(systemd.service, service="httpd", restarted=True, sleep=5)
+    )
+    assert commands == [SystemctlCommand(action="start", unit="httpd.service")]
+
+    # Reload and the plain running/enabling verbs are unaffected.
+    host = SimulatedHost(name="h", services={"httpd.service": "active"})
+    _ctx, commands = await materialize(
+        host, op(systemd.service, service="httpd", reloaded=True, sleep=5)
+    )
+    assert commands == [SystemctlCommand(action="reload", unit="httpd.service")]
+
+    ctx, commands = await materialize(host, op(systemd.service, service="httpd", sleep=5))
+    assert not ctx.changed
+    assert commands == []
+
+
 async def test_service_scope_is_forwarded_to_the_descriptors():
     host = SimulatedHost(name="h", services={"httpd.service": "inactive"})
     _ctx, commands = await materialize(
@@ -604,6 +674,33 @@ async def test_service_runs_across_hosts_in_lockstep():
     for host in hosts:
         assert host.services == {"httpd.service": "active"}
         assert host.enabled_services == {"httpd.service"}
+
+
+async def test_service_sleep_restart_runs_across_hosts_in_lockstep():
+    def restart(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            systemd.service,
+            name="Restart httpd",
+            service="httpd",
+            restarted=True,
+            sleep=5,
+            sudo=True,
+        )
+
+    def running_factory(entry: dict) -> Host:
+        host = SimulatedHost.from_inventory(entry)
+        host.services = {"httpd.service": "active"}
+        return host
+
+    _plans, report, hosts = await run(INVENTORY, restart, host_factory=running_factory)
+    assert report is not None
+    log = format_log(report)
+    assert log.count("$ sudo systemctl stop httpd.service") == 2
+    assert log.count("$ sudo sleep 5") == 2
+    assert log.count("$ sudo systemctl start httpd.service") == 2
+    # The raw sleep has no simulated effect; the split still converges running.
+    for host in hosts:
+        assert host.services == {"httpd.service": "active"}
 
 
 async def test_service_is_idempotent_across_runs():

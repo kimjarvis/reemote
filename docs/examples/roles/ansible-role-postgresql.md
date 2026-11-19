@@ -241,7 +241,7 @@ load_inventory + validate ──► targets = group "centos" ──► role_sett
 │          postgresql.role (create) → postgresql.database → postgresql.role
 │          (partial reconcile) + postgresql.privilege
 └─ handler  changed_hosts(run2 ∪ run3, NOTIFY_RESTART)
-           → service_handler(notified, ("postgresql",), action=restarted_state)
+           → service_handler(notified, ("postgresql",), action=restarted_state, sleep=5)
 ```
 
 Why this order:
@@ -278,19 +278,19 @@ shape change) · **workaround** (possible with a recorded deviation).
 | `file: socket dirs owner/group=postgres mode=0755` loop | `files.directory` per dir | covered |
 | `service: started enabled` | `systemd.service(running=…, enabled=…)` | covered |
 | `postgresql_user` create pass (users.yml, no flags) | `postgresql.role` with CREATE USER defaults, skipped for catalog-present roles (GAP-2) | workaround |
-| `postgresql_db` loop | `postgresql.database` (encoding normalized, D6) | covered |
+| `postgresql_db` loop | `postgresql.database` (encoding normalized, D5) | covered |
 | `postgresql_user` reconcile pass (`role_attr_flags`, `state`) | `postgresql.role` with the frozen-catalog fill (GAP-2) | workaround |
 | `debug:` deprecated `priv` warning | control-side print | covered |
 | `postgresql_privs` loop | `postgresql.privilege` (#29); exotic types rejected citing #29 | covered |
-| handler `service: state=restarted sleep=5` | `service_handler(action=…)`; sleep dropped (GAP-1, #44) | workaround |
+| handler `service: state=restarted sleep=5` | `service_handler(action=…, sleep=5)` — `systemd.service(sleep=)` splits the restart into stop / `sleep 5` / start (#44) | covered |
 | `no_log`, `PGOPTIONS`, `ansible_ssh_pipelining`, `login_password` | dropped — credentials boundary / moot (D1, D2) | deviation |
 
 ---
 
 ## 6. Implementation gaps
 
-Six gaps this migration family found were **fixed on `main` before this
-program landed** — it uses the native operations directly:
+Seven gaps this migration family found are **closed on `main`** — it uses the
+native operations directly:
 [#27](https://github.com/kimjarvis/reemote/issues/27) (`dnf.packages`
 `exclude`), [#28](https://github.com/kimjarvis/reemote/issues/28) (PostgreSQL
 facts' elevated peer-auth re-read),
@@ -299,15 +299,17 @@ parity), [#30](https://github.com/kimjarvis/reemote/issues/30)
 (`server.FipsEnabled`), [#31](https://github.com/kimjarvis/reemote/issues/31)
 (`postgresql.role` `bypassrls`),
 [#32](https://github.com/kimjarvis/reemote/issues/32) (`dnf.packages`
-`enable_repos`).
+`enable_repos`), and
+[#44](https://github.com/kimjarvis/reemote/issues/44) (`systemd.service`
+`sleep`) — closed after this program first landed, so the handler now passes
+the role's own `sleep: 5` natively.
 
-Two genuine gaps remain **open**; both are feature-only (the default path
-migrates without them) and their workarounds are tagged in the code for the
-second pass:
+One genuine gap remains **open**; it is feature-only (the default path
+migrates without it) and its workaround is tagged in the code for the second
+pass:
 
 | Issue | Gap | Workaround in this program |
 | --- | --- | --- |
-| [#44](https://github.com/kimjarvis/reemote/issues/44) — GAP-1 | `systemd.service` has no Ansible `sleep:` parity (the handler's `sleep: 5` between stop and start) | dropped: `systemctl restart` is synchronous; the sleep only works around badly-behaving SysV init scripts, which the CentOS PostgreSQL unit is not |
 | [#45](https://github.com/kimjarvis/reemote/issues/45) — GAP-2 | `postgresql.role` reconciles all six boolean flags unconditionally; Ansible's `role_attr_flags` adjusts **only the listed flags** (an unlisted SUPERUSER survives a `CREATEDB`-only change) | gather `PostgresqlRoles` after the service deploy, freeze the catalog, fill every unlisted flag from the frozen current value (existing role) or CREATE USER's server defaults (absent role); presence-only items skip the attribute machinery |
 
 The exotic `postgresql_privs` object types (procedure, language, group,
@@ -326,14 +328,13 @@ Every one is recorded in a comment at its site in the program.
 | D1 | `password` / `encrypted` / `login_password` / `VALID UNTIL` are dropped; `no_log` and `PGOPTIONS` are moot | the namespace credentials decision: the server cannot reveal a stored password, so a password option could never be idempotent. Every connection rides peer auth over the unix socket as the OS postgres user; provision credentials out of band (`postgresql.sql`) if needed |
 | D2 | `login_host` is ignored; the connection is always the unix socket | Ansible's `login_unix_socket` wins over `login_host` in psycopg2, so the socket is the effective connection anyway; `psql_host=<socket dir>` reproduces it |
 | D3 | The `stat` gate rides an elevated `Shell` action, not the `FileExists` fact | the data directory is `0700 postgres`: the unprivileged `FileExists` read cannot traverse it (Ansible's stat ran under play-level `become`). The action's exit status is frozen into the plan exactly like a register |
-| D4 | The handler's `sleep: 5` is dropped (GAP-1, #44) | `systemctl restart` is synchronous |
-| D5 | `role_attr_flags` partial reconciliation is reproduced control-side (GAP-2, #45); duplicate user names fail fast; a `state: absent` user is not created first | the frozen-catalog fill makes the ALTER diff exactly the listed flags; Ansible's last-item-wins on duplicates is a configuration error here; the role's create-then-drop churn for absent users is pointless |
-| D6 | `encoding: UTF-8` is normalized to `UTF8` | PostgreSQL accepts both on CREATE; the fact reports the catalog spelling `UTF8` |
-| D7 | `fail_on_role` is absorbed; the deprecated `priv` warning still prints | explicitly out of scope per #29 |
-| D8 | `become_user: postgres` becomes a second inventory view with `privilege.sudo_user` | run-as users come from the inventory, never from an operation — the deliberate reemote boundary |
-| D9 | `ansible_ssh_pipelining` is moot | reemote owns its transport |
-| D10 | The psycopg2 Python library is still installed | parity with the role (Ansible's modules need it); reemote itself drives the `psql` CLI |
-| D11 | Non-`centos`-group hosts are skipped, not failed | the migration targets one OS; the shared inventory holds Alpine and Ubuntu hosts that must not be touched |
+| D4 | `role_attr_flags` partial reconciliation is reproduced control-side (GAP-2, #45); duplicate user names fail fast; a `state: absent` user is not created first | the frozen-catalog fill makes the ALTER diff exactly the listed flags; Ansible's last-item-wins on duplicates is a configuration error here; the role's create-then-drop churn for absent users is pointless |
+| D5 | `encoding: UTF-8` is normalized to `UTF8` | PostgreSQL accepts both on CREATE; the fact reports the catalog spelling `UTF8` |
+| D6 | `fail_on_role` is absorbed; the deprecated `priv` warning still prints | explicitly out of scope per #29 |
+| D7 | `become_user: postgres` becomes a second inventory view with `privilege.sudo_user` | run-as users come from the inventory, never from an operation — the deliberate reemote boundary |
+| D8 | `ansible_ssh_pipelining` is moot | reemote owns its transport |
+| D9 | The psycopg2 Python library is still installed | parity with the role (Ansible's modules need it); reemote itself drives the `psql` CLI |
+| D10 | Non-`centos`-group hosts are skipped, not failed | the migration targets one OS; the shared inventory holds Alpine and Ubuntu hosts that must not be touched |
 
 ---
 
