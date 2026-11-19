@@ -98,6 +98,7 @@ from .modules import (
     lxd,
     mysql,
     openrc,
+    pip,
     postgresql,
     selinux,
     server,
@@ -479,6 +480,14 @@ from .modules.openrc.openrc import (
     RcServiceCommand,
     RcUpdateCommand,
     RunlevelCommand,
+)
+from .modules.pip.pip import (
+    PipInstallCommand,
+    PipPackageInfo,
+    PipPackages,
+    PipRemoveCommand,
+    PipRequirementsCommand,
+    PipUpgradeCommand,
 )
 from .modules.postgresql.postgresql import (
     PostgresqlConnection,
@@ -1062,6 +1071,12 @@ __all__ = [
     "OperationError",
     "OperationRequest",
     "PermissiveDomains",
+    "PipInstallCommand",
+    "PipPackageInfo",
+    "PipPackages",
+    "PipRemoveCommand",
+    "PipRequirementsCommand",
+    "PipUpgradeCommand",
     "PlannedOperation",
     "Port",
     "PortInfo",
@@ -1243,6 +1258,7 @@ __all__ = [
     "mysql",
     "op",
     "openrc",
+    "pip",
     "postgresql",
     "reload_handler",
     "restart_handler",

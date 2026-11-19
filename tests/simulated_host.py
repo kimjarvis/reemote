@@ -72,7 +72,7 @@ a real asyncssh transport is missing:
   / ``mysql_tables`` / ``mysql_user_grants`` / ``mysql_users``
   / ``mysql_variables``
   / ``network_devices`` / ``openrc_runlevels`` / ``openrc_service_states``
-  / ``openrc_version``
+  / ``openrc_version`` / ``pip_packages``
   / ``processes``
   / ``postgres_connections`` / ``postgres_databases``
   / ``postgres_default_privileges`` / ``postgres_extensions``
@@ -133,7 +133,7 @@ a real asyncssh transport is missing:
   ``MysqlUserGrants``, ``MysqlUsers``, ``MysqlVariables``, ``NetworkDevices``,
   ``OpenrcConfigFile``, ``OpenrcEnabled``,
   ``OpenrcRunlevels``, ``OpenrcServices``, ``OpenrcStatus``, ``OpenrcVersion``,
-  ``Port``, ``Processes``,
+  ``PipPackages``, ``Port``, ``Processes``,
   ``PostgresqlConnections``, ``PostgresqlDatabases``,
   ``PostgresqlDefaultPrivileges``,
   ``PostgresqlExtensions``, ``PostgresqlIndexes``, ``PostgresqlPrivileges``,
@@ -416,6 +416,14 @@ from reemote.modules.openrc.openrc import (
     RcServiceCommand,
     RcUpdateCommand,
     RunlevelCommand,
+)
+from reemote.modules.pip.pip import (
+    PipInstallCommand,
+    PipRemoveCommand,
+    PipRequirementsCommand,
+    PipUpgradeCommand,
+    _normalize_name,
+    _split_pin,
 )
 from reemote.modules.postgresql.postgresql import (
     _PRIVILEGE_ALIASES,
@@ -1135,6 +1143,21 @@ class SimulatedHost(Host):
     # ``flatpak install``/``uninstall``) maintain one store for both facts and
     # they can never disagree.
     flatpak_package_info: dict[str, FlatpakPackageInfo] = field(default_factory=dict)
+    # Installed pip packages -- the state store the fact reads, kept as the
+    # PEP 503-normalized name -> version mapping the mutators edit (e.g.
+    # ``six`` -> ``"1.16.0"``), which ``PipPackages.process`` projects into the
+    # sorted ``PipPackageInfo`` entries it returns (the ``apt_packages`` /
+    # ``apk_packages`` mutated-dict-store precedent). Keys are normalized
+    # exactly as ``PipPackages.parse`` normalizes, so simulated state must use
+    # the normalized form too; one store models one environment, whatever pip
+    # executable the operation named. Named with the pip_ prefix (like
+    # ``apk_packages``) so the pip-side state never mixes with the
+    # apk/apt/dnf-side stores. Defaults to {} -- a simulated machine with no
+    # installed pip packages, so the fact answers ``[]``. A test seeds it
+    # directly; ``install_pip_packages``/``remove_pip_packages``/``apply_pip_requirements``
+    # (the simulated ``pip install``/``uninstall``/``-r``) mutate it as the
+    # corresponding pip commands would.
+    pip_packages: dict[str, str] = field(default_factory=dict)
     # The branch a repository is on (``git describe --all``, the
     # heads/tags prefix stripped), backing ``GitBranch``: repo path ->
     # branch name. An absent repo reads as "", like the short-circuited
@@ -2504,6 +2527,14 @@ class SimulatedHost(Host):
                 self.install_flatpak_packages(packages)
             case FlatpakRemoveCommand(packages=packages):
                 self.remove_flatpak_packages(packages)
+            case PipInstallCommand(packages=packages):
+                self.install_pip_packages(packages)
+            case PipUpgradeCommand():
+                pass  # the simulation tracks no newer versions to upgrade to
+            case PipRemoveCommand(packages=packages):
+                self.remove_pip_packages(packages)
+            case PipRequirementsCommand(path=path, present=present):
+                self.apply_pip_requirements(path, present)
             case SnapInstallCommand(packages=packages, channel=channel):
                 self.install_snap_packages(packages, channel)
             case SnapRefreshCommand(packages=packages, channel=channel):
@@ -7127,6 +7158,65 @@ class SimulatedHost(Host):
         """
         for package in packages:
             self.flatpak_package_info.pop(package, None)
+
+    def install_pip_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``pip install``: mark the packages installed.
+
+        ``pip.packages``' install mutation. A ``<pkg>==<version>`` pin (split
+        with the operation's own ``_split_pin``) records exactly that version
+        in ``pip_packages`` (the normalized-name -> version store
+        ``PipPackages`` reads), OVERWRITING any version already there -- pip
+        replaces the distribution on a re-pin -- so a repeat pinned install
+        is a no-op; an unpinned name carries no index metadata to resolve a
+        version from, so a new name gets the ``""`` placeholder (apk's
+        precedent) and an installed name keeps its recorded version. Names
+        are stored ``_normalize_name``-normalized, as the fact normalizes.
+        """
+        for package in packages:
+            name, version = _split_pin(package)
+            key = _normalize_name(name)
+            if version is None:
+                self.pip_packages.setdefault(key, "")
+            else:
+                self.pip_packages[key] = version
+
+    def remove_pip_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``pip uninstall``: drop the packages.
+
+        The ``present=False`` direction of ``pip.packages``. Each name (which
+        the operation feeds bare, normalized on lookup like the fact) pops
+        its entry from ``pip_packages``, so ``PipPackages`` no longer reports
+        it. An absent name is tolerated (the real command would exit
+        non-zero, but the operation's fact check never yields that removal).
+        """
+        for package in packages:
+            self.pip_packages.pop(_normalize_name(package), None)
+
+    def apply_pip_requirements(self, path: str, present: bool) -> None:
+        """Record a simulated ``pip install -r`` / ``pip uninstall -r``.
+
+        ``pip.packages``' requirements mutation. The file's text is read from
+        the shared ``remote_files`` store, so a ``files.put`` earlier in the
+        deploy is visible here; a path the simulation does not hold applies
+        nothing -- the real pip would exit non-zero, but the simulated effect
+        stays a pure function of seeded content. Each line is one
+        requirement: blank lines and ``#`` comments (full-line and trailing)
+        are skipped; a pinned line records exactly that version and a bare
+        name the ``""`` placeholder (``install_pip_packages`` does both),
+        while ``present=False`` drops the line's name. ``-r`` recursion and
+        option lines are not modeled.
+        """
+        data = self.remote_files.get(path)
+        if data is None:
+            return
+        for raw in data.decode("utf-8").splitlines():
+            line = raw.split("#", 1)[0].strip()
+            if not line:
+                continue
+            if present:
+                self.install_pip_packages((line,))
+            else:
+                self.remove_pip_packages((_split_pin(line)[0],))
 
     def install_snap_packages(self, packages: tuple[str, ...], channel: str) -> None:
         """Record a simulated ``snap install``: mark the snaps installed.

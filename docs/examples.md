@@ -6,7 +6,7 @@ Runnable showcase scripts living in `examples/` — *usage* demonstrations
 through the public API only, never part of the library. The tree is split in
 three: `examples/modules/<namespace>/` holds one script per fact or operation
 of a library module (currently `apk`, `apt`, `dnf`, `files`, `firewalld`,
-`flatpak`, `git`, `gpg`, `hardware`, `iptables`, `lxd`, `mysql`, `openrc`, `postgresql`, `selinux`,
+`flatpak`, `git`, `gpg`, `hardware`, `iptables`, `lxd`, `mysql`, `openrc`, `pip`, `postgresql`, `selinux`,
 `server`, `snap`, `sysctl`, `systemd` and `ufw`), plus the cross-module `dnf_put_get`
 health-check scenario under `files/`,
 `examples/actions/` holds [action](actions.md) demonstrations (bespoke shell,
@@ -36,6 +36,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 | `examples/modules/lxd/` | [Module examples: lxd](examples/modules/lxd.md) |
 | `examples/modules/mysql/` | [Module examples: mysql](examples/modules/mysql.md) |
 | `examples/modules/openrc/` | [Module examples: openrc](examples/modules/openrc.md) |
+| `examples/modules/pip/` | [Module examples: pip](examples/modules/pip.md) |
 | `examples/modules/postgresql/` | [Module examples: postgresql](examples/modules/postgresql.md) |
 | `examples/modules/selinux/` | [Module examples: selinux](examples/modules/selinux.md) |
 | `examples/modules/server/` | [Module examples: server](examples/modules/server.md) |
@@ -63,7 +64,8 @@ sub-directory. Pick a page from the navigation, or start from this table:
     [`apt` examples](examples/modules/apt.md) and the
     [`flatpak` examples](examples/modules/flatpak.md) on `is_ubuntu` (the
     single
-    `ubuntu` host), and the `server_op_locale.py` example on the
+    `ubuntu` host), the `pip` examples likewise on `is_ubuntu` (the
+    venv the example itself provisions lives on that host), and the `server_op_locale.py` example on the
     [server page](examples/modules/server.md) likewise on `is_ubuntu`
     because `/etc/locale.gen` + `locale-gen` are Debian-family only. The
     [`composition` demonstrations](examples/demonstrations/composition.md)

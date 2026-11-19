@@ -69,6 +69,10 @@ descriptors they yield,
 ``OpenrcVersion`` facts beside the ``service``, ``runlevel`` and
 ``custom_runlevel`` operations and the typed command descriptors they
 yield,
+``modules/pip/pip.py`` holds the ``PipPackages`` fact (with its
+``PipPackageInfo`` entry type) beside the ``packages`` operation and the
+``PipInstallCommand``/``PipUpgradeCommand``/``PipRemoveCommand``/
+``PipRequirementsCommand`` descriptors it yields,
 ``modules/postgresql/postgresql.py`` holds the ``PostgresqlConnections``,
 ``PostgresqlDatabases``, ``PostgresqlExtensions``, ``PostgresqlIndexes``,
 ``PostgresqlPrivileges``, ``PostgresqlPublications``,
@@ -107,7 +111,7 @@ descriptors it yields, and
 ``modules/server/server.py`` holds the ``wait_service`` operation (which
 polls the relocated ``systemd.SystemdServiceState`` fact). The subpackages
 are re-exported here, so a deploy can keep writing
-``from reemote.modules import apk, apt, dnf, files, firewalld, flatpak, git, gpg, hardware, iptables, lxd, mysql, openrc, postgresql, selinux, snap, sysctl, systemd, ufw, server``
+``from reemote.modules import apk, apt, dnf, files, firewalld, flatpak, git, gpg, hardware, iptables, lxd, mysql, openrc, pip, postgresql, selinux, snap, sysctl, systemd, ufw, server``
 and read ``apk.ApkInstalledPackages`` / ``apt.AptKeys`` / ``dnf.packages`` /
 ``files.link`` / ``firewalld.FirewalldZones`` / ``git.GitBranch`` / ``gpg.GpgKeys`` / ``hardware.BlockDevices`` /
 ``iptables.IptablesChains`` / ``lxd.LxdInstances`` / ``mysql.MysqlDatabases`` / ``openrc.OpenrcStatus`` / ``postgresql.PostgresqlRoles`` /
@@ -128,6 +132,7 @@ from . import (
     lxd,
     mysql,
     openrc,
+    pip,
     postgresql,
     selinux,
     server,
@@ -151,6 +156,7 @@ __all__ = [
     "lxd",
     "mysql",
     "openrc",
+    "pip",
     "postgresql",
     "selinux",
     "server",

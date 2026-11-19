@@ -52,6 +52,7 @@ plugins:
             - examples/modules/lxd
             - examples/modules/mysql
             - examples/modules/openrc
+            - examples/modules/pip
             - examples/modules/postgresql
             - examples/modules/selinux
             - examples/modules/server
@@ -127,6 +128,7 @@ nav:
           - lxd: modules/lxd.md
           - mysql: modules/mysql.md
           - openrc: modules/openrc.md
+          - pip: modules/pip.md
           - postgresql: modules/postgresql.md
           - selinux: modules/selinux.md
           - server: modules/server.md
@@ -156,6 +158,7 @@ nav:
           - lxd: examples/modules/lxd.md
           - mysql: examples/modules/mysql.md
           - openrc: examples/modules/openrc.md
+          - pip: examples/modules/pip.md
           - postgresql: examples/modules/postgresql.md
           - selinux: examples/modules/selinux.md
           - server: examples/modules/server.md
@@ -182,5 +185,6 @@ nav:
           - ansible-role-drush: examples/roles/ansible-role-drush.md
           - ansible-role-composer: examples/roles/ansible-role-composer.md
           - ansible-role-repo-epel: examples/roles/ansible-role-repo-epel.md
+          - ansible-role-postgresql: examples/roles/ansible-role-postgresql.md
 
 
