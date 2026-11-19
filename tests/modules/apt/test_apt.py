@@ -146,7 +146,10 @@ from reemote.modules.apt.apt import (
     DebPackageInfo,
     SimulateOperationWillChange,
     _add_repo_line,
+    _is_version_glob,
     _key_spool_path,
+    _pin_satisfied_by,
+    _pin_satisfied_by_any,
     _remove_repo_line,
     _repo_spool_path,
     _sources_spool_path,
@@ -3185,6 +3188,73 @@ async def test_apt_packages_version_pins_match_exact_versions():
     )
 
 
+async def test_apt_packages_glob_pin_matches_an_installed_version():
+    """Issue #41: ``nodejs=16.*`` is satisfied by an installed
+    ``16.20.2-1nodesource1`` -- the gate compares a wildcard pin with
+    ``fnmatch``, so the request converges instead of reinstalling every run."""
+    host = SimulatedHost(name="h", apt_packages={"nodejs": ["16.20.2-1nodesource1"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in apt.packages(ctx, packages=("nodejs=16.*",), sudo=True)
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "all packages present"
+    assert commands == []
+
+
+async def test_apt_packages_glob_pin_installs_when_no_version_matches():
+    """The same request on a host at another major line -- or with nothing
+    installed at all -- is a change, and the pin reaches apt verbatim: quoted,
+    so the remote shell cannot expand the ``*`` and apt resolves the
+    candidate."""
+    host = SimulatedHost(name="h", apt_packages={"nodejs": ["18.19.0-1nodesource1"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.packages(ctx, packages=("nodejs=16.*",))]
+    assert ctx.changed
+    assert ctx.reason == "1 package(s) to install"
+    assert commands == [AptInstallCommand(packages=("nodejs=16.*",))]
+    assert commands[0].shell() == f"{APT_GET_PREFIX}install 'nodejs=16.*'"
+
+    absent = SimulatedHost(name="h")
+    ctx2 = OpContext(host=absent, facts=FactCache(absent, phase="prepare"))
+    commands2 = [c async for c in apt.packages(ctx2, packages=("nodejs=16.*",))]
+    assert ctx2.changed
+    assert commands2 == [AptInstallCommand(packages=("nodejs=16.*",))]
+
+
+async def test_apt_packages_literal_pin_stays_exact():
+    """Issue #41 leaves the exact-match path untouched: a partial version with
+    no glob metacharacter is still a literal pin, so ``nodejs=16`` does not
+    match the installed ``16.20.2-1nodesource1`` and installs."""
+    host = SimulatedHost(name="h", apt_packages={"nodejs": ["16.20.2-1nodesource1"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.packages(ctx, packages=("nodejs=16",))]
+    assert ctx.changed
+    assert commands == [AptInstallCommand(packages=("nodejs=16",))]
+
+
+def test_version_glob_pin_helpers():
+    """The pure comparison behind the gate: only ``*``, ``?`` and ``[`` mark a
+    pattern (none can occur in a Debian version), the match is a case-sensitive
+    ``fnmatch`` of the whole string, and a pattern is tested against every
+    installed version."""
+    assert _is_version_glob("16.*")
+    assert _is_version_glob("16.20.?")
+    assert _is_version_glob("16.[0-9]")
+    assert not _is_version_glob("16.20.2-1nodesource1")
+    assert not _is_version_glob("2:9.1-1")
+    assert _pin_satisfied_by("16.*", "16.20.2-1nodesource1")
+    assert not _pin_satisfied_by("16.*", "18.19.0-1nodesource1")
+    assert _pin_satisfied_by("16.20.?", "16.20.2")
+    assert _pin_satisfied_by("16.[0-9].0", "16.2.0")
+    # A literal pin is plain equality, never a prefix match.
+    assert _pin_satisfied_by("16.20.2", "16.20.2")
+    assert not _pin_satisfied_by("16.20", "16.20.2")
+    assert _pin_satisfied_by_any("16.*", ["15.14.0", "16.20.2"])
+    assert not _pin_satisfied_by_any("16.*", ["15.14.0", "18.19.0"])
+    assert not _pin_satisfied_by_any("16.*", [])
+
+
 async def test_apt_packages_no_change_when_all_present():
     """Every requested package installed (pins at their exact versions) is a
     no-op with no commands."""
@@ -3377,6 +3447,32 @@ async def test_apt_packages_removal_respects_version_pins():
     assert commands2 == [AptRemoveCommand(packages=("something=0.9",))]
 
 
+async def test_apt_packages_removal_matches_a_glob_pin():
+    """The removal gate shares the pin comparison, so ``nodejs=16.*`` removes a
+    host that has a matching 16.x installed -- passing the pattern through
+    verbatim, exactly as a literal pin does -- and leaves a host that only has
+    another line alone."""
+    host = SimulatedHost(name="h", apt_packages={"nodejs": ["16.20.2-1nodesource1"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.packages(ctx, packages=("nodejs=16.*",), present=False)
+    ]
+    assert ctx.changed
+    assert ctx.reason == "1 package(s) to remove"
+    assert commands == [AptRemoveCommand(packages=("nodejs=16.*",))]
+
+    other = SimulatedHost(name="h", apt_packages={"nodejs": ["18.19.0-1nodesource1"]})
+    ctx2 = OpContext(host=other, facts=FactCache(other, phase="prepare"))
+    commands2 = [
+        c
+        async for c in apt.packages(ctx2, packages=("nodejs=16.*",), present=False)
+    ]
+    assert not ctx2.changed
+    assert ctx2.reason == "no packages to remove"
+    assert commands2 == []
+
+
 async def test_apt_packages_latest_upgrades_installed_unpinned():
     """The baseline's ``upgrade_packages.json``, with issue #13's gate:
     ``latest=True`` installs the absent package first, then upgrades the
@@ -3433,6 +3529,31 @@ async def test_apt_packages_latest_skips_pins_and_carries_no_extra_args():
     assert commands[0].shell() == (
         f"{APT_GET_PREFIX}install --no-install-recommends git"
     )
+
+
+async def test_apt_packages_latest_skips_a_glob_pinned_name():
+    """Issue #41: a wildcard pin still declares a version, so the name is
+    *pinned* and never joins the ``latest`` upgrade set -- even though the
+    presence gate now matches its installed 16.x and reports the request
+    present."""
+    host = SimulatedHost(
+        name="h",
+        apt_packages={"nodejs": ["16.19.0-1nodesource1"]},
+        apt_upgradable=[
+            {
+                "name": "nodejs",
+                "installed": "16.19.0-1nodesource1",
+                "candidate": "16.20.2-1nodesource1",
+            }
+        ],
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in apt.packages(ctx, packages=("nodejs=16.*",), latest=True)
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "all packages present"
+    assert commands == []
 
 
 async def test_apt_packages_latest_no_pending_upgrade_is_a_noop():
@@ -3556,6 +3677,42 @@ async def test_apt_install_seam_pin_retires_only_the_candidate_pin():
     await send_command(host, AptInstallCommand(packages=("git=2.0",)))
     assert host.apt_packages == {"git": ["2.0"]}
     assert host.apt_upgradable == []
+
+
+async def test_apt_install_seam_glob_pin_resolves_the_matching_candidate():
+    """Issue #41's seam: a wildcard install applies the pending candidate when
+    the pattern matches it (what real apt resolves the glob to) and retires the
+    entry; a pattern naming another line records the pattern itself and leaves
+    the package still upgradable."""
+    pending = {
+        "name": "nodejs",
+        "installed": "16.19.0-1nodesource1",
+        "candidate": "16.20.2-1nodesource1",
+    }
+    host = SimulatedHost(
+        name="h",
+        apt_packages={"nodejs": ["16.19.0-1nodesource1"]},
+        apt_upgradable=[pending],
+    )
+    await send_command(host, AptInstallCommand(packages=("nodejs=18.*",)))
+    assert host.apt_packages == {"nodejs": ["18.*"]}
+    assert host.apt_upgradable == [pending]
+    await send_command(host, AptInstallCommand(packages=("nodejs=16.*",)))
+    assert host.apt_packages == {"nodejs": ["16.20.2-1nodesource1"]}
+    assert host.apt_upgradable == []
+
+
+async def test_apt_packages_simulated_seam_glob_pin_removal():
+    """A wildcard removal drops every version the pattern matches -- the same
+    ``_pin_satisfied_by`` comparison the operation's presence gate makes -- and
+    leaves the rest of the name's versions installed."""
+    host = SimulatedHost(
+        name="h", apt_packages={"nodejs": ["16.19.0", "16.20.2", "18.19.0"]}
+    )
+    await send_command(host, AptRemoveCommand(packages=("nodejs=16.*",)))
+    assert host.apt_packages == {"nodejs": ["18.19.0"]}
+    await send_command(host, AptRemoveCommand(packages=("nodejs=18.*",)))
+    assert host.apt_packages == {}
 
 
 async def test_apt_packages_update_is_stateless():
@@ -3831,6 +3988,54 @@ async def test_apt_packages_pinned_end_to_end_converges():
     assert not entry2.changed
     assert entry2.reason == "all packages present"
     assert entry2.commands == ()
+
+
+async def test_apt_packages_glob_pin_end_to_end_converges():
+    """Issue #41's acceptance, end to end: a wildcard pin on a host already at
+    a matching 16.x is a no-op from the first pass, and on a host at another
+    line the install lands once and the second run converges -- the role's
+    ``nodejs=16.*`` request neither churns nor re-fires its handler."""
+
+    def glob_deploy(host):
+        yield op(
+            apt.packages,
+            name="Install any Node 16.x",
+            packages=("nodejs=16.*",),
+            sudo=True,
+        )
+
+    satisfied = SimulatedHost(name="h", apt_packages={"nodejs": ["16.20.2-1nodesource1"]})
+    _plans, report, _hosts = await run(
+        [{"host": "h", "connection": {}}],
+        glob_deploy,
+        host_factory=lambda entry: satisfied,
+    )
+    (entry,) = report.log
+    assert not entry.changed
+    assert entry.reason == "all packages present"
+    assert entry.commands == ()
+
+    other = SimulatedHost(name="h", apt_packages={"nodejs": ["18.19.0-1nodesource1"]})
+
+    def factory(entry):
+        return other
+
+    _plans2, report2, _hosts2 = await run(
+        [{"host": "h", "connection": {}}], glob_deploy, host_factory=factory
+    )
+    (entry2,) = report2.log
+    assert entry2.changed
+    assert entry2.commands == (AptInstallCommand(packages=("nodejs=16.*",)),)
+    log = format_log(report2)
+    assert f"sudo {APT_GET_PREFIX}install 'nodejs=16.*'" in log
+
+    _plans3, report3, _hosts3 = await run(
+        [{"host": "h", "connection": {}}], glob_deploy, host_factory=factory
+    )
+    (entry3,) = report3.log
+    assert not entry3.changed
+    assert entry3.reason == "all packages present"
+    assert entry3.commands == ()
 
 
 async def test_apt_packages_default_release_end_to_end_then_noop():

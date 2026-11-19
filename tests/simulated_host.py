@@ -222,6 +222,8 @@ from reemote.modules.apt.apt import (
     AptUpgradeCommand,
     DebInstallCommand,
     DebPackageInfo,
+    _is_version_glob,
+    _pin_satisfied_by,
 )
 from reemote.modules.dnf.dnf import (
     DnfCleanCommand,
@@ -3059,12 +3061,19 @@ class SimulatedHost(Host):
         ``apt.packages``' install (and ``latest`` upgrade) mutation. A
         version pin (``pkg=version``) records exactly that version in
         ``apt_packages`` (the name -> sorted version list ``AptPackages``
-        reads), so a repeat pinned install is a no-op. An unpinned name
+        reads), so a repeat pinned install is a no-op. A *wildcard* pin
+        (``pkg=16.*``, issue #41) names no concrete version, so it resolves
+        from the state the simulation does hold: the pending candidate when
+        the pattern matches it, otherwise the pattern verbatim -- which
+        satisfies its own pin on the next pass, the convergence a real
+        resolved ``16.20.2-1nodesource1`` gives.
+        An unpinned name
         with a pending ``apt_upgradable`` entry moves to that candidate
         version and retires the entry -- what a real ``apt-get install``
         does, and what makes the fact-gated ``latest`` upgrade converge on
-        a second pass; a pin retires the entry only when it names the
-        candidate version (any other pin leaves the package still
+        a second pass; a pin retires the entry only when it matches the
+        candidate version, literally or through the glob (any other pin
+        leaves the package still
         upgradable). An unpinned name without a pending upgrade carries no
         repository metadata to resolve a version from, so it gets the
         ``[""]`` placeholder the baseline's own operation fixtures use for
@@ -3080,13 +3089,20 @@ class SimulatedHost(Host):
                 (entry for entry in self.apt_upgradable if entry["name"] == name),
                 None,
             )
+            matches_pending = pending is not None and (
+                not sep or _pin_satisfied_by(version, pending["candidate"])
+            )
             if sep:
-                self.apt_packages[name] = [version]
-            elif pending is not None:
+                self.apt_packages[name] = [
+                    pending["candidate"]
+                    if _is_version_glob(version) and matches_pending
+                    else version
+                ]
+            elif matches_pending:
                 self.apt_packages[name] = [pending["candidate"]]
             else:
                 self.apt_packages.setdefault(name, [""])
-            if pending is not None and (not sep or version == pending["candidate"]):
+            if matches_pending:
                 self.apt_upgradable.remove(pending)
 
     def remove_apt_packages(self, packages: tuple[str, ...]) -> None:
@@ -3097,7 +3113,11 @@ class SimulatedHost(Host):
         ``AptPackages`` (and ``DebPackage``'s installed-name query) no
         longer report it; a version pin (``pkg=version``, which
         ``apt.packages`` passes through verbatim) drops only that version,
-        popping the name once no versions remain. An absent name/version is
+        popping the name once no versions remain. A wildcard pin
+        (``pkg=16.*``, issue #41) drops every version the pattern matches --
+        the same ``_pin_satisfied_by`` comparison the operation's presence
+        gate makes, so a removal the gate promised always lands. An absent
+        name/version is
         tolerated (the real command would exit non-zero, but the
         operation's fact check never yields the removal in that case).
         """
@@ -3109,8 +3129,9 @@ class SimulatedHost(Host):
             versions = self.apt_packages.get(name)
             if versions is None:
                 continue
-            if version in versions:
-                versions.remove(version)
+            versions[:] = [
+                found for found in versions if not _pin_satisfied_by(version, found)
+            ]
             if not versions:
                 self.apt_packages.pop(name, None)
 

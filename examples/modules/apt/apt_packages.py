@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Install packages by name with exact-version idempotence.
+"""Install packages by name with version-pin idempotence.
 
 This is a *usage* example, not part of the library. It shows how an
 application drives reemote's two-phase execution model end to end over a
@@ -35,8 +35,11 @@ name -- here two small CLI utilities, the kind of baseline tooling a deploy
 ensures on every machine. It reads the installed versions through the
 ``AptPackages`` fact and installs only what is missing, so re-running is a
 no-op. A name can be pinned as ``<pkg>=<version>``: a pin counts as present
-only when that *exact* version is installed, the baseline's ``ensure_packages``
-version match. ``latest=True`` would additionally upgrade installed,
+only when an installed version satisfies it -- verbatim for a literal pin
+(the baseline's ``ensure_packages`` version match), by ``fnmatch`` for a
+wildcard pin such as ``nodejs=16.*``, Ansible's ``apt`` spelling, so "any
+16.x" converges on the second pass instead of reinstalling every run (issue
+#41). ``latest=True`` would additionally upgrade installed,
 unpinned names that have a pending upgrade (the ``AptUpgradable`` fact
 gates it, so a converged host is a no-op -- Ansible's ``state=latest``);
 ``update=True`` runs a

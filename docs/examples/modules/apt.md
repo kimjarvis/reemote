@@ -66,8 +66,10 @@ as changes).
 The package operation: `apt.packages` mirrors the baseline's `apt.packages`,
 installing, upgrading or removing packages by name. It reads the
 [`AptPackages`][reemote.modules.apt.apt.AptPackages] fact for the installed
-versions, so a `<pkg>=<version>` pin counts as present only when that exact
-version is installed (the baseline's `ensure_packages` version match) —
+versions, so a `<pkg>=<version>` pin counts as present only when an installed
+version satisfies it — verbatim for a literal pin (the baseline's
+`ensure_packages` version match), by `fnmatch` for a wildcard pin like
+`nodejs=16.*` (Ansible's `apt` spelling, issue #41) —
 `present=True` installs only what is missing, `latest=True` additionally
 upgrades installed unpinned names that have a pending upgrade (the
 [`AptUpgradable`][reemote.modules.apt.apt.AptUpgradable] fact gates it, so

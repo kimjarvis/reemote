@@ -492,9 +492,16 @@ takes no `DPkg::Lock::Timeout` wrapper.
 `apt.packages` installs, upgrades or removes packages by name (the baseline's
 `apt.packages` parity). `packages` accepts a single name, a list/tuple or
 `None`; a name can be pinned as `<pkg>=<version>`, and the `AptPackages`
-fact supplies the installed versions, so a pin counts as present only
-when that *exact* version is installed (the baseline's `ensure_packages`
-version match). `present=True` installs only what is missing;
+fact supplies the installed versions, so a pin counts as present only when
+an installed version satisfies it — verbatim for a literal pin (the baseline's
+`ensure_packages` version match), or by `fnmatch` for a wildcard pin like
+`nodejs=16.*` (Ansible's `apt` wildcard spelling, issue #41): any installed
+`16.x` satisfies that request, so it converges on the second pass instead of
+reinstalling on every run. The pattern is shell-quoted on the command, so the
+remote shell never expands it and apt resolves the candidate itself; a pin
+with no glob metacharacter keeps the exact-match rule (`nodejs=16` installs
+over a `16.20.2`), and a wildcard pin is still a pin — `latest` never upgrades
+it. `present=True` installs only what is missing;
 `latest=True` additionally upgrades installed, *unpinned* names — but
 only those with a **pending upgrade**, read through the in-namespace
 `AptUpgradable` fact (`apt list --upgradable`), so a converged host is a
@@ -775,8 +782,8 @@ elevated install in one request. The `apt_mark.py` script demonstrates
 `apt.mark`: it holds the baseline packages back from upgrades with
 `apt-mark hold`, yielding the same request twice so the second is a
 guaranteed no-op in the apply phase. The `apt_packages.py` script demonstrates
-`apt.packages`: it installs packages by name with exact-version
-idempotence, yielding the same request twice so the second is a guaranteed
+`apt.packages`: it installs packages by name with version-pin
+idempotence (exact or wildcard), yielding the same request twice so the second is a guaranteed
 no-op in the apply phase. The `apt_ppa.py` script demonstrates `apt.ppa`:
 it adds the Bitcoin PPA with `apt-add-repository` under `sudo`, yielding the
 same request twice so the second is a guaranteed no-op in the apply phase

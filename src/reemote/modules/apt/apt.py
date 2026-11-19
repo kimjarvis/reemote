@@ -108,6 +108,7 @@ import urllib.request
 from collections.abc import AsyncGenerator, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from fnmatch import fnmatchcase
 from pathlib import PurePosixPath
 from typing import IO, Any, NotRequired, TypedDict
 from urllib.parse import urlparse
@@ -2480,6 +2481,48 @@ def _split_version(package: str) -> tuple[str, str | None]:
     return (name, version) if sep else (package, None)
 
 
+# The glob metacharacters a pinned version may carry (``nodejs=16.*``, the
+# wildcard spelling Ansible's ``apt`` module documents). None of them can
+# appear in a Debian version -- policy allows only ``0-9A-Za-z.+~-`` -- so a
+# pin containing one is a pattern, never a literal version to compare.
+_VERSION_GLOB_CHARS = "*?["
+
+
+def _is_version_glob(pin: str) -> bool:
+    """Whether a pinned version is a glob pattern (``16.*``) rather than a
+    literal version.
+
+    Bracket classes count as glob too, so ``16.[0-9]`` is read as the pattern
+    it spells; a literal Debian version contains none of the three characters.
+    """
+    return any(char in pin for char in _VERSION_GLOB_CHARS)
+
+
+def _pin_satisfied_by(pin: str, version: str) -> bool:
+    """Whether one installed ``version`` satisfies a pinned ``pin``.
+
+    A literal pin must appear verbatim (the baseline's ``ensure_packages``
+    match); a glob pin is matched with :func:`fnmatch.fnmatchcase`, so
+    ``16.*`` is satisfied by ``16.20.2-1nodesource1``. Case-sensitive on
+    purpose, so the comparison never inherits the controller's path-case
+    conventions.
+    """
+    if _is_version_glob(pin):
+        return fnmatchcase(version, pin)
+    return version == pin
+
+
+def _pin_satisfied_by_any(pin: str, versions: Iterable[str]) -> bool:
+    """Whether any of a package's installed ``versions`` satisfies a ``pin``.
+
+    The presence test ``apt.packages`` runs against the per-name version lists
+    of the ``AptPackages`` fact: an installed version satisfying a wildcard pin
+    makes the request present, which is what lets ``nodejs=16.*`` converge on
+    the second pass instead of reinstalling every run (issue #41).
+    """
+    return any(_pin_satisfied_by(pin, version) for version in versions)
+
+
 @dataclass(frozen=True)
 class AptUpdateCommand(Command):
     """``apt-get update``: refresh the package lists.
@@ -2531,7 +2574,10 @@ class AptInstallCommand(Command):
     right after ``install``, ``no_recommends``/``allow_downgrades`` add apt's
     ``--no-install-recommends``/``--allow-downgrades`` flags, ``extra_args``
     is appended verbatim after them, and the release and the package names
-    (``<pkg>=<version>`` pins included) are shell-quoted.
+    (``<pkg>=<version>`` pins included) are shell-quoted. Quoting is what lets
+    a wildcard pin (``nodejs=16.*``) reach apt intact: the remote shell never
+    expands the ``*``, apt resolves the pattern against its own package lists
+    (issue #41).
     ``wait_for_lock`` adds the ``DPkg::Lock::Timeout`` option.
     """
 
@@ -2582,7 +2628,10 @@ async def packages(
             to ensure; a single string, a list/tuple, or None. Prefer tuples
             when building requests via ``op()``, since ``OperationRequest``
             kwargs must stay hashable. Versions can be pinned as
-            ``<pkg>=<version>``. Defaults to None.
+            ``<pkg>=<version>``, and the pin may be a wildcard pattern
+            (``nodejs=16.*``, Ansible's ``apt`` spelling) -- any installed
+            version matching the pattern satisfies the request. Defaults to
+            None.
         present (bool, optional): Whether the packages should be installed.
             Defaults to True.
         latest (bool, optional): Whether to upgrade installed packages without
@@ -2652,11 +2701,14 @@ async def packages(
     # all-zero proposed counts are a no-op, a failed simulation (None)
     # runs the real ``upgrade`` anyway. The ``AptPackages`` fact supplies
     # the installed versions, so a pinned ``<pkg>=<version>`` is present
-    # only when that *exact* version is installed (the baseline's
-    # ``ensure_packages`` version match). The ``latest`` upgrade command
-    # reuses ``install`` without ``extra_install_args``, as the baseline
-    # builds it. Removing needs root, as do installing and upgrading, so
-    # flag the request ``sudo=True`` (or ``su=True``).
+    # only when that version satisfies the pin -- verbatim for a literal
+    # pin (the baseline's ``ensure_packages`` version match), or by
+    # ``fnmatch`` for a wildcard pin such as ``nodejs=16.*``, so a role that
+    # declares "any 16.x" converges instead of reinstalling every run (issue
+    # #41). The ``latest`` upgrade command reuses ``install`` without
+    # ``extra_install_args``, as the baseline builds it. Removing needs root,
+    # as do installing and upgrading, so flag the request ``sudo=True`` (or
+    # ``su=True``).
     #
     # Deliberate deviations from the baseline: ``latest`` is gated on the
     # in-namespace ``AptUpgradable`` fact (``apt list --upgradable``): only
@@ -2754,7 +2806,7 @@ async def packages(
             versions = versions_by_name.get(name)
             if versions is None:
                 return False
-            return version is None or version in versions
+            return version is None or _pin_satisfied_by_any(version, versions)
 
         if present:
             to_install = tuple(pkg for pkg in requested if not is_installed(pkg))
@@ -2762,7 +2814,9 @@ async def packages(
             # but only those the ``AptUpgradable`` fact names as having a
             # pending upgrade are actually upgraded -- a converged host is a
             # no-op (Ansible's ``state=latest``, issue #13). The fact is read
-            # only when there is a candidate to check.
+            # only when there is a candidate to check. A wildcard pin is a pin:
+            # ``nodejs=16.*`` declares a version range, so the name never joins
+            # the ``latest`` set (``_split_version`` reports its version).
             to_upgrade: tuple[str, ...] = ()
             candidates: dict[str, str] = {}
             if latest:

@@ -113,7 +113,7 @@ plans, report, hosts = await run(inventory, deploy)
 
 The operations cover four kinds of apt work:
 
-- **Package lifecycle** — install, upgrade, remove, autoremove, and hold by name, with exact-version pinning. Every mutation is idempotent against the installed-package fact; the whole-box upgrade verbs are additionally gated on a dry-run simulation, so a fully patched host is a genuine no-op rather than a shell-out that quietly does nothing.
+- **Package lifecycle** — install, upgrade, remove, autoremove, and hold by name, with version pinning — an exact pin (`nginx=1.24.0-1`) or a wildcard line (`nodejs=16.*`, Ansible's spelling). Every mutation is idempotent against the installed-package fact; the whole-box upgrade verbs are additionally gated on a dry-run simulation, so a fully patched host is a genuine no-op rather than a shell-out that quietly does nothing.
 - **Repository configuration** — legacy `sources.list` lines, modern deb822 `.sources` files, GPG keyrings under `/etc/apt/keyrings/` for `signed-by=`, and Ubuntu PPAs. The file-managing operations all use a **spool-and-install rewrite** — read the current text, apply a pure transform, scp the result to `/tmp`, install it with one elevated `sh -c` — so comments, ordering, and unrelated lines survive verbatim and nothing ever runs `sed -i` on a protected file.
 - **Standalone `.deb` files** — install or remove a package archive already on the target (upload one with `files.put` first), version-aware and idempotent.
 - **The stateless refresh** — `apt-get update` as its own step, so the list-refresh is separately plannable from anything that consumes it.
