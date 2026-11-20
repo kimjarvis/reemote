@@ -1470,6 +1470,47 @@ async def packages(
     ```
 
     Examples:
+        ```python
+        from reemote import op, dnf
+
+        # Install two packages (dnf writes the root-owned rpm DB, so elevate with sudo)
+        yield op(
+            dnf.packages,
+            name="Install baseline packages",
+            packages=("htop", "tree"),
+            sudo=True,
+        )
+
+        # Remove packages  ->  dnf remove -y htop
+        yield op(
+            dnf.packages,
+            name="Remove old packages",
+            packages=("htop",),
+            present=False,
+            sudo=True,
+        )
+
+        # Upgrade an installed package to its latest version
+        yield op(
+            dnf.packages,
+            name="Upgrade nginx",
+            packages=("nginx",),
+            latest=True,
+            sudo=True,
+        )
+
+        # Scope to named repos and exclude a dependency side effect
+        #  ->  dnf install ... --disablerepo='*' --enablerepo=pgdg16 --exclude=python-unversioned-command
+        yield op(
+            dnf.packages,
+            name="Install from the PGDG repo only",
+            packages=("postgresql16",),
+            repos=("pgdg16",),
+            exclude=("python-unversioned-command",),
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/dnf/dnf_packages.py``.
     """
 
@@ -1662,6 +1703,13 @@ async def update(ctx: OpContext, **kwargs: Any) -> AsyncGenerator[Command]:
     ```
 
     Examples:
+        ```python
+        from reemote import op, dnf
+
+        # Upgrade every package on the host (stateless: always runs, needs root)
+        yield op(dnf.update, name="Full system update", sudo=True)
+        ```
+
         Examples can be found in ``examples/modules/dnf/dnf_update.py``.
     """
 
@@ -1861,6 +1909,30 @@ async def repo(
     ```
 
     Examples:
+        ```python
+        from reemote import op, dnf
+
+        # Add/construct a .repo file under /etc/yum.repos.d (writes as root, so elevate)
+        yield op(
+            dnf.repo,
+            name="Add the PGDG repo",
+            src="pgdg16",
+            baseurl="https://download.postgresql.org/pub/repos/yum/16/redhat/rhel-$releasever-$basearch",
+            description="PostgreSQL 16",
+            gpgkey="https://download.postgresql.org/pub/repos/yum/RPM-GPG-KEY-PGDG",
+            sudo=True,
+        )
+
+        # Remove the .repo file  ->  rm -f /etc/yum.repos.d/pgdg16.repo
+        yield op(
+            dnf.repo,
+            name="Remove the PGDG repo",
+            src="pgdg16",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/dnf/dnf_repo.py``.
     """
 
@@ -2022,6 +2094,22 @@ async def makecache(
     ```
 
     Examples:
+        ```python
+        from reemote import op, dnf
+
+        # Refresh metadata for every enabled repo (stateless, needs root)
+        yield op(dnf.makecache, name="Refresh dnf metadata", sudo=True)
+
+        # Scope the refresh to named repos
+        #  ->  dnf -y makecache --disablerepo='*' --enablerepo=datadog
+        yield op(
+            dnf.makecache,
+            name="Refresh the Datadog repo metadata",
+            repos=("datadog",),
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/dnf/dnf_makecache.py``.
     """
 
@@ -2076,6 +2164,23 @@ async def clean(
     ```
 
     Examples:
+        ```python
+        from reemote import op, dnf
+
+        # Wipe every kind of dnf cache  ->  dnf clean all (stateless, needs root)
+        yield op(dnf.clean, name="Clear all dnf caches", sudo=True)
+
+        # Drop one repo's metadata cache
+        #  ->  dnf clean metadata --disablerepo='*' --enablerepo=datadog
+        yield op(
+            dnf.clean,
+            name="Clear the Datadog metadata cache",
+            what="metadata",
+            repos=("datadog",),
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/dnf/dnf_clean.py``.
     """
 
@@ -2154,6 +2259,27 @@ async def rpm(
     ```
 
     Examples:
+        ```python
+        from reemote import op, dnf
+
+        # Install a .rpm already staged on the host (e.g. via files.download/files.put)
+        yield op(
+            dnf.rpm,
+            name="Install the vendored package",
+            src="/tmp/datadog-installer.x86_64.rpm",
+            sudo=True,
+        )
+
+        # Remove the package the .rpm names  ->  dnf remove -y <name>
+        yield op(
+            dnf.rpm,
+            name="Remove the vendored package",
+            src="/tmp/datadog-installer.x86_64.rpm",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/dnf/dnf_rpm.py``.
     """
 
@@ -2352,6 +2478,35 @@ async def key(
     ```
 
     Examples:
+        ```python
+        import io
+
+        from reemote import op, dnf
+
+        # Define the key stream once at module level: OperationRequest compares
+        # it by identity, so every phase must pass the same object.
+        key_stream = io.BytesIO(open("RPM-GPG-KEY-PGDG", "rb").read())
+
+        # Import a GPG key into the rpm keyring; keyid makes it idempotent
+        # (a key already imported is skipped) and it needs root
+        yield op(
+            dnf.key,
+            name="Import the PGDG signing key",
+            src=key_stream,
+            keyid="F8D4C64C",
+            sudo=True,
+        )
+
+        # Remove an imported key  ->  rpm -e gpg-pubkey-<keyid>-<release>
+        yield op(
+            dnf.key,
+            name="Remove the PGDG signing key",
+            keyid="F8D4C64C",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/dnf/dnf_key.py``.
     """
 
@@ -2514,6 +2669,28 @@ async def module(
     ```
 
     Examples:
+        ```python
+        from reemote import op, dnf
+
+        # Enable an application-stream  ->  dnf module enable -y nodejs:18 (needs root)
+        yield op(
+            dnf.module,
+            name="Enable the Node.js 18 stream",
+            module="nodejs",
+            stream="18",
+            sudo=True,
+        )
+
+        # Disable a module  ->  dnf module disable -y nodejs
+        yield op(
+            dnf.module,
+            name="Disable the Node.js module",
+            module="nodejs",
+            enabled=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/dnf/dnf_module.py``.
     """
 

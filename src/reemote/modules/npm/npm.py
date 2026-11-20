@@ -481,6 +481,58 @@ async def packages(
     ```
 
     Examples:
+        ```python
+        from reemote import op, npm
+
+        # Install packages globally; a `<pkg>=<version>` pin is translated to
+        # npm's own `<pkg>@<version>`. A root-owned global prefix needs
+        # escalation.
+        # -> npm install -g eslint typescript@5.3.3
+        yield op(
+            npm.packages,
+            name="Install linting tools",
+            packages=("eslint", "typescript=5.3.3"),
+            sudo=True,
+        )
+
+        # Remove packages (present=False) -> npm uninstall -g bower
+        yield op(
+            npm.packages,
+            name="Remove bower",
+            packages=("bower",),
+            present=False,
+            sudo=True,
+        )
+
+        # Update installed, unpinned packages -> npm update -g webpack
+        yield op(
+            npm.packages,
+            name="Update webpack",
+            packages=("webpack",),
+            latest=True,
+            sudo=True,
+        )
+
+        # Manage a project directory instead of the global prefix; owned by the
+        # login user, so no escalation.
+        # -> cd /srv/app && npm install @vue/cli
+        yield op(
+            npm.packages,
+            name="Install a project dependency",
+            packages=("@vue/cli",),
+            global_=False,
+            directory="/srv/app",
+        )
+
+        # Install the dependencies declared in a manifest (stateless, runs every
+        # time) -> cd /srv/app && npm install
+        yield op(
+            npm.packages,
+            name="Install manifest dependencies",
+            package_json="/srv/app/package.json",
+        )
+        ```
+
         Examples can be found in ``examples/modules/npm/npm_packages.py``.
     """
 

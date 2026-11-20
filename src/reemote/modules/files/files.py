@@ -2064,6 +2064,40 @@ async def link(
     ```
 
     Examples:
+        ```python
+        from reemote import op, files
+
+        # Create a symlink (default ``symbolic=True``) -> ln -s /usr/share/doc/nginx /etc/nginx/docs
+        yield op(
+            files.link,
+            name="Expose the nginx docs",
+            path="/etc/nginx/docs",
+            target="/usr/share/doc/nginx",
+            sudo=True,
+        )
+
+        # Create a hard link and set its owner -> ln + chown -h
+        yield op(
+            files.link,
+            name="Hard-link the release into the cache",
+            path="/var/cache/app.tar",
+            target="/data/releases/app.tar",
+            symbolic=False,
+            user="www-data",
+            group="www-data",
+            sudo=True,
+        )
+
+        # Remove the link at ``path`` (``target`` is unused) -> rm -f
+        yield op(
+            files.link,
+            name="Drop the stale symlink",
+            path="/etc/nginx/docs",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/files/files_op_link.py``.
     """
 
@@ -2284,6 +2318,41 @@ async def file(
     ```
 
     Examples:
+        ```python
+        from reemote import op, files
+
+        # Create a missing file with the given owner and mode (the parent
+        # directory is ``mkdir -p``'d by default).
+        yield op(
+            files.file,
+            name="Create the app log",
+            path="/var/log/app/access.log",
+            user="www-data",
+            group="adm",
+            mode="0640",
+            sudo=True,
+        )
+
+        # Refresh an existing file's mtime -- ``touch=True`` is deliberately
+        # non-idempotent and always re-runs.
+        yield op(
+            files.file,
+            name="Refresh the deploy marker",
+            path="/etc/deploy/marker",
+            touch=True,
+            sudo=True,
+        )
+
+        # Remove the file -> rm -f
+        yield op(
+            files.file,
+            name="Drop the old default site",
+            path="/etc/nginx/sites-enabled/default",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/files/files_op_file.py``.
     """
 
@@ -2446,6 +2515,26 @@ async def put(ctx: OpContext, src: IO[Any], dest: str) -> AsyncGenerator[Command
     ```
 
     Examples:
+        ```python
+        from io import BytesIO
+
+        from reemote import op, files
+
+        # ``src`` is compared by identity across the two deploy phases, so
+        # construct it once at module level -- never inside the generator.
+        payload = BytesIO(b"max_connections = 200\\n")
+
+        # Upload the stream to a login-writable path; the transfer rides
+        # unprivileged scp (``sudo``/``su`` do not apply) and a repeat against
+        # identical content is a no-op.
+        yield op(
+            files.put,
+            name="Push the app config",
+            src=payload,
+            dest="/srv/app/config.ini",
+        )
+        ```
+
         Examples can be found in ``examples/modules/files/files_put.py``.
     """
 
@@ -2519,6 +2608,26 @@ async def get(ctx: OpContext, src: str, dest: IO[Any]) -> AsyncGenerator[Command
     ```
 
     Examples:
+        ```python
+        from io import BytesIO
+
+        from reemote import op, files
+
+        # ``dest`` must be the same writable stream across phases -- build it
+        # once at module level, not inside the generator.
+        backup = BytesIO()
+
+        # Download a login-readable remote file into the buffer; the transfer
+        # rides unprivileged scp and is sha1-gated, so a second ``get`` of the
+        # same content is a no-op.
+        yield op(
+            files.get,
+            name="Back up the current config",
+            src="/srv/app/config.ini",
+            dest=backup,
+        )
+        ```
+
         Examples can be found in ``examples/modules/files/files_get.py``.
     """
 
@@ -2572,6 +2681,32 @@ async def edit(
     ```
 
     Examples:
+        ```python
+        from reemote import op, files
+
+        # ``transform`` must be a stable, hashable callable -- define it at
+        # module level, never as a lambda or a closure built inside the
+        # deploy generator, so both phases compare equal.
+        def set_max_connections(current: str | None) -> str:
+            lines = (current or "").splitlines()
+            for i, line in enumerate(lines):
+                if line.strip().startswith("max_connections"):
+                    lines[i] = "max_connections = 200"
+                    break
+            else:
+                lines.append("max_connections = 200")
+            return "\\n".join(lines) + "\\n"
+
+        # Rewrite a login-writable file through the pure transform; yields an
+        # scp ``PutCommand`` only when the transformed text differs.
+        yield op(
+            files.edit,
+            name="Set max_connections",
+            path="/srv/app/config.ini",
+            transform=set_max_connections,
+        )
+        ```
+
         Examples can be found in ``examples/modules/files/files_edit.py``.
     """
 
@@ -2848,6 +2983,34 @@ async def install(
     ```
 
     Examples:
+        ```python
+        from reemote import op, files
+
+        # Install text content at a root-owned path -- the /tmp spool rides
+        # unprivileged scp, then an elevated ``sh -c`` does mkdir/cp/chmod/rm.
+        yield op(
+            files.install,
+            name="Pin the nginx package",
+            content="Package: nginx\\nPin: release o=nginx\\nPin-Priority: 1001\\n",
+            dest="/etc/apt/preferences.d/nginx",
+            mode="0644",
+            sudo=True,
+        )
+
+        # Binary content skips the UTF-8 decode; ``validate`` runs on the
+        # spooled bytes between the transfer and the install, so a bad file
+        # never reaches the destination.
+        yield op(
+            files.install,
+            name="Ship the composer launcher",
+            content=open("./build/composer.phar", "rb").read(),
+            dest="/usr/local/bin/composer.phar",
+            mode="0755",
+            validate="php -l {spool}",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/files/files_install.py``.
     """
 
@@ -3021,6 +3184,31 @@ async def transform(
     ```
 
     Examples:
+        ```python
+        from reemote import op, files
+
+        # ``transform`` must be a stable, hashable callable defined at module
+        # level, idempotent (``transform(transform(x)) == transform(x)``) and
+        # side-effect free.
+        def ensure_ip_forward(current: str | None) -> str:
+            body = current or ""
+            if "net.ipv4.ip_forward" in body:
+                return body
+            return body + "net.ipv4.ip_forward = 1\\n"
+
+        # Edit a root-owned file through the same pure transform as
+        # ``files.edit``, but spool-and-install the result -- ``sudo=True``
+        # elevates only the final cp; the /tmp transfer stays unprivileged.
+        yield op(
+            files.transform,
+            name="Enable ip_forward",
+            path="/etc/sysctl.d/99-forward.conf",
+            transform=ensure_ip_forward,
+            mode="0644",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/files/files_transform.py``.
     """
 
@@ -3209,6 +3397,39 @@ async def ini_option(
     ```
 
     Examples:
+        ```python
+        from reemote import op, files
+
+        # Set one option in one section of a root-owned INI file, preserving
+        # every other section, option, comment and blank line (Ansible
+        # ``ini_file`` parity).
+        yield op(
+            files.ini_option,
+            name="Enable the epel repo",
+            path="/etc/yum.repos.d/epel.repo",
+            section="epel",
+            option="enabled",
+            value="1",
+            sudo=True,
+        )
+
+        # Render as ``option=value`` (no spaces around ``=``), create the file
+        # when absent, and set ownership/mode on the installed file.
+        yield op(
+            files.ini_option,
+            name="Author the app worker setting",
+            path="/etc/app/config.ini",
+            section="worker",
+            option="concurrency",
+            value="4",
+            no_extra_spaces=True,
+            create=True,
+            mode="0640",
+            user="www-data",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/files/files_ini_option.py``.
     """
 
@@ -3455,6 +3676,36 @@ async def download(
     ```
 
     Examples:
+        ```python
+        from reemote import op, files
+
+        # Download a text artifact control-side and install it at a root-owned
+        # path; ``checksum`` pins both deploy phases to the same bytes.
+        yield op(
+            files.download,
+            name="Fetch the repo signing key",
+            url="https://example.com/keys/repo.gpg",
+            dest="/etc/apt/trusted.gpg.d/repo.gpg",
+            checksum=(
+                "sha256:5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"
+            ),
+            mode="0644",
+            sudo=True,
+        )
+
+        # A binary body (``.phar``, ``.rpm``, tarball) rides install's sha1
+        # path; give it a login-readable mode so the read-back does not
+        # re-download every deploy.
+        yield op(
+            files.download,
+            name="Install the composer launcher",
+            url="https://getcomposer.org/composer.phar",
+            dest="/usr/local/bin/composer.phar",
+            mode="0755",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/files/files_download.py``.
     """
 
@@ -3707,6 +3958,40 @@ async def unarchive(
     ```
 
     Examples:
+        ```python
+        from reemote import op, files
+
+        # Extract a remote archive into a directory (created when absent),
+        # gated by ``creates`` so a converged host reports no change (Ansible
+        # ``unarchive`` parity).
+        yield op(
+            files.unarchive,
+            name="Unpack the release tarball",
+            src="/srv/releases/app-1.2.3.tgz",
+            dest="/srv/app",
+            creates="/srv/app/RELEASE",
+            sudo=True,
+        )
+
+        # Fetch an http(s) archive control-side, spool it to ``/tmp``, extract
+        # with extra tar options and chown the extracted tree; ``checksum``
+        # pins both phases to identical bytes.
+        yield op(
+            files.unarchive,
+            name="Unpack the upstream source",
+            src="https://example.com/src/app-1.2.3.tar.gz",
+            dest="/opt/app",
+            creates="/opt/app/README.md",
+            extra_opts=("--strip-components=1",),
+            user="www-data",
+            group="www-data",
+            checksum=(
+                "sha256:5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"
+            ),
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/files/files_unarchive.py``.
     """
 
@@ -3885,6 +4170,35 @@ async def move(
     ```
 
     Examples:
+        ```python
+        from reemote import op, files
+
+        # Move into an existing directory -- the moved path becomes
+        # ``dest/basename(src)``.
+        yield op(
+            files.move,
+            name="Rotate the build artifact",
+            src="/tmp/build/app.tar.gz",
+            dest="/srv/releases",
+            sudo=True,
+        )
+
+        # Rename (the target's parent must exist): clear an existing
+        # destination with ``overwrite=True`` and adjust owner/mode after the
+        # ``mv`` (chown runs before chmod so setuid/setgid survive).
+        yield op(
+            files.move,
+            name="Publish the release",
+            src="/srv/releases/app-1.2.3.tar.gz",
+            dest="/srv/releases/current.tar.gz",
+            overwrite=True,
+            user="www-data",
+            group="www-data",
+            mode="0644",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/files/files_move.py``.
     """
 
@@ -4040,6 +4354,35 @@ async def copy(
     ```
 
     Examples:
+        ```python
+        from reemote import op, files
+
+        # Copy into an existing directory; the sha1 comparison skips a no-op
+        # copy, so a repeat against identical content reports no change.
+        yield op(
+            files.copy,
+            name="Snapshot the release",
+            src="/srv/releases/current.tar.gz",
+            dest="/srv/releases/archive",
+            sudo=True,
+        )
+
+        # Rename-copy with Ansible's ``force: yes`` semantics: a drifted
+        # target converges once, then reports no change; mode/user/group
+        # converge even on a content no-op.
+        yield op(
+            files.copy,
+            name="Publish the site root",
+            src="/srv/releases/app-1.2.3",
+            dest="/var/www/html",
+            overwrite=True,
+            user="www-data",
+            group="www-data",
+            mode="0755",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/files/files_copy.py``.
     """
 
@@ -4307,6 +4650,42 @@ async def directory(
     ```
 
     Examples:
+        ```python
+        from reemote import op, files
+
+        # Create a directory (parents included) with a specific owner and mode.
+        yield op(
+            files.directory,
+            name="Prepare the deploy target",
+            path="/srv/app/releases",
+            user="deploy",
+            group="deploy",
+            mode="0755",
+            sudo=True,
+        )
+
+        # Apply ownership and mode recursively across the whole tree.
+        yield op(
+            files.directory,
+            name="Reharden the upload tree",
+            path="/var/www/uploads",
+            user="www-data",
+            group="www-data",
+            mode="0750",
+            recursive=True,
+            sudo=True,
+        )
+
+        # Remove the directory and everything under it -> rm -rf.
+        yield op(
+            files.directory,
+            name="Drop the old build tree",
+            path="/srv/app/old-releases",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/files/files_op_directory.py``.
     """
 
@@ -4455,6 +4834,31 @@ async def flags(
     ```
 
     Examples:
+        ```python
+        from reemote import op, files
+
+        # Set ext2 attribute flags -> chattr +a,i /etc/passwd.daily
+        # (idempotent on the ``lsattr -d`` read; a repeat where both letters
+        # are already set is a no-op).
+        yield op(
+            files.flags,
+            name="Freeze the backup target",
+            path="/etc/passwd.daily",
+            flags=("a", "i"),
+            sudo=True,
+        )
+
+        # Clear the same flags -> chattr -a,i /etc/passwd.daily
+        yield op(
+            files.flags,
+            name="Unfreeze the backup target",
+            path="/etc/passwd.daily",
+            flags=("a", "i"),
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/files/files_flags.py``.
     """
 

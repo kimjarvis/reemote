@@ -1354,6 +1354,60 @@ async def key(
     ```
 
     Examples:
+        ```python
+        from reemote import op, gpg
+
+        # KEY_STREAM is a seekable IO stream of the key bytes, defined once at
+        # module level -- OperationRequest compares it by identity across phases.
+        # Armored content is dearmored on the target (the bytes are sniffed, so
+        # the extension never matters); dearmor=False copies the stream verbatim.
+
+        # Install the key as a keyring file; sudo elevates only the install,
+        # since the spool transfer always rides scp as the login user
+        yield op(
+            gpg.key,
+            name="Install the vendor signing key",
+            src=KEY_STREAM,
+            dest="/etc/apt/keyrings/vendor.gpg",
+            sudo=True,
+        )
+
+        # Idempotence keyed on the keys themselves instead of the file's
+        # existence: nothing runs once every id is in dest's keyring entry, so
+        # the installed stream is expected to carry all of the named keys
+        yield op(
+            gpg.key,
+            name="Ensure both vendor keys are in the keyring",
+            src=KEY_STREAM,
+            dest="/etc/apt/keyrings/vendor.gpg",
+            keyid=("0x621E9F35", "0x0EBFCD88"),
+            sudo=True,
+        )
+
+        # Remove the whole keyring file  ->  rm -f /etc/apt/keyrings/vendor.gpg
+        yield op(
+            gpg.key,
+            name="Drop the vendor keyring",
+            dest="/etc/apt/keyrings/vendor.gpg",
+            present=False,
+            sudo=True,
+        )
+
+        # Delete only the named keys from a binary keyring -> gpg --delete-keys
+        # by fingerprint, plus a prune of the file the delete leaves empty; drop
+        # dest and pass working_dirs to search every keyring under those
+        # directories instead. Selective removal from an armored .asc that still
+        # holds other keys raises ValueError.
+        yield op(
+            gpg.key,
+            name="Remove the retired vendor key",
+            dest="/etc/apt/keyrings/vendor.gpg",
+            keyid="0x0EBFCD88",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/gpg/gpg_key.py``.
     """
 
@@ -1520,6 +1574,24 @@ async def dearmor(
     ```
 
     Examples:
+        ```python
+        from reemote import op, gpg
+
+        # Convert an armored key that already lives on the target host (put it
+        # there with files.put first) into a binary keyring -- mkdir dest's
+        # parent, gpg --batch --yes --dearmor, chmod 0644. To dearmor a
+        # controller-side stream instead, install it with gpg.key, which
+        # dearmors as it installs. The operation is stateless: it converts and
+        # overwrites dest on every run, so flag sudo only for the path.
+        yield op(
+            gpg.dearmor,
+            name="Dearmor the vendor key",
+            src="/tmp/vendor.asc",
+            dest="/etc/apt/keyrings/vendor.gpg",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/gpg/gpg_dearmor.py``.
     """
 
@@ -1688,6 +1760,56 @@ async def import_key(
     ```
 
     Examples:
+        ```python
+        from reemote import op, gpg
+
+        # KEY_STREAM / SECRET_STREAM are seekable IO streams of the key bytes,
+        # each defined once at module level -- OperationRequest compares them by
+        # identity across phases.
+
+        # Import into the executing user's keychain, which sudo switches to
+        # root's. Without keyid the import always runs and always reports a
+        # change (the stream's fingerprint is unknown on the controller) and gpg
+        # itself merges key material it already has.
+        yield op(
+            gpg.import_key,
+            name="Import the vendor key into root's keychain",
+            src=KEY_STREAM,
+            sudo=True,
+        )
+
+        # keyid makes it idempotent against the keychain listing (GpgKeys, or
+        # GpgSecretKeys with secret=True, which cannot combine with dest)
+        yield op(
+            gpg.import_key,
+            name="Import the vendor key if missing",
+            src=KEY_STREAM,
+            keyid="0x060A61C51B558A7F742B77AAC52FEB6B621E9F35",
+            sudo=True,
+        )
+
+        # Import a secret key, gated on the secret-key listing
+        yield op(
+            gpg.import_key,
+            name="Import the deploy secret key if missing",
+            src=SECRET_STREAM,
+            keyid="0x8D81803C0EBFCD88",
+            secret=True,
+        )
+
+        # Import into one keyring file instead of the keychain -- additive, so
+        # the keys already in the file stay, which gpg.key's whole-file install
+        # cannot do; idempotence is then decided against that file's entry
+        yield op(
+            gpg.import_key,
+            name="Add the second vendor key to the shared keyring",
+            src=KEY_STREAM,
+            keyid="0x8D81803C0EBFCD88",
+            dest="/etc/apt/keyrings/vendor.gpg",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/gpg/gpg_import_key.py``.
     """
 
@@ -1828,6 +1950,35 @@ async def export_key(
     ```
 
     Examples:
+        ```python
+        from reemote import op, gpg
+
+        # Export a public key from the executing user's keychain as ASCII armor
+        # (sudo reads root's keychain and writes a root-owned dest). The
+        # operation is stateless: dest is rewritten on every run.
+        yield op(
+            gpg.export_key,
+            name="Export the vendor key",
+            keyid="8D81803C0EBFCD88",
+            dest="/tmp/vendor-export.asc",
+            armor=True,
+            sudo=True,
+        )
+
+        # Export binary secret material -> gpg --batch --yes --pinentry-mode
+        # loopback --export-secret-keys. There is deliberately no passphrase
+        # parameter, so a protected key fails fast instead of prompting; only
+        # unprotected keys can be exported.
+        yield op(
+            gpg.export_key,
+            name="Back up the deploy key",
+            keyid="0x8D81803C0EBFCD88",
+            dest="/root/deploy-key.gpg",
+            secret=True,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/gpg/gpg_export_key.py``.
     """
 
@@ -1914,6 +2065,31 @@ async def delete_key(
     ```
 
     Examples:
+        ```python
+        from reemote import op, gpg
+
+        # Delete a public key from root's keychain (sudo): the id is first
+        # resolved to the full fingerprint of the matching GpgKeys entry, since
+        # gpg refuses ambiguous short ids under --batch, and an absent key
+        # reports no change
+        yield op(
+            gpg.delete_key,
+            name="Delete the retired vendor key",
+            keyid="8D81803C0EBFCD88",
+            sudo=True,
+        )
+
+        # Delete the secret and public halves from the login user's own keychain
+        # -> gpg --batch --yes --delete-secret-and-public-keys <fingerprint>,
+        # looked up in GpgSecretKeys, so no sudo here
+        yield op(
+            gpg.delete_key,
+            name="Delete my own secret key",
+            keyid="0x8D81803C0EBFCD88",
+            secret=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/gpg/gpg_delete_key.py``.
     """
 
@@ -2021,6 +2197,36 @@ async def gen_key(
     ```
 
     Examples:
+        ```python
+        from reemote import op, gpg
+
+        # Generate an rsa4096 key that never expires (the algo/length/expire
+        # defaults) in root's keychain, without a passphrase. Idempotent on the
+        # user id, so a second run for the same real_name/email is a no-op.
+        # The parameter is real_name, never name: op() reserves name for the
+        # request label.
+        yield op(
+            gpg.gen_key,
+            name="Generate the deploy key",
+            real_name="Reemote Deploy",
+            email="deploy@example.com",
+            sudo=True,
+        )
+
+        # Pin the batch parameters -> Key-Type: rsa, Key-Length: 2048,
+        # Expire-Date: 2027-12-31; omit sudo to generate into the login user's
+        # own keychain instead
+        yield op(
+            gpg.gen_key,
+            name="Generate a short-lived signing key",
+            real_name="Reemote Signing",
+            email="signing@example.com",
+            algo="rsa",
+            length=2048,
+            expire="2027-12-31",
+        )
+        ```
+
         Examples can be found in ``examples/modules/gpg/gpg_gen_key.py``.
     """
 
@@ -2119,6 +2325,32 @@ async def trust(
     ```
 
     Examples:
+        ```python
+        from reemote import op, gpg
+
+        # Mark a key ultimately trusted in root's trust database (the write side
+        # of the GpgTrust fact). Idempotent on the level name, so an existing
+        # assignment of 5 or 6 already satisfies an ultimate request and the
+        # trustdb is left alone.
+        yield op(
+            gpg.trust,
+            name="Trust the generated deploy key",
+            fingerprint="9DC858229FC7DD38854AE2D88D81803C0EBFCD88",
+            level="ultimate",
+            sudo=True,
+        )
+
+        # level is one of unknown, never, marginal, full or ultimate; never
+        # marks a revoked key so gpg refuses it
+        yield op(
+            gpg.trust,
+            name="Distrust the revoked vendor key",
+            fingerprint="060A61C51B558A7F742B77AAC52FEB6B621E9F35",
+            level="never",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/gpg/gpg_trust.py``.
     """
 
@@ -2206,6 +2438,24 @@ async def refresh_keys(
     ```
 
     Examples:
+        ```python
+        from reemote import op, gpg
+
+        # Refresh every key in root's keychain from the configured keyservers
+        # (no keyids). The operation is stateless and network-bound: it always
+        # runs, may be slow, and a gpg failure surfaces as CommandError at apply
+        yield op(gpg.refresh_keys, name="Refresh all keys", sudo=True)
+
+        # Refresh only the named keys -> gpg --batch --refresh-keys <ids>, with
+        # a tuple because op() arguments must stay hashable
+        yield op(
+            gpg.refresh_keys,
+            name="Refresh the vendor keys",
+            keyids=("0x8D81803C0EBFCD88", "0x621E9F35"),
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/gpg/gpg_refresh_keys.py``.
     """
 

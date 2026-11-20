@@ -1079,6 +1079,39 @@ async def zone(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Create a custom zone with a DROP target (firewall-cmd needs root -> sudo=True);
+        # the runtime copy appears only after a firewalld.reload
+        yield op(
+            firewalld.zone,
+            name="Create the app zone",
+            zone="app",
+            target="DROP",
+            sudo=True,
+        )
+
+        # Update the zone's display text; None properties are left alone
+        yield op(
+            firewalld.zone,
+            name="Describe the app zone",
+            zone="app",
+            short="Application zone",
+            description="Zone for the application listeners",
+            sudo=True,
+        )
+
+        # Delete the zone (permanent-only; runtime lingers until reload)
+        yield op(
+            firewalld.zone,
+            name="Remove the app zone",
+            zone="app",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/firewalld/firewalld_zone.py``.
     """
 
@@ -1288,6 +1321,41 @@ async def zone_service(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Enable the http service in the public zone (both scopes,
+        # -> firewall-cmd --permanent --zone=public --add-service=http, then
+        # the runtime equivalent)
+        yield op(
+            firewalld.zone_service,
+            name="Serve HTTP in the public zone",
+            zone="public",
+            service="http",
+            sudo=True,
+        )
+
+        # Disable it again
+        yield op(
+            firewalld.zone_service,
+            name="Stop serving HTTP",
+            zone="public",
+            service="http",
+            present=False,
+            sudo=True,
+        )
+
+        # Ephemeral runtime-only change -- gone on the next reload
+        yield op(
+            firewalld.zone_service,
+            name="Open SSH just for now",
+            zone="public",
+            service="ssh",
+            permanent=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/firewalld/firewalld_zone_service.py``.
     """
@@ -1341,6 +1409,29 @@ async def port(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Open a single port (port ranges are equally valid: 5000-5100/udp)
+        yield op(
+            firewalld.port,
+            name="Open the app port",
+            zone="public",
+            port="8080/tcp",
+            sudo=True,
+        )
+
+        # Close it again
+        yield op(
+            firewalld.port,
+            name="Close the app port",
+            zone="public",
+            port="8080/tcp",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/firewalld/firewalld_port.py``.
     """
 
@@ -1397,6 +1488,31 @@ async def interface(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Bind an interface to the zone -- present=True renders
+        # --change-interface, so an interface already bound to another
+        # zone is rebound rather than rejected
+        yield op(
+            firewalld.interface,
+            name="Bind eth0 to the internal zone",
+            zone="internal",
+            interface="eth0",
+            sudo=True,
+        )
+
+        # Unbind it from the zone
+        yield op(
+            firewalld.interface,
+            name="Release eth0",
+            zone="internal",
+            interface="eth0",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/firewalld/firewalld_interface.py``.
     """
@@ -1451,6 +1567,31 @@ async def source(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Route traffic from a subnet into the trusted zone regardless
+        # of interface
+        yield op(
+            firewalld.source,
+            name="Trust the office subnet",
+            zone="trusted",
+            source="192.168.1.0/24",
+            sudo=True,
+        )
+
+        # Drop a source binding again (IPs, CIDRs, MACs and
+        # ipset:<name> references all pass through verbatim)
+        yield op(
+            firewalld.source,
+            name="Unbind the blocked ipset",
+            zone="drop",
+            source="ipset:badguys",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/firewalld/firewalld_source.py``.
     """
 
@@ -1504,6 +1645,30 @@ async def rich_rule(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Ensure a rich rule (the string is compared exactly as
+        # firewall-cmd prints it -- never parsed or rewritten)
+        yield op(
+            firewalld.rich_rule,
+            name="Accept Postgres only from the app host",
+            zone="public",
+            rule='rule family="ipv4" source address="10.0.0.5/32" port port="5432" protocol="tcp" accept',
+            sudo=True,
+        )
+
+        # Remove a rule again
+        yield op(
+            firewalld.rich_rule,
+            name="Drop telnet from anywhere",
+            zone="public",
+            rule='rule family="ipv4" port port="23" protocol="tcp" drop',
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/firewalld/firewalld_rich_rule.py``.
     """
@@ -1557,6 +1722,30 @@ async def protocol(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Allow an IP protocol outright (every port of it) -- the
+        # IPsec use case port rules cannot express
+        yield op(
+            firewalld.protocol,
+            name="Allow ESP in the trusted zone",
+            zone="trusted",
+            protocol="esp",
+            sudo=True,
+        )
+
+        # Disallow it again
+        yield op(
+            firewalld.protocol,
+            name="Block GRE",
+            zone="public",
+            protocol="gre",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/firewalld/firewalld_protocol.py``.
     """
@@ -1670,6 +1859,36 @@ async def forward_port(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Forward local port 80 to 8080 (at least one of to_port/to_addr
+        # is required)
+        yield op(
+            firewalld.forward_port,
+            name="Forward HTTP to the app port",
+            zone="public",
+            port="80",
+            protocol="tcp",
+            to_port="8080",
+            sudo=True,
+        )
+
+        # Forward to another machine -- the return path needs masquerade
+        # enabled on the zone (firewalld.masquerade); this operation does
+        # not enable it implicitly
+        yield op(
+            firewalld.forward_port,
+            name="Forward PostgreSQL to the DB host",
+            zone="public",
+            port="5432",
+            protocol="tcp",
+            to_port="5432",
+            to_addr="10.0.0.5",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/firewalld/firewalld_forward_port.py``.
     """
@@ -1760,6 +1979,28 @@ async def masquerade(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Enable source NAT on the zone -- the gateway use case, and the
+        # return-path prerequisite for forward_port rules with a to_addr
+        yield op(
+            firewalld.masquerade,
+            name="Masquerade the public zone",
+            zone="public",
+            sudo=True,
+        )
+
+        # Disable it again
+        yield op(
+            firewalld.masquerade,
+            name="Stop masquerading",
+            zone="public",
+            enabled=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/firewalld/firewalld_masquerade.py``.
     """
@@ -1908,6 +2149,32 @@ async def service(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Create a custom service definition bundling ports (definitions
+        # are permanent-only; attach it to zones with firewalld.zone_service)
+        yield op(
+            firewalld.service,
+            name="Define the my-app service",
+            service="my-app",
+            ports=("8080/tcp", "8443/tcp"),
+            short="My Application",
+            description="Listeners for the my-app stack",
+            sudo=True,
+        )
+
+        # Delete the definition (a built-in service cannot be deleted --
+        # shadow it with a custom definition of the same name instead)
+        yield op(
+            firewalld.service,
+            name="Remove the my-app service",
+            service="my-app",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/firewalld/firewalld_service.py``.
     """
@@ -2091,6 +2358,43 @@ async def ipset(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Create an ipset of networks with creation options and seed its
+        # entries (reference it from a zone with source="ipset:office",
+        # or from rich rules)
+        yield op(
+            firewalld.ipset,
+            name="Collect the office networks",
+            ipset_name="office",
+            ipset_type="hash:net",
+            entries=("192.168.1.0/24", "10.8.0.0/16"),
+            options=("family=inet",),
+            sudo=True,
+        )
+
+        # Remove selected entries only (membership changes are additive --
+        # unlisted entries are left alone)
+        yield op(
+            firewalld.ipset,
+            name="Drop the VPN range",
+            ipset_name="office",
+            entries=("10.8.0.0/16",),
+            present=False,
+            sudo=True,
+        )
+
+        # With no entries listed, present=False deletes the whole set
+        yield op(
+            firewalld.ipset,
+            name="Delete the office ipset",
+            ipset_name="office",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/firewalld/firewalld_ipset.py``.
     """
 
@@ -2252,6 +2556,20 @@ async def default_zone(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Set the zone unbound connections and interfaces land in -- the
+        # verb applies immediately AND persists, so there is no
+        # permanent/runtime split
+        yield op(
+            firewalld.default_zone,
+            name="Default everything to public",
+            zone="public",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/firewalld/firewalld_default_zone.py``.
     """
@@ -2315,6 +2633,27 @@ async def lockdown(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Enable lockdown last -- with it on, an unwhitelisted
+        # firewall-cmd (including later steps of the same deploy) is
+        # refused
+        yield op(
+            firewalld.lockdown,
+            name="Lock down the firewall",
+            sudo=True,
+        )
+
+        # Disable it again
+        yield op(
+            firewalld.lockdown,
+            name="Lift the lockdown",
+            enabled=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/firewalld/firewalld_lockdown.py``.
     """
@@ -2376,6 +2715,21 @@ async def panic(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Leave panic mode after an incident -- enabling it drops ALL
+        # traffic including this SSH session, so the safe direction is
+        # the one to deploy; only console/out-of-band access (or a
+        # reboot) turns it off remotely
+        yield op(
+            firewalld.panic,
+            name="Leave panic mode",
+            enabled=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/firewalld/firewalld_panic.py``.
     """
 
@@ -2446,6 +2800,24 @@ async def reload(
     ```
 
     Examples:
+        ```python
+        from reemote import op, firewalld
+
+        # Apply the permanent configuration to the runtime (keeping
+        # connection state) -- the handler after permanent-only zone,
+        # service or ipset existence changes; the operation is stateless
+        # and always reports a change
+        yield op(firewalld.reload, name="Reload the firewall", sudo=True)
+
+        # Save the runtime configuration to disk instead
+        yield op(
+            firewalld.reload,
+            name="Persist the live firewall",
+            mode="runtime_to_permanent",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/firewalld/firewalld_reload.py``.
     """

@@ -334,6 +334,37 @@ async def packages(
     ```
 
     Examples:
+        ```python
+        from reemote import op, flatpak
+
+        # Install from a named remote (system installs write root-owned state, so elevate with sudo)
+        # -> flatpak install --noninteractive flathub org.videolan.VLC org.gimp.GIMP
+        yield op(
+            flatpak.packages,
+            name="Install desktop applications from Flathub",
+            packages=("org.videolan.VLC", "org.gimp.GIMP"),
+            remote="flathub",
+            sudo=True,
+        )
+
+        # Install without a remote, letting flatpak resolve each ID against its configured remotes
+        yield op(
+            flatpak.packages,
+            name="Install the GNOME calculator",
+            packages=("org.gnome.Calculator",),
+            sudo=True,
+        )
+
+        # Remove applications (``remote`` is ignored)  ->  flatpak uninstall --noninteractive org.gimp.GIMP
+        yield op(
+            flatpak.packages,
+            name="Remove GIMP",
+            packages=("org.gimp.GIMP",),
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/flatpak/flatpak_packages.py``.
     """
 

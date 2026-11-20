@@ -397,6 +397,46 @@ async def package(
     ```
 
     Examples:
+        ```python
+        from reemote import op, snap
+
+        # Install snaps (snap writes system state under /snap, so elevate with sudo)
+        yield op(
+            snap.package,
+            name="Install baseline snaps",
+            packages=("helix", "bat"),
+            sudo=True,
+        )
+
+        # Install a classic-confined snap on a specific channel
+        yield op(
+            snap.package,
+            name="Install code with the latest candidate channel",
+            packages=("code",),
+            channel="latest/candidate",
+            classic=True,
+            sudo=True,
+        )
+
+        # Switch an installed snap to another channel (renders snap refresh --channel=...)
+        yield op(
+            snap.package,
+            name="Move lxd to the 5.21 track",
+            packages=("lxd",),
+            channel="5.21/stable",
+            sudo=True,
+        )
+
+        # Remove snaps
+        yield op(
+            snap.package,
+            name="Remove bat",
+            packages=("bat",),
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/snap/snap_package.py``.
     """
 

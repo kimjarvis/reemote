@@ -1428,6 +1428,38 @@ async def chain(
     ```
 
     Examples:
+        ```python
+        from reemote import op, iptables
+
+        # Create a user chain (the commands need root)
+        yield op(
+            iptables.chain,
+            name="Add the SSH brute-force chain",
+            chain="SSH_BRUTE_FORCE",
+            sudo=True,
+        )
+
+        # Create a chain in the nat table with a default policy
+        # (-P is only valid on built-in chains)
+        yield op(
+            iptables.chain,
+            name="Prepare the proxy chain",
+            chain="PROXY",
+            table="nat",
+            policy="DROP",
+            sudo=True,
+        )
+
+        # Remove a user chain
+        yield op(
+            iptables.chain,
+            name="Drop the old chain",
+            chain="SSH_BRUTE_FORCE",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/iptables/iptables_chain.py``.
     """
 
@@ -1506,6 +1538,30 @@ async def policy(
     ```
 
     Examples:
+        ```python
+        from reemote import op, iptables
+
+        # Default-deny incoming traffic (the command needs root)
+        yield op(
+            iptables.policy,
+            name="Default DROP on INPUT",
+            chain="INPUT",
+            policy="DROP",
+            sudo=True,
+        )
+
+        # Same for IPv6 (ip6tables), on a different table
+        yield op(
+            iptables.policy,
+            name="ACCEPT forwarded IPv6 traffic",
+            chain="FORWARD",
+            policy="ACCEPT",
+            table="filter",
+            version=6,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/iptables/iptables_policy.py``.
     """
 
@@ -1698,6 +1754,84 @@ async def rule(
     ```
 
     Examples:
+        ```python
+        from reemote import op, iptables
+
+        # Allow HTTPS (iptables -t filter -A INPUT -p tcp --dport 443 -j ACCEPT)
+        yield op(
+            iptables.rule,
+            name="Allow HTTPS",
+            chain="INPUT",
+            jump="ACCEPT",
+            protocol="tcp",
+            destination_port=443,
+            sudo=True,
+        )
+
+        # Accept return traffic, inserted above a catch-all DROP
+        # (-I without a position inserts at the top)
+        yield op(
+            iptables.rule,
+            name="Accept established connections",
+            chain="INPUT",
+            jump="ACCEPT",
+            ctstate=("ESTABLISHED", "RELATED"),
+            append=False,
+            sudo=True,
+        )
+
+        # Port-forward 8080 to a local web server
+        # (iptables -t nat -A PREROUTING -p tcp --dport 8080 -j DNAT --to-destination 127.0.0.1:80)
+        yield op(
+            iptables.rule,
+            name="Redirect 8080 to the internal web server",
+            chain="PREROUTING",
+            jump="DNAT",
+            table="nat",
+            protocol="tcp",
+            destination_port=8080,
+            to_destination="127.0.0.1:80",
+            sudo=True,
+        )
+
+        # Rate-limit logged drops, marked with a comment for idempotent re-runs
+        yield op(
+            iptables.rule,
+            name="Log and drop everything else",
+            chain="INPUT",
+            jump="LOG",
+            log_prefix="reemote DROP: ",
+            log_level="info",
+            limit="10/min",
+            limit_burst=5,
+            comment="default-drop-log",
+            sudo=True,
+        )
+
+        # Drop any source listed in an ipset (manage the set with iptables.ipset)
+        yield op(
+            iptables.rule,
+            name="Drop blacklisted sources",
+            chain="INPUT",
+            jump="DROP",
+            match_set=("blacklist", "src"),
+            position=1,
+            sudo=True,
+        )
+
+        # Remove a rule (present=False deletes the matching rule with -D)
+        yield op(
+            iptables.rule,
+            name="Stop allowing HTTP",
+            chain="INPUT",
+            jump="ACCEPT",
+            protocol="tcp",
+            destination_port=80,
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/iptables/iptables_rule.py``.
     """
 
@@ -1959,6 +2093,26 @@ async def flush(
     ```
 
     Examples:
+        ```python
+        from reemote import op, iptables
+
+        # Flush every chain of the nat table (omitting chain flushes the whole table)
+        yield op(
+            iptables.flush,
+            name="Clear NAT rules",
+            table="nat",
+            sudo=True,
+        )
+
+        # Flush one chain only; policies and user chains survive
+        yield op(
+            iptables.flush,
+            name="Reset forwarding rules",
+            chain="FORWARD",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/iptables/iptables_flush.py``.
     """
 
@@ -2036,6 +2190,25 @@ async def zero(
     ```
 
     Examples:
+        ```python
+        from reemote import op, iptables
+
+        # Zero the counters of one chain (stateless: always reported changed)
+        yield op(
+            iptables.zero,
+            name="Reset INPUT counters",
+            chain="INPUT",
+            sudo=True,
+        )
+
+        # Omit chain to zero every chain of the table
+        yield op(
+            iptables.zero,
+            name="Reset all filter counters",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/iptables/iptables_zero.py``.
     """
 
@@ -2105,6 +2278,27 @@ async def save(
     ```
 
     Examples:
+        ```python
+        from reemote import op, iptables
+
+        # Snapshot the live rules to the iptables-persistent location
+        # (sh -c 'iptables-save > /etc/iptables/rules.v4', skipped when already synced)
+        yield op(
+            iptables.save,
+            name="Persist IPv4 rules",
+            sudo=True,
+        )
+
+        # Save IPv6 rules to an explicit path
+        yield op(
+            iptables.save,
+            name="Back up IPv6 rules",
+            path="/root/rules.v6.bak",
+            version=6,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/iptables/iptables_save.py``.
     """
 
@@ -2196,6 +2390,28 @@ async def restore(
     ```
 
     Examples:
+        ```python
+        from reemote import op, iptables
+
+        # Atomically load a snapshot (upload it to the host first with files.put)
+        yield op(
+            iptables.restore,
+            name="Apply the reviewed snapshot",
+            path="/etc/iptables/rules.v4",
+            sudo=True,
+        )
+
+        # Append the file's rules without flushing the live ones, for IPv6
+        yield op(
+            iptables.restore,
+            name="Add the extra IPv6 rules",
+            path="/etc/iptables/rules.v6",
+            version=6,
+            noflush=True,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/iptables/iptables_restore.py``.
     """
 
@@ -2314,6 +2530,40 @@ async def ipset(
     ```
 
     Examples:
+        ```python
+        from reemote import op, iptables
+
+        # Create a set and add members (membership is additive)
+        yield op(
+            iptables.ipset,
+            name="Create the blacklist",
+            set_name="blacklist",
+            set_type="hash:ip",
+            entries=("203.0.113.7", "198.51.100.23"),
+            sudo=True,
+        )
+
+        # Remove entries; the set itself survives
+        yield op(
+            iptables.ipset,
+            name="Unblock an address",
+            set_name="blacklist",
+            entries=("203.0.113.7",),
+            present=False,
+            sudo=True,
+        )
+
+        # Destroy the whole set (present=False with no entries); fails while a
+        # rule still references it -- remove the referencing iptables.rule first
+        yield op(
+            iptables.ipset,
+            name="Remove the blacklist",
+            set_name="blacklist",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/iptables/iptables_ipset.py``.
     """
 

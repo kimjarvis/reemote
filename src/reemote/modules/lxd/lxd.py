@@ -1498,6 +1498,28 @@ async def container(
     ```
 
     Examples:
+        ```python
+        from reemote import op, lxd
+
+        # Launch a container from an image (the lxc client needs the daemon socket, so elevate with sudo)
+        yield op(
+            lxd.container,
+            name="Ensure web container",
+            id="web1",
+            image="ubuntu:24.04",
+            sudo=True,
+        )
+
+        # Remove the container (stopped first when it is running)
+        yield op(
+            lxd.container,
+            name="Remove web container",
+            id="web1",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/lxd/lxd_container.py``.
     """
 
@@ -1604,6 +1626,28 @@ async def image(
     ```
 
     Examples:
+        ```python
+        from reemote import op, lxd
+
+        # Cache an image locally by alias (copies it from the source remote)
+        yield op(
+            lxd.image,
+            name="Cache the Ubuntu image",
+            image="ubuntu/24.04",
+            source="ubuntu:24.04",
+            sudo=True,
+        )
+
+        # Remove an image by fingerprint or alias
+        yield op(
+            lxd.image,
+            name="Drop the old image",
+            image="ubuntu/22.04",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/lxd/lxd_image.py``.
     """
 
@@ -1717,6 +1761,28 @@ async def image_alias(
     ```
 
     Examples:
+        ```python
+        from reemote import op, lxd
+
+        # Point an alias at a fingerprint (created, or repointed when it drifts)
+        yield op(
+            lxd.image_alias,
+            name="Alias current to the base image",
+            alias="current",
+            fingerprint="3f7a9c1e8b2d",
+            sudo=True,
+        )
+
+        # Remove the alias (the image it targets stays cached)
+        yield op(
+            lxd.image_alias,
+            name="Remove the current alias",
+            alias="current",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/lxd/lxd_image_alias.py``.
     """
 
@@ -1906,6 +1972,41 @@ async def instance(
     ```
 
     Examples:
+        ```python
+        from reemote import op, lxd
+
+        # Launch a container with profiles, config and a device
+        yield op(
+            lxd.instance,
+            name="Ensure web1",
+            instance="web1",
+            image="ubuntu:24.04",
+            profiles=("default",),
+            config=("limits.cpu=2", "limits.memory=2GB"),
+            devices=(("eth0", "nic", ("network=lxdbr0",)),),
+            sudo=True,
+        )
+
+        # Launch a VM (profiles/config/devices reconciled non-destructively on later runs)
+        yield op(
+            lxd.instance,
+            name="Ensure build-vm",
+            instance="build-vm",
+            image="ubuntu:24.04",
+            instance_type="vm",
+            sudo=True,
+        )
+
+        # Stop and delete the instance
+        yield op(
+            lxd.instance,
+            name="Remove web1",
+            instance="web1",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/lxd/lxd_instance.py``.
     """
 
@@ -2101,6 +2202,29 @@ async def instance_config(
     ```
 
     Examples:
+        ```python
+        from reemote import op, lxd
+
+        # Set config keys on an existing instance (only drifted keys are written)
+        yield op(
+            lxd.instance_config,
+            name="Cap web1 memory",
+            instance="web1",
+            config=("limits.memory=4GB",),
+            sudo=True,
+        )
+
+        # Reassign profiles wholesale and attach a disk device
+        yield op(
+            lxd.instance_config,
+            name="Reprofile web1",
+            instance="web1",
+            profiles=("default", "web"),
+            devices=(("data", "disk", ("path=/srv/data", "source=/srv/data")),),
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/lxd/lxd_instance_config.py``.
     """
 
@@ -2240,6 +2364,39 @@ async def instance_state(
     ```
 
     Examples:
+        ```python
+        from reemote import op, lxd
+
+        # Start the instance (idempotent: a no-op when already Running)
+        yield op(
+            lxd.instance_state,
+            name="Start web1",
+            instance="web1",
+            state="started",
+            sudo=True,
+        )
+
+        # Force-stop, killing the instance after a 30s clean-shutdown window
+        yield op(
+            lxd.instance_state,
+            name="Stop web1",
+            instance="web1",
+            state="stopped",
+            force=True,
+            timeout=30,
+            sudo=True,
+        )
+
+        # Restart (stateless: always runs, a restart is an action not a state)
+        yield op(
+            lxd.instance_state,
+            name="Restart web1",
+            instance="web1",
+            state="restarted",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/lxd/lxd_instance_state.py``.
     """
 
@@ -2364,6 +2521,30 @@ async def instance_copy(
     ```
 
     Examples:
+        ```python
+        from reemote import op, lxd
+
+        # Copy an instance to a new name on the same daemon (with its snapshots)
+        yield op(
+            lxd.instance_copy,
+            name="Clone web1 to web2",
+            instance="web1",
+            dest_instance="web2",
+            sudo=True,
+        )
+
+        # Copy to another remote, skipping the snapshots
+        yield op(
+            lxd.instance_copy,
+            name="Ship web1 to the backup remote",
+            instance="web1",
+            dest_instance="web1",
+            dest_remote="backup",
+            instance_only=True,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/lxd/lxd_instance_copy.py``.
     """
 
@@ -2492,6 +2673,49 @@ async def instance_snapshot(
     ```
 
     Examples:
+        ```python
+        from reemote import op, lxd
+
+        # Create a snapshot (idempotent on the snapshot name)
+        yield op(
+            lxd.instance_snapshot,
+            name="Snapshot web1",
+            instance="web1",
+            snapshot="pre-deploy",
+            sudo=True,
+        )
+
+        # Include the runtime state in the snapshot
+        yield op(
+            lxd.instance_snapshot,
+            name="Stateful snapshot of web1",
+            instance="web1",
+            snapshot="running",
+            stateful=True,
+            sudo=True,
+        )
+
+        # Restore the instance to a snapshot (stateless: always runs; stop it first for a non-stateful restore)
+        yield op(
+            lxd.instance_snapshot,
+            name="Roll web1 back",
+            instance="web1",
+            snapshot="pre-deploy",
+            restore=True,
+            sudo=True,
+        )
+
+        # Delete the snapshot
+        yield op(
+            lxd.instance_snapshot,
+            name="Drop the pre-deploy snapshot",
+            instance="web1",
+            snapshot="pre-deploy",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/lxd/lxd_instance_snapshot.py``.
     """
@@ -2617,6 +2841,29 @@ async def network(
     ```
 
     Examples:
+        ```python
+        from reemote import op, lxd
+
+        # Create a managed bridge network with its config (the type is immutable after creation)
+        yield op(
+            lxd.network,
+            name="Ensure lxdbr1",
+            network="lxdbr1",
+            network_type="bridge",
+            config=("ipv4.address=10.10.10.1/24", "ipv4.nat=true"),
+            sudo=True,
+        )
+
+        # Delete the managed network (an unmanaged interface raises OperationError)
+        yield op(
+            lxd.network,
+            name="Remove lxdbr1",
+            network="lxdbr1",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/lxd/lxd_network.py``.
     """
 
@@ -2791,6 +3038,28 @@ async def operation(
     ```
 
     Examples:
+        ```python
+        from reemote import op, lxd
+
+        # Wait for a background operation to finish (stateless: polls until the daemon prunes it)
+        yield op(
+            lxd.operation,
+            name="Wait for the migration",
+            operation_id="8f2a1c4d",
+            sudo=True,
+        )
+
+        # Cancel a still-registered operation, then wait for it to clear
+        yield op(
+            lxd.operation,
+            name="Cancel the stuck copy",
+            operation_id="8f2a1c4d",
+            cancel=True,
+            timeout=60,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/lxd/lxd_operation.py``.
     """
 
@@ -2890,6 +3159,29 @@ async def profile(
     ```
 
     Examples:
+        ```python
+        from reemote import op, lxd
+
+        # Create a profile and set its config and a device (the create verb takes no config flags)
+        yield op(
+            lxd.profile,
+            name="Ensure web profile",
+            profile="web",
+            config=("limits.cpu=2",),
+            devices=(("root", "disk", ("path=/", "pool=default", "size=20GiB")),),
+            sudo=True,
+        )
+
+        # Delete the profile (the CLI fails while instances still apply it)
+        yield op(
+            lxd.profile,
+            name="Remove web profile",
+            profile="web",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/lxd/lxd_profile.py``.
     """
 
@@ -3041,6 +3333,28 @@ async def project(
     ```
 
     Examples:
+        ```python
+        from reemote import op, lxd
+
+        # Create a project with its feature flags
+        yield op(
+            lxd.project,
+            name="Ensure web project",
+            project="web",
+            config=("features.images=true", "features.profiles=true"),
+            sudo=True,
+        )
+
+        # Delete the project (empty it first; the CLI refuses while it is in use)
+        yield op(
+            lxd.project,
+            name="Remove web project",
+            project="web",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/lxd/lxd_project.py``.
     """
 
@@ -3155,6 +3469,29 @@ async def storage_pool(
     ```
 
     Examples:
+        ```python
+        from reemote import op, lxd
+
+        # Create a storage pool with its driver and config (the driver is immutable after creation)
+        yield op(
+            lxd.storage_pool,
+            name="Ensure fast pool",
+            pool="fast",
+            driver="zfs",
+            config=("source=rpool/lxd",),
+            sudo=True,
+        )
+
+        # Delete the pool (empty it first; the CLI refuses while volumes remain)
+        yield op(
+            lxd.storage_pool,
+            name="Remove fast pool",
+            pool="fast",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/lxd/lxd_storage_pool.py``.
     """
 
@@ -3279,6 +3616,30 @@ async def storage_volume(
     ```
 
     Examples:
+        ```python
+        from reemote import op, lxd
+
+        # Create a custom volume in an existing pool (config is creation-only)
+        yield op(
+            lxd.storage_volume,
+            name="Ensure data volume",
+            pool="default",
+            volume="data",
+            config=("size=10GiB",),
+            sudo=True,
+        )
+
+        # Delete the custom volume (the CLI fails while it is still attached)
+        yield op(
+            lxd.storage_volume,
+            name="Remove data volume",
+            pool="default",
+            volume="data",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/lxd/lxd_storage_volume.py``.
     """

@@ -1275,6 +1275,64 @@ async def service(
     ```
 
     Examples:
+        ```python
+        from reemote import op, systemd
+
+        # Start and enable a unit  ->  systemctl start httpd.service; systemctl enable httpd.service
+        # (now=True adds --now to the enable, so the boot change also starts the unit)
+        yield op(
+            systemd.service,
+            name="Ensure httpd running and enabled",
+            service="httpd",
+            running=True,
+            enabled=True,
+            sudo=True,
+        )
+
+        # Stop and disable  ->  systemctl stop snmpd.service; systemctl disable snmpd.service
+        yield op(
+            systemd.service,
+            name="Take snmpd down",
+            service="snmpd",
+            running=False,
+            enabled=False,
+            sudo=True,
+        )
+
+        # Re-read unit files and restart a running unit with a pause: sleep splits
+        # the restart into stop / sleep / start instead of one restart command
+        # ->  systemctl daemon-reload; systemctl stop myapp.service; sleep 5; systemctl start myapp.service
+        yield op(
+            systemd.service,
+            name="Reload unit files and restart myapp",
+            service="myapp",
+            daemon_reload=True,
+            restarted=True,
+            sleep=5,
+            sudo=True,
+        )
+
+        # Reload a running unit; soft_reload=True would ask for reload-or-try-restart
+        # so a unit without a reload handler is restarted instead
+        yield op(
+            systemd.service,
+            name="Reload nginx",
+            service="nginx",
+            reloaded=True,
+            sudo=True,
+        )
+
+        # A per-user manager runs as the login user, so no escalation is needed;
+        # machine/user_name scope the same call for another host or user
+        # ->  systemctl --user start syncthing.service
+        yield op(
+            systemd.service,
+            name="Run the login user's syncthing",
+            service="syncthing",
+            user_mode=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/systemd/systemd_service.py``.
     """
 
@@ -1401,6 +1459,20 @@ async def daemon_reload(
     ```
 
     Examples:
+        ```python
+        from reemote import op, systemd
+
+        # Pick up changed unit files  ->  systemctl daemon-reload
+        yield op(systemd.daemon_reload, name="Reload systemd daemon", sudo=True)
+
+        # The per-user manager needs no escalation  ->  systemctl --user daemon-reload
+        yield op(
+            systemd.daemon_reload,
+            name="Reload the login user's manager",
+            user_mode=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/systemd/systemd_daemon_reload.py``.
     """
 
@@ -1457,6 +1529,23 @@ async def mask(
     ```
 
     Examples:
+        ```python
+        from reemote import op, systemd
+
+        # Mask a unit so nothing can start it  ->  systemctl mask unneeded.service
+        # (idempotent: yielded only while the UnitFileState is not already masked)
+        yield op(systemd.mask, name="Mask unneeded", unit="unneeded", sudo=True)
+
+        # Unmask it again  ->  systemctl unmask unneeded.service
+        yield op(
+            systemd.mask,
+            name="Unmask unneeded",
+            unit="unneeded",
+            masked=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/systemd/systemd_mask.py``.
     """
 
@@ -1519,6 +1608,15 @@ async def reset_failed(
     ```
 
     Examples:
+        ```python
+        from reemote import op, systemd
+
+        # Clear a failed state  ->  systemctl reset-failed myapp.service
+        # (only issued while the unit's ActiveState is failed; to reset and start
+        #  in one step use systemd.service with reset_failed=True)
+        yield op(systemd.reset_failed, name="Reset myapp", unit="myapp", sudo=True)
+        ```
+
         Examples can be found in
         ``examples/modules/systemd/systemd_reset_failed.py``.
     """
@@ -1782,6 +1880,44 @@ async def dropin(
     ```
 
     Examples:
+        ```python
+        from reemote import op, systemd
+
+        # Write a drop-in: the text is spooled to /tmp over scp, installed 0644 at
+        # /etc/systemd/system/httpd.service.d/override.conf, then daemon-reloaded
+        # (daemon_reload defaults to True), so the request needs sudo
+        yield op(
+            systemd.dropin,
+            name="Give httpd more file descriptors",
+            unit="httpd",
+            filename="override",
+            content="[Service]\\nLimitNOFILE=4096\\n",
+            sudo=True,
+        )
+
+        # Apply the override to the running process as well (chains a restart)
+        yield op(
+            systemd.dropin,
+            name="Harden sshd",
+            unit="sshd",
+            filename="harden",
+            content="[Service]\\nProtectSystem=strict\\n",
+            restart=True,
+            sudo=True,
+        )
+
+        # Remove the drop-in again -- rm -f plus a daemon-reload
+        yield op(
+            systemd.dropin,
+            name="Drop the httpd override",
+            unit="httpd",
+            filename="override",
+            content="",  # required argument, unused when present=False
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/systemd/systemd_dropin.py``.
     """
 
@@ -1860,6 +1996,30 @@ async def tmpfiles(
     ```
 
     Examples:
+        ```python
+        from reemote import op, systemd
+
+        # Declare a runtime directory: installs /etc/tmpfiles.d/myapp.conf 0644,
+        # then applies it at once with systemd-tmpfiles --create <path>
+        yield op(
+            systemd.tmpfiles,
+            name="Create the myapp runtime directory",
+            filename="myapp",
+            content="d /run/myapp 0755 root root -\\n",
+            sudo=True,
+        )
+
+        # Remove the config file (runtime files it already created stay in place)
+        yield op(
+            systemd.tmpfiles,
+            name="Remove the myapp tmpfiles config",
+            filename="myapp",
+            content="",  # required argument, unused when present=False
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/systemd/systemd_tmpfiles.py``.
     """
 
@@ -1928,6 +2088,31 @@ async def sysusers(
     ```
 
     Examples:
+        ```python
+        from reemote import op, systemd
+
+        # Declare a system user: installs /etc/sysusers.d/myapp.conf 0644, then
+        # applies it at once with systemd-sysusers <path>
+        yield op(
+            systemd.sysusers,
+            name="Create the myapp system user",
+            filename="myapp",
+            content='u myapp - "My App" /nonexistent /sbin/nologin\\n',
+            sudo=True,
+        )
+
+        # Remove the config file only -- systemd-sysusers has no removal verb, so
+        # the account it created is left alone (delete it with server.user)
+        yield op(
+            systemd.sysusers,
+            name="Remove the myapp sysusers config",
+            filename="myapp",
+            content="",  # required argument, unused when present=False
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/systemd/systemd_sysusers.py``.
     """
 
@@ -2009,6 +2194,23 @@ async def preset(
     ```
 
     Examples:
+        ```python
+        from reemote import op, systemd
+
+        # Apply one unit's vendor preset  ->  systemctl preset httpd.service
+        # (idempotent: only when the unit's state differs from its preset policy)
+        yield op(systemd.preset, name="Apply the httpd preset", unit="httpd", sudo=True)
+
+        # Apply presets to every unit instead -- stateless, always runs
+        # ->  systemctl preset-all
+        yield op(
+            systemd.preset,
+            name="Reset every boot state to the vendor preset",
+            all_units=True,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/systemd/systemd_preset.py``.
     """
 

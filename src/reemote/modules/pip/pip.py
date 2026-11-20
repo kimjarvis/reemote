@@ -410,6 +410,48 @@ async def packages(
     ```
 
     Examples:
+        ```python
+        from reemote import op, pip
+
+        # Install into the system interpreter; its site-packages is root-owned,
+        # so elevate, and pin one package with the pkg==version spelling
+        yield op(
+            pip.packages,
+            name="Install app dependencies",
+            packages=("flask", "requests==2.31.0"),
+            sudo=True,
+        )
+
+        # Install a requirements file into a virtualenv by naming its bin/pip;
+        # a virtualenv is not root-owned, so no sudo is needed
+        yield op(
+            pip.packages,
+            name="Sync the venv from requirements.txt",
+            requirements="/srv/app/requirements.txt",
+            pip="/srv/app/venv/bin/pip",
+        )
+
+        # Upgrade an installed package to its latest version, from an internal
+        # index (pip install --index-url ... --upgrade flask)
+        yield op(
+            pip.packages,
+            name="Upgrade Flask from the internal index",
+            packages=("flask",),
+            latest=True,
+            extra_install_args="--index-url https://pypi.internal/simple",
+            sudo=True,
+        )
+
+        # Remove packages (present=False feeds pip bare names with uninstall --yes)
+        yield op(
+            pip.packages,
+            name="Remove the old client",
+            packages=("requests",),
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/pip/pip_packages.py``.
     """
 
@@ -717,6 +759,39 @@ async def virtualenv(
     ```
 
     Examples:
+        ```python
+        from reemote import op, pip
+
+        # Create a virtualenv under a root-owned path with the virtualenv tool
+        # (virtualenv -p python3.12 --system-site-packages /opt/app/venv)
+        yield op(
+            pip.virtualenv,
+            name="Create the app virtualenv",
+            path="/opt/app/venv",
+            python="python3.12",
+            site_packages=True,
+            sudo=True,
+        )
+
+        # A virtualenv in the connected user's home needs no elevation;
+        # always_copy copies instead of symlinking the interpreter (--always-copy)
+        yield op(
+            pip.virtualenv,
+            name="Create a dev virtualenv",
+            path="/home/deploy/.venvs/dev",
+            always_copy=True,
+        )
+
+        # Remove the whole virtualenv tree (rm -rf /opt/app/venv)
+        yield op(
+            pip.virtualenv,
+            name="Destroy the old virtualenv",
+            path="/opt/app/venv",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/pip/pip_virtualenv.py``.
     """
 
@@ -791,6 +866,30 @@ async def venv(
     ```
 
     Examples:
+        ```python
+        from reemote import op, pip
+
+        # Create a stdlib virtualenv (python3.12 -m venv --system-site-packages /srv/app/venv);
+        # a root-owned parent needs sudo, a path in the user's home does not
+        yield op(
+            pip.venv,
+            name="Create the service virtualenv",
+            path="/srv/app/venv",
+            python="python3.12",
+            site_packages=True,
+            sudo=True,
+        )
+
+        # Remove the virtualenv tree (rm -rf /srv/app/venv)
+        yield op(
+            pip.venv,
+            name="Destroy the service virtualenv",
+            path="/srv/app/venv",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/pip/pip_venv.py``.
     """
 

@@ -607,6 +607,54 @@ async def setting(
     ```
 
     Examples:
+        ```python
+        from reemote import op, sysctl
+
+        # Set a parameter at runtime and persist it to /etc/sysctl.conf.
+        # Both halves write root-owned state, so elevate with sudo.
+        yield op(
+            sysctl.setting,
+            name="Tune vm.swappiness",
+            key="vm.swappiness",
+            value=10,
+            sudo=True,
+        )
+
+        # Persist into a drop-in instead of the legacy file; a multi-word
+        # string value is written verbatim. ignore_errors tolerates a
+        # read-only or unknown key (-> sysctl -w ... || true).
+        yield op(
+            sysctl.setting,
+            name="Set kernel.printk",
+            key="kernel.printk",
+            value="4 4 1 7",
+            sysctl_file="/etc/sysctl.d/99-tuning.conf",
+            ignore_errors=True,
+            sudo=True,
+        )
+
+        # Manage only the file, leaving the running kernel untouched.
+        yield op(
+            sysctl.setting,
+            name="Stage a value without applying it",
+            key="net.ipv4.ip_forward",
+            value=1,
+            sysctl_set=False,
+            sudo=True,
+        )
+
+        # Remove the key's line from persistence (present=False; the runtime
+        # value cannot be unset and is left alone).
+        yield op(
+            sysctl.setting,
+            name="Drop vm.swappiness from the config",
+            key="vm.swappiness",
+            value=10,
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/sysctl/sysctl_setting.py``.
     """
 
@@ -709,6 +757,40 @@ async def conf(
     ```
 
     Examples:
+        ```python
+        from reemote import op, sysctl
+
+        # Write a whole drop-in from an ordered tuple of (key, value) pairs
+        # (a tuple, not a dict: op() rejects unhashable arguments) and reload
+        # it. A scoped sysctl -p needs root, so elevate with sudo.
+        yield op(
+            sysctl.conf,
+            name="Apply baseline tuning",
+            settings=(("vm.swappiness", 10), ("net.ipv4.ip_forward", 1)),
+            sudo=True,
+        )
+
+        # Manage a named file but defer the reload (e.g. apply on reboot).
+        yield op(
+            sysctl.conf,
+            name="Stage an app drop-in",
+            settings=(("fs.file-max", 200000),),
+            sysctl_file="/etc/sysctl.d/90-app.conf",
+            reload=False,
+            sudo=True,
+        )
+
+        # Remove the whole file (present=False; settings are ignored).
+        yield op(
+            sysctl.conf,
+            name="Remove the tuning drop-in",
+            settings=(),
+            sysctl_file="/etc/sysctl.d/99-tuning.conf",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/sysctl/sysctl_conf.py``.
     """
 

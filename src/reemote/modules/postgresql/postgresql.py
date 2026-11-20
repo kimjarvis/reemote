@@ -2114,6 +2114,43 @@ async def database(
     ```
 
     Examples:
+        ```python
+        from reemote import op, postgresql
+
+        # Create a database owned by a role. CREATE/ALTER needs the postgres
+        # superuser, so elevate with sudo and connect via psql_user.
+        yield op(
+            postgresql.database,
+            name="Create the app database",
+            database="appdb",
+            owner="app_user",
+            encoding="UTF8",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Reconcile an existing database's connection limit and access
+        yield op(
+            postgresql.database,
+            name="Cap and reopen the app database",
+            database="appdb",
+            connection_limit=100,
+            allow_connections=True,
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Drop a database (present=False)
+        yield op(
+            postgresql.database,
+            name="Drop the scratch database",
+            database="scratchdb",
+            present=False,
+            sudo=True,
+            psql_user="postgres",
+        )
+        ```
+
         Examples can be found in ``examples/modules/postgresql/postgresql_database.py``.
     """
 
@@ -2301,6 +2338,21 @@ async def dump(
     ```
 
     Examples:
+        ```python
+        from reemote import op, postgresql
+
+        # Dump one database to a host-side file (stateless, runs every time). The
+        # redirect runs inside an elevated sh -c, so a root-only destination works.
+        yield op(
+            postgresql.dump,
+            name="Dump the app database",
+            dest="/backups/appdb.sql",
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+        ```
+
         Examples can be found in ``examples/modules/postgresql/postgresql_dump.py``.
     """
 
@@ -2411,6 +2463,44 @@ async def extension(
     ```
 
     Examples:
+        ```python
+        from reemote import op, postgresql
+
+        # Install an extension into a schema (most extensions need a superuser)
+        yield op(
+            postgresql.extension,
+            name="Install pg_stat_statements",
+            extension="pg_stat_statements",
+            schema="monitoring",
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Update an installed extension to a version -> ALTER ... UPDATE TO
+        yield op(
+            postgresql.extension,
+            name="Upgrade postgis",
+            extension="postgis",
+            version="3.4",
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Remove an extension and its dependent objects (CASCADE)
+        yield op(
+            postgresql.extension,
+            name="Remove hstore",
+            extension="hstore",
+            present=False,
+            cascade=True,
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+        ```
+
         Examples can be found in ``examples/modules/postgresql/postgresql_extension.py``.
     """
 
@@ -2586,6 +2676,49 @@ async def index(
     ```
 
     Examples:
+        ```python
+        from reemote import op, postgresql
+
+        # Create a UNIQUE btree index over a column
+        yield op(
+            postgresql.index,
+            name="Unique email index",
+            index="uq_users_email",
+            table="users",
+            columns=("email",),
+            unique=True,
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Create a GIN index over an expression, without a write lock
+        # -> CREATE INDEX CONCURRENTLY ... USING gin
+        yield op(
+            postgresql.index,
+            name="Full-text GIN index",
+            index="ix_articles_body",
+            table="articles",
+            columns=("to_tsvector('english', body)",),
+            method="gin",
+            concurrent=True,
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Drop an index (present=False)
+        yield op(
+            postgresql.index,
+            name="Drop the stale index",
+            index="ix_legacy",
+            present=False,
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+        ```
+
         Examples can be found in ``examples/modules/postgresql/postgresql_index.py``.
     """
 
@@ -2734,6 +2867,22 @@ async def load(
     ```
 
     Examples:
+        ```python
+        from reemote import op, postgresql
+
+        # Load a host-side .sql file into a database (stateless). The read runs
+        # inside an elevated sh -c, so a root-only dump file works. To load
+        # controller-side bytes, spool them with files.put first.
+        yield op(
+            postgresql.load,
+            name="Restore the app database",
+            src="/backups/appdb.sql",
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+        ```
+
         Examples can be found in ``examples/modules/postgresql/postgresql_load.py``.
     """
 
@@ -2827,6 +2976,42 @@ async def membership(
     ```
 
     Examples:
+        ```python
+        from reemote import op, postgresql
+
+        # Grant a role membership in a group role
+        yield op(
+            postgresql.membership,
+            name="Add app_user to readers",
+            role="app_user",
+            target_role="readers",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Grant WITH ADMIN OPTION so the member may pass the role on
+        yield op(
+            postgresql.membership,
+            name="Let the admin manage writers",
+            role="app_admin",
+            target_role="writers",
+            admin_option=True,
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Revoke the membership (present=False)
+        yield op(
+            postgresql.membership,
+            name="Remove the membership",
+            role="app_user",
+            target_role="readers",
+            present=False,
+            sudo=True,
+            psql_user="postgres",
+        )
+        ```
+
         Examples can be found in ``examples/modules/postgresql/postgresql_membership.py``.
     """
 
@@ -3146,6 +3331,64 @@ async def privilege(
     ```
 
     Examples:
+        ```python
+        from reemote import op, postgresql
+
+        # Grant SELECT and INSERT on a table to one role
+        yield op(
+            postgresql.privilege,
+            name="Grant table access",
+            privileges=("SELECT", "INSERT"),
+            role="app_user",
+            object_type="table",
+            objects=("public.users",),
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Grant ALL privileges on every table in a schema to several grantees
+        yield op(
+            postgresql.privilege,
+            name="Grant on all schema tables",
+            privileges="ALL",
+            role=("app_user", "report_user"),
+            object_type="table",
+            all_in_schema="app",
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # ALTER DEFAULT PRIVILEGES for a target role's future tables
+        yield op(
+            postgresql.privilege,
+            name="Default privileges on future tables",
+            privileges="SELECT",
+            role="report_user",
+            object_type="default_privs",
+            objects=("tables",),
+            target_roles="app_owner",
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Revoke a privilege (present=False)
+        yield op(
+            postgresql.privilege,
+            name="Revoke the insert grant",
+            privileges="INSERT",
+            role="app_user",
+            object_type="table",
+            objects=("public.users",),
+            present=False,
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+        ```
+
         Examples can be found in ``examples/modules/postgresql/postgresql_privilege.py``.
     """
 
@@ -3513,6 +3756,44 @@ async def publication(
     ```
 
     Examples:
+        ```python
+        from reemote import op, postgresql
+
+        # Create a publication for a set of tables and set its owner
+        yield op(
+            postgresql.publication,
+            name="Publish the events tables",
+            publication="events_pub",
+            tables=("public.events", "public.event_tags"),
+            owner="repl_user",
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Publish every table (FOR ALL TABLES, immutable after creation)
+        yield op(
+            postgresql.publication,
+            name="Publish everything",
+            publication="all_pub",
+            all_tables=True,
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Drop a publication (present=False)
+        yield op(
+            postgresql.publication,
+            name="Drop the publication",
+            publication="events_pub",
+            present=False,
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+        ```
+
         Examples can be found in ``examples/modules/postgresql/postgresql_publication.py``.
     """
 
@@ -3721,6 +4002,42 @@ async def role(
     ```
 
     Examples:
+        ```python
+        from reemote import op, postgresql
+
+        # Create a login role with CREATEDB and a connection limit
+        yield op(
+            postgresql.role,
+            name="Create the app role",
+            role="app_user",
+            login=True,
+            createdb=True,
+            connection_limit=50,
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Create a non-login group role (inherit defaults to True)
+        yield op(
+            postgresql.role,
+            name="Create a group role",
+            role="readers",
+            login=False,
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Drop a role (present=False)
+        yield op(
+            postgresql.role,
+            name="Drop the retired role",
+            role="old_user",
+            present=False,
+            sudo=True,
+            psql_user="postgres",
+        )
+        ```
+
         Examples can be found in ``examples/modules/postgresql/postgresql_role.py``.
     """
 
@@ -3889,6 +4206,33 @@ async def schema(
     ```
 
     Examples:
+        ```python
+        from reemote import op, postgresql
+
+        # Create a schema owned by a role
+        yield op(
+            postgresql.schema,
+            name="Create the app schema",
+            schema="app",
+            owner="app_user",
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Drop a schema and every object in it (CASCADE)
+        yield op(
+            postgresql.schema,
+            name="Drop the scratch schema",
+            schema="scratch",
+            present=False,
+            cascade=True,
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+        ```
+
         Examples can be found in ``examples/modules/postgresql/postgresql_schema.py``.
     """
 
@@ -4017,6 +4361,32 @@ async def setting(
     ```
 
     Examples:
+        ```python
+        from reemote import op, postgresql
+
+        # Set a GUC via ALTER SYSTEM and reload so it takes effect. The value is
+        # compared as text in the parameter's own unit.
+        yield op(
+            postgresql.setting,
+            name="Raise the connection limit",
+            setting="max_connections",
+            value="200",
+            reload=True,
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Reset a parameter to its default (present=False)
+        yield op(
+            postgresql.setting,
+            name="Reset work_mem",
+            setting="work_mem",
+            present=False,
+            sudo=True,
+            psql_user="postgres",
+        )
+        ```
+
         Examples can be found in ``examples/modules/postgresql/postgresql_setting.py``.
     """
 
@@ -4105,6 +4475,21 @@ async def sql(
     ```
 
     Examples:
+        ```python
+        from reemote import op, postgresql
+
+        # Run arbitrary SQL (stateless, always executes). The text appears
+        # verbatim in the plan and log, so never embed a credential in it.
+        yield op(
+            postgresql.sql,
+            name="Enable pgcrypto",
+            sql="CREATE EXTENSION IF NOT EXISTS pgcrypto",
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+        ```
+
         Examples can be found in ``examples/modules/postgresql/postgresql_sql.py``.
     """
 
@@ -4237,6 +4622,48 @@ async def subscription(
     ```
 
     Examples:
+        ```python
+        from reemote import op, postgresql
+
+        # Create a subscription that dials the publisher. The connection string
+        # should reference a passfile/service, never embed a password.
+        yield op(
+            postgresql.subscription,
+            name="Subscribe to the events publication",
+            subscription="app_sub",
+            connection="host=pub.example.com dbname=appdb user=repl_user",
+            publications=("events_pub",),
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Pre-provision without connecting (connect=False requires enabled=False)
+        yield op(
+            postgresql.subscription,
+            name="Pre-provision the subscription",
+            subscription="app_sub",
+            connection="host=pub.example.com dbname=appdb user=repl_user",
+            publications=("events_pub",),
+            connect=False,
+            enabled=False,
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Drop a subscription (present=False)
+        yield op(
+            postgresql.subscription,
+            name="Drop the subscription",
+            subscription="app_sub",
+            present=False,
+            psql_database="appdb",
+            sudo=True,
+            psql_user="postgres",
+        )
+        ```
+
         Examples can be found in ``examples/modules/postgresql/postgresql_subscription.py``.
     """
 
@@ -4418,6 +4845,32 @@ async def tablespace(
     ```
 
     Examples:
+        ```python
+        from reemote import op, postgresql
+
+        # Create a tablespace in an existing, server-owned directory
+        # (LOCATION is immutable after creation)
+        yield op(
+            postgresql.tablespace,
+            name="Create the fast tablespace",
+            tablespace="fast",
+            location="/mnt/ssd/pg_fast",
+            owner="app_user",
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Drop a tablespace (present=False; fails while objects still live there)
+        yield op(
+            postgresql.tablespace,
+            name="Drop the fast tablespace",
+            tablespace="fast",
+            present=False,
+            sudo=True,
+            psql_user="postgres",
+        )
+        ```
+
         Examples can be found in ``examples/modules/postgresql/postgresql_tablespace.py``.
     """
 

@@ -1370,6 +1370,59 @@ async def worktree(
     ```
 
     Examples:
+        ```python
+        from reemote import op, git
+
+        # Add a worktree on a new branch of the main repository; elevate because
+        # the add writes under the repository's .git
+        # ->  cd /srv/app && git worktree add -b hotfix /srv/app-hotfix
+        yield op(
+            git.worktree,
+            name="Add the hotfix worktree",
+            worktree="/srv/app-hotfix",
+            repo="/srv/app",
+            new_branch="hotfix",
+            pull=False,
+            sudo=True,
+        )
+
+        # Add a detached worktree pinned to a tag, skipping the repo/.git check
+        # ->  cd /srv/app && git worktree add --detach /srv/app-1.2.0 v1.2.0
+        yield op(
+            git.worktree,
+            name="Add the release worktree",
+            worktree="/srv/app-1.2.0",
+            repo="/srv/app",
+            detached=True,
+            commitish="v1.2.0",
+            assume_repo_exists=True,
+            pull=False,
+            sudo=True,
+        )
+
+        # Pull an existing worktree from an explicit remote branch (--rebase here)
+        # ->  cd /srv/app-hotfix && git pull --rebase origin hotfix
+        yield op(
+            git.worktree,
+            name="Update the hotfix worktree",
+            worktree="/srv/app-hotfix",
+            from_remote_branch=("origin", "hotfix"),
+            rebase=True,
+            sudo=True,
+        )
+
+        # Remove the worktree once the branch is merged
+        # ->  cd /srv/app-hotfix && git worktree remove . --force
+        yield op(
+            git.worktree,
+            name="Remove the hotfix worktree",
+            worktree="/srv/app-hotfix",
+            present=False,
+            force=True,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/git/git_worktree.py``.
     """
 
@@ -1567,6 +1620,50 @@ async def config(
     ```
 
     Examples:
+        ```python
+        from reemote import op, git
+
+        # Set a key in the login user's global config
+        # ->  git config --global user.name 'Kim Jarvis'
+        yield op(
+            git.config,
+            name="Set the global user name",
+            key="user.name",
+            value="Kim Jarvis",
+        )
+
+        # Add a value to a multi-valued key instead of replacing its list (--add)
+        yield op(
+            git.config,
+            name="Trust the deploy directory",
+            key="safe.directory",
+            value="/srv/app",
+            multi_value=True,
+        )
+
+        # Write a repository's --local config; elevate when the checkout is not
+        # owned by the login user
+        # ->  cd /srv/app && git config --local core.autocrlf input
+        yield op(
+            git.config,
+            name="Normalise line endings in the app repo",
+            key="core.autocrlf",
+            value="input",
+            repo="/srv/app",
+            sudo=True,
+        )
+
+        # Work at --system level instead of --global (needs root)
+        yield op(
+            git.config,
+            name="Set the system-wide editor",
+            key="core.editor",
+            value="vim",
+            system=True,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/git/git_config.py``.
     """
 
@@ -1871,6 +1968,60 @@ async def repo(
     ```
 
     Examples:
+        ```python
+        from reemote import op, git
+
+        # Clone when dest is not a repository yet, otherwise switch branch
+        # and pull; elevate because cloning writes under a root-owned /srv
+        # ->  git clone --branch main https://github.com/acme/app.git /srv/app
+        yield op(
+            git.repo,
+            name="Deploy the app repository",
+            src="https://github.com/acme/app.git",
+            dest="/srv/app",
+            branch="main",
+            sudo=True,
+        )
+
+        # Shallow clone and never pull: an existing checkout is only reconciled
+        # against src (--depth 1 lands on clone, fetch and pull alike)
+        yield op(
+            git.repo,
+            name="Fast CI checkout",
+            src="https://github.com/acme/app.git",
+            dest="/srv/ci/app",
+            branch="main",
+            depth=1,
+            pull=False,
+        )
+
+        # Update an existing clone with a rebase instead of a merge
+        # ->  cd /srv/app && git pull --rebase
+        yield op(
+            git.repo,
+            name="Update the app repository",
+            src="https://github.com/acme/app.git",
+            dest="/srv/app",
+            branch="main",
+            rebase=True,
+            sudo=True,
+        )
+
+        # Check a tag out detached and sync the submodules it pins
+        # ->  cd /srv/app && git submodule update --init --recursive
+        yield op(
+            git.repo,
+            name="Release 1.2.0 with submodules",
+            src="https://github.com/acme/app.git",
+            dest="/srv/app",
+            branch="v1.2.0",
+            fetch_tags=True,
+            update_submodules=True,
+            recursive_submodules=True,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/git/git_repo.py``.
     """
 

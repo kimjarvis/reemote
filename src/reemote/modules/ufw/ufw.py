@@ -605,6 +605,25 @@ async def state(
     ```
 
     Examples:
+        ```python
+        from reemote import op, ufw
+
+        # Enable the firewall (renders ufw --force enable; also starts on boot)
+        yield op(
+            ufw.state,
+            name="Ensure the firewall is active",
+            sudo=True,
+        )
+
+        # Disable the firewall
+        yield op(
+            ufw.state,
+            name="Take the firewall down for maintenance",
+            enabled=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/ufw/ufw_state.py``.
     """
 
@@ -675,6 +694,37 @@ async def default_policy(
     ```
 
     Examples:
+        ```python
+        from reemote import op, ufw
+
+        # Deny all incoming traffic by default (the both-words default)
+        yield op(
+            ufw.default_policy,
+            name="Default deny incoming",
+            direction="incoming",
+            policy="deny",
+            sudo=True,
+        )
+
+        # Reject instead of silently dropping, so clients fail fast
+        yield op(
+            ufw.default_policy,
+            name="Default reject incoming",
+            direction="incoming",
+            policy="reject",
+            sudo=True,
+        )
+
+        # Outgoing traffic has no default in this example set: allow it
+        yield op(
+            ufw.default_policy,
+            name="Default allow outgoing",
+            direction="outgoing",
+            policy="allow",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/ufw/ufw_default_policy.py``.
     """
 
@@ -744,6 +794,25 @@ async def logging(
     ```
 
     Examples:
+        ```python
+        from reemote import op, ufw
+
+        # Log at low level (the default)
+        yield op(
+            ufw.logging,
+            name="Low-level logging",
+            sudo=True,
+        )
+
+        # Turn logging off entirely
+        yield op(
+            ufw.logging,
+            name="Disable ufw logging",
+            level="off",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/ufw/ufw_logging.py``.
     """
 
@@ -810,6 +879,19 @@ async def reset(
     ```
 
     Examples:
+        ```python
+        from reemote import op, ufw
+
+        # Reset to installation defaults -- stateless and destructive:
+        # deletes every rule and disables the firewall, so yields changed
+        # every run; only put this in a deploy deliberately
+        yield op(
+            ufw.reset,
+            name="Wipe the firewall before rebuilding the ruleset",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/ufw/ufw_reset.py``.
     """
 
@@ -999,6 +1081,59 @@ async def rule(
     ```
 
     Examples:
+        ```python
+        from reemote import op, ufw
+
+        # Allow SSH with a comment as the auditing marker
+        yield op(
+            ufw.rule,
+            name="Allow SSH",
+            port=22,
+            protocol="tcp",
+            comment="ssh",
+            sudo=True,
+        )
+
+        # Rate-limit a brute-force-prone port with logging
+        yield op(
+            ufw.rule,
+            name="Rate-limit SSH",
+            port=22,
+            action="limit",
+            log=True,
+            sudo=True,
+        )
+
+        # Open an application profile instead of raw ports
+        yield op(
+            ufw.rule,
+            name="Allow the web",
+            app="Nginx Full",
+            sudo=True,
+        )
+
+        # Restrict a port range to one source network, inserted at rule 1
+        yield op(
+            ufw.rule,
+            name="Allow metrics from the ops network",
+            port=("9100:9200",),
+            protocol="tcp",
+            from_ip="10.0.0.0/24",
+            insert=1,
+            sudo=True,
+        )
+
+        # Remove a rule (deletes every matching row and its v6 twin)
+        yield op(
+            ufw.rule,
+            name="Remove the old MySQL rule",
+            port=3306,
+            protocol="tcp",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/ufw/ufw_rule.py``.
     """
 

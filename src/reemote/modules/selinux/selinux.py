@@ -1324,6 +1324,29 @@ async def boolean(
     ```
 
     Examples:
+        ```python
+        from reemote import op, selinux
+
+        # Grant httpd outbound network access, surviving reboot (setsebool -P)
+        yield op(
+            selinux.boolean,
+            name="Allow httpd to make network connections",
+            bool_name="httpd_can_network_connect",
+            value="on",
+            persistent=True,
+            sudo=True,
+        )
+
+        # Flip a boolean for this boot only (no -P, reverts on reboot)
+        yield op(
+            selinux.boolean,
+            name="Stop permitting ftpd anonymous writes",
+            bool_name="ftp_anon_write",
+            value="off",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/selinux/selinux_boolean.py``.
     """
 
@@ -1421,6 +1444,31 @@ async def file_context(
     ```
 
     Examples:
+        ```python
+        from reemote import op, selinux
+
+        # Relabel a web content path to the httpd type (chcon -t httpd_sys_content_t /var/www/html)
+        yield op(
+            selinux.file_context,
+            name="Label the site as httpd content",
+            path="/var/www/html",
+            se_type="httpd_sys_content_t",
+            sudo=True,
+        )
+
+        # Set the full context -- user, role and MLS level as well as type
+        yield op(
+            selinux.file_context,
+            name="Share the export read-write in one category",
+            path="/srv/export",
+            se_user="system_u",
+            se_role="object_r",
+            se_type="public_content_rw_t",
+            se_level="s0:c0",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/selinux/selinux_op_file_context.py``.
     """
@@ -1542,6 +1590,30 @@ async def file_context_mapping(
     ```
 
     Examples:
+        ```python
+        from reemote import op, selinux
+
+        # Add a persistent fcontext rule for a tree
+        # (semanage fcontext -a -t httpd_sys_content_t '/web(/.*)?'); existing files
+        # keep their labels until selinux.restorecon applies the rule
+        yield op(
+            selinux.file_context_mapping,
+            name="Map the web tree to httpd content",
+            target="/web(/.*)?",
+            se_type="httpd_sys_content_t",
+            sudo=True,
+        )
+
+        # Remove the rule entirely (present=False -> semanage fcontext -d)
+        yield op(
+            selinux.file_context_mapping,
+            name="Drop the old ftp mapping",
+            target="/srv/ftp(/.*)?",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/selinux/selinux_op_file_context_mapping.py``.
     """
@@ -1650,6 +1722,31 @@ async def port(
     ```
 
     Examples:
+        ```python
+        from reemote import op, selinux
+
+        # Label tcp/8443 so a web app may bind it
+        # (semanage port -a -t http_port_t -p tcp 8443)
+        yield op(
+            selinux.port,
+            name="Allow the app to bind 8443",
+            protocol="tcp",
+            port_num=8443,
+            se_type="http_port_t",
+            sudo=True,
+        )
+
+        # Remove the label (present=False -> semanage port -d -p tcp 8443)
+        yield op(
+            selinux.port,
+            name="Unlabel 8443",
+            protocol="tcp",
+            port_num=8443,
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/selinux/selinux_port.py``.
     """
 
@@ -1743,6 +1840,19 @@ async def mode(
     ```
 
     Examples:
+        ```python
+        from reemote import op, selinux
+
+        # Switch the running mode to permissive (setenforce 0); this is runtime-only,
+        # the boot mode in /etc/selinux/config is left untouched
+        yield op(
+            selinux.mode,
+            name="Go permissive while debugging denials",
+            mode="permissive",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/selinux/selinux_op_mode.py``.
     """
 
@@ -1843,6 +1953,30 @@ async def login(
     ```
 
     Examples:
+        ```python
+        from reemote import op, selinux
+
+        # Map a Linux login to an SELinux user with an MLS/MCS range
+        # (semanage login -a -s staff_u -r s0-s0:c0.c1023 deploy)
+        yield op(
+            selinux.login,
+            name="Confine the deploy user",
+            user="deploy",
+            seuser="staff_u",
+            mls_range="s0-s0:c0.c1023",
+            sudo=True,
+        )
+
+        # Remove the mapping (present=False -> semanage login -d), reverting to __default__
+        yield op(
+            selinux.login,
+            name="Unconfine the deploy user",
+            user="deploy",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/selinux/selinux_login.py``.
     """
 
@@ -1986,6 +2120,38 @@ async def module(
     ```
 
     Examples:
+        ```python
+        from reemote import op, selinux
+
+        # Install a compiled policy module already on the host (semodule -X 400 -i ...);
+        # deliver my_custom_policy.pp to the target first, e.g. with files.put
+        yield op(
+            selinux.module,
+            name="Install the custom policy",
+            module_name="my_custom_policy",
+            source="/root/my_custom_policy.pp",
+            sudo=True,
+        )
+
+        # Disable an installed module without removing it (state=disabled -> semodule -d)
+        yield op(
+            selinux.module,
+            name="Disable the legacy module",
+            module_name="legacy_policy",
+            state="disabled",
+            sudo=True,
+        )
+
+        # Remove every instance (state=absent -> semodule -r, one per stored priority)
+        yield op(
+            selinux.module,
+            name="Remove the custom policy",
+            module_name="my_custom_policy",
+            state="absent",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/selinux/selinux_module.py``.
     """
 
@@ -2106,6 +2272,27 @@ async def permissive_domain(
     ```
 
     Examples:
+        ```python
+        from reemote import op, selinux
+
+        # Exempt one denied domain while troubleshooting (semanage permissive -a cupsd_t)
+        yield op(
+            selinux.permissive_domain,
+            name="Make cupsd permissive while debugging",
+            domain="cupsd_t",
+            sudo=True,
+        )
+
+        # Enforce it again (present=False -> semanage permissive -d)
+        yield op(
+            selinux.permissive_domain,
+            name="Re-enforce cupsd",
+            domain="cupsd_t",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/selinux/selinux_permissive_domain.py``.
     """
@@ -2191,6 +2378,30 @@ async def restorecon(
     ```
 
     Examples:
+        ```python
+        from reemote import op, selinux
+
+        # Relabel a directory tree from the policy database (restorecon -R /var/www);
+        # this is the follow-up to a selinux.file_context_mapping change
+        yield op(
+            selinux.restorecon,
+            name="Apply the new fcontext rule to the site",
+            path="/var/www",
+            sudo=True,
+        )
+
+        # Reset even user-customized context parts of one file, without recursing
+        # (restorecon -F /etc/passwd)
+        yield op(
+            selinux.restorecon,
+            name="Force-relabel a single file",
+            path="/etc/passwd",
+            recurse=False,
+            force=True,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/selinux/selinux_restorecon.py``.
     """
@@ -2249,6 +2460,18 @@ async def autorelabel(ctx: OpContext, **kwargs: Any) -> AsyncGenerator[Command]:
     ```
 
     Examples:
+        ```python
+        from reemote import op, selinux
+
+        # Request a full relabel at next boot (touch /.autorelabel); pair this with
+        # selinux.config when enabling SELinux after it was disabled
+        yield op(
+            selinux.autorelabel,
+            name="Schedule a relabel before rebooting into enforcing",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/selinux/selinux_autorelabel.py``.
     """
@@ -2447,6 +2670,28 @@ async def config(
     ```
 
     Examples:
+        ```python
+        from reemote import op, selinux
+
+        # Set the boot-time mode (edited in /etc/selinux/config, effective at the
+        # next reboot -- use selinux.mode for the runtime switch)
+        yield op(
+            selinux.config,
+            name="Boot into enforcing",
+            SELINUX="enforcing",
+            sudo=True,
+        )
+
+        # Set the mode and the policy type in one edit
+        yield op(
+            selinux.config,
+            name="Enforcing with the targeted policy",
+            SELINUX="enforcing",
+            SELINUXTYPE="targeted",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/selinux/selinux_config.py``.
     """
 

@@ -3109,6 +3109,37 @@ async def group(
     ```
 
     Examples:
+        ```python
+        from reemote import op, server
+
+        # Create a group (the groupadd needs root, so elevate with sudo)
+        yield op(
+            server.group,
+            name="Ensure the developers group",
+            group="developers",
+            sudo=True,
+        )
+
+        # Create a system group with a fixed gid
+        yield op(
+            server.group,
+            name="Ensure the app system group",
+            group="app",
+            system=True,
+            gid=4000,
+            sudo=True,
+        )
+
+        # Remove a group
+        yield op(
+            server.group,
+            name="Remove the developers group",
+            group="developers",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/server/server_group.py``.
     """
 
@@ -3440,6 +3471,40 @@ async def user(
     ```
 
     Examples:
+        ```python
+        from reemote import op, server
+
+        # Create a user with a login shell, secondary groups and a home built from the skeleton
+        yield op(
+            server.user,
+            name="Ensure deploy user",
+            user="deploy",
+            shell="/bin/bash",
+            groups=("sudo", "docker"),
+            create_home=True,
+            sudo=True,
+        )
+
+        # Append the user to a group without dropping its other memberships
+        yield op(
+            server.user,
+            name="Add deploy to www-data",
+            user="deploy",
+            groups=("www-data",),
+            append=True,
+            sudo=True,
+        )
+
+        # Remove a user
+        yield op(
+            server.user,
+            name="Remove deploy user",
+            user="deploy",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/server/server_op_user.py``.
     """
 
@@ -3906,6 +3971,29 @@ async def user_authorized_keys(
     ```
 
     Examples:
+        ```python
+        from reemote import op, server
+
+        # Append a key to the user's authorized_keys (writes another user's ~/.ssh, so elevate)
+        yield op(
+            server.user_authorized_keys,
+            name="Authorize the deploy key",
+            user="deploy",
+            public_keys=("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 deploy@laptop",),
+            sudo=True,
+        )
+
+        # Manage the file exactly: drop every key not listed here
+        yield op(
+            server.user_authorized_keys,
+            name="Pin root's authorized_keys",
+            user="root",
+            public_keys=("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5 admin@laptop",),
+            delete_keys=True,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in
         ``examples/modules/server/server_user_authorized_keys.py``.
     """
@@ -4120,6 +4208,18 @@ async def hostname(
     ```
 
     Examples:
+        ```python
+        from reemote import op, server
+
+        # Set the system hostname (needs root, so elevate with sudo)
+        yield op(
+            server.hostname,
+            name="Set the web server hostname",
+            hostname="web01.example.com",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/server/server_op_hostname.py``.
     """
 
@@ -4328,6 +4428,29 @@ async def etc_hosts(
     ```
 
     Examples:
+        ```python
+        from reemote import op, server
+
+        # Add/update the /etc/hosts line keyed by an IP (root-owned file, so elevate with sudo)
+        yield op(
+            server.etc_hosts,
+            name="Map the db host",
+            ip="10.0.0.5",
+            hostnames=("db.internal", "db"),
+            sudo=True,
+        )
+
+        # Drop just one hostname from the IP's line
+        yield op(
+            server.etc_hosts,
+            name="Retire the old alias",
+            ip="10.0.0.5",
+            hostnames=("db-old",),
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/server/server_etc_hosts.py``.
     """
 
@@ -4447,6 +4570,27 @@ async def kill(
     ```
 
     Examples:
+        ```python
+        from reemote import op, server
+
+        # Send SIGTERM to a PID (discover it first via gather_fact(Processes); killing another user's process needs sudo)
+        yield op(
+            server.kill,
+            name="Stop the runaway worker",
+            pid=4321,
+            sudo=True,
+        )
+
+        # Force-kill with SIGKILL (stateless: a repeat request kills again)
+        yield op(
+            server.kill,
+            name="Force-kill the worker",
+            pid=4321,
+            signal="KILL",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/server/server_kill.py``.
     """
 
@@ -4658,6 +4802,27 @@ async def locale(
     ```
 
     Examples:
+        ```python
+        from reemote import op, server
+
+        # Enable a locale in /etc/locale.gen and regenerate (root-owned, so elevate with sudo)
+        yield op(
+            server.locale,
+            name="Enable French (France)",
+            locale="fr_FR.UTF-8",
+            sudo=True,
+        )
+
+        # Disable a locale
+        yield op(
+            server.locale,
+            name="Disable German (Germany)",
+            locale="de_DE.UTF-8",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/server/server_op_locale.py``.
     """
 
@@ -4901,6 +5066,32 @@ async def security_limit(
     ```
 
     Examples:
+        ```python
+        from reemote import op, server
+
+        # Raise a numeric limit for all users in /etc/security/limits.conf (root-owned, so elevate)
+        yield op(
+            server.security_limit,
+            name="Raise the open-file hard limit",
+            domain="*",
+            limit_type="hard",
+            item="nofile",
+            value=65536,
+            sudo=True,
+        )
+
+        # Set a symbolic limit for a group
+        yield op(
+            server.security_limit,
+            name="Lock memory for the app group",
+            domain="@app",
+            limit_type="hard",
+            item="memlock",
+            value="unlimited",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/server/server_security_limit.py``.
     """
 
@@ -5019,6 +5210,27 @@ async def modprobe(
     ```
 
     Examples:
+        ```python
+        from reemote import op, server
+
+        # Load a kernel module (modprobe needs root, so elevate with sudo)
+        yield op(
+            server.modprobe,
+            name="Load the br_netfilter module",
+            module="br_netfilter",
+            sudo=True,
+        )
+
+        # Unload several modules (pass a tuple, never a list)
+        yield op(
+            server.modprobe,
+            name="Unload the old sound modules",
+            module=("snd_pcsp", "snd_ac97_codec"),
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/server/server_modprobe.py``.
     """
 
@@ -5132,6 +5344,30 @@ async def mount(
     ```
 
     Examples:
+        ```python
+        from reemote import op, server
+
+        # Mount a device at a path with options (mount needs root, so elevate with sudo)
+        yield op(
+            server.mount,
+            name="Mount the data volume",
+            path="/data",
+            device="/dev/sdb1",
+            fs_type="ext4",
+            options=("noatime",),
+            sudo=True,
+        )
+
+        # Unmount it
+        yield op(
+            server.mount,
+            name="Unmount the data volume",
+            path="/data",
+            mounted=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/server/server_mount.py``.
     """
 
@@ -5241,6 +5477,18 @@ async def timezone(
     ```
 
     Examples:
+        ```python
+        from reemote import op, server
+
+        # Set the system timezone via timedatectl (systemd only; needs root, so elevate with sudo)
+        yield op(
+            server.timezone,
+            name="Set timezone to UTC",
+            timezone="UTC",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/server/server_op_timezone.py``.
     """
 
@@ -5433,6 +5681,26 @@ async def wait(
     ```
 
     Examples:
+        ```python
+        from reemote import op, server
+
+        # Wait for a TCP port to start listening (unprivileged poll; a wait always reports changed)
+        yield op(
+            server.wait,
+            name="Wait for nginx on 443",
+            port=443,
+            timeout=60,
+        )
+
+        # Wait on a UDP port instead
+        yield op(
+            server.wait,
+            name="Wait for DNS on 53",
+            port=53,
+            protocol="udp",
+        )
+        ```
+
         Examples can be found in ``examples/modules/server/server_op_wait.py``.
     """
 
@@ -5488,6 +5756,17 @@ async def wait_service(
     ```
 
     Examples:
+        ```python
+        from reemote import op, server
+
+        # Wait for a systemd unit to become active (unprivileged poll; a wait always reports changed)
+        yield op(
+            server.wait_service,
+            name="Wait for httpd to be active",
+            service="httpd",
+        )
+        ```
+
         Examples can be found in ``examples/modules/server/wait_for_httpd.py``.
     """
 
@@ -5562,6 +5841,27 @@ async def wait_url(
     ```
 
     Examples:
+        ```python
+        from reemote import op, server
+
+        # Wait for a host-local endpoint to return HTTP 200 (polled on the target with curl; unprivileged)
+        yield op(
+            server.wait_url,
+            name="Wait for the app to come up",
+            url="http://localhost:8080/health",
+            timeout=60,
+        )
+
+        # Accept 200 or 403 and require an upgrade page to clear (the geerlingguy.jenkins shape)
+        yield op(
+            server.wait_url,
+            name="Wait for Jenkins",
+            url="http://localhost:8080/login",
+            status=(200, 403),
+            absent="Please wait while",
+        )
+        ```
+
         Examples can be found in ``examples/modules/server/server_wait_url.py``.
     """
 

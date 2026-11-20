@@ -687,6 +687,52 @@ async def service(
     ```
 
     Examples:
+        ```python
+        from reemote import op, openrc
+
+        # Start and enable in one call  ->  rc-service crond start; rc-update add crond default
+        yield op(
+            openrc.service,
+            name="Ensure crond running and enabled",
+            service="crond",
+            running=True,
+            enabled=True,
+            doas=True,
+        )
+
+        # Stop and disable  ->  rc-service ntpd stop; rc-update del ntpd default
+        yield op(
+            openrc.service,
+            name="Take ntpd down",
+            service="ntpd",
+            running=False,
+            enabled=False,
+            doas=True,
+        )
+
+        # Reload without touching the runtime/boot decision (like restarted,
+        # the reload only fires while the service is already running)
+        yield op(
+            openrc.service,
+            name="Reload sshd",
+            service="sshd",
+            running=None,
+            reloaded=True,
+            doas=True,
+        )
+
+        # Assign only in a non-default runlevel, leaving the running state alone
+        yield op(
+            openrc.service,
+            name="Enable sysstat in the boot runlevel",
+            service="sysstat",
+            running=None,
+            enabled=True,
+            runlevel="boot",
+            doas=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/openrc/openrc_service.py``.
     """
 
@@ -820,6 +866,28 @@ async def runlevel(
     ```
 
     Examples:
+        ```python
+        from reemote import op, openrc
+
+        # Assign a service to the default runlevel  ->  rc-update add crond default
+        yield op(
+            openrc.runlevel,
+            name="Enable crond at boot",
+            service="crond",
+            doas=True,
+        )
+
+        # Remove it from another runlevel, never touching rc-service
+        yield op(
+            openrc.runlevel,
+            name="Unassign sshd from boot",  # -> rc-update del sshd boot
+            service="sshd",
+            runlevel="boot",
+            enabled=False,
+            doas=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/openrc/openrc_runlevel.py``.
     """
 
@@ -891,6 +959,39 @@ async def custom_runlevel(
     ```
 
     Examples:
+        ```python
+        from reemote import op, openrc
+
+        # Create a custom runlevel  ->  mkdir -p /etc/runlevels/async
+        yield op(
+            openrc.custom_runlevel,
+            name="Create the async runlevel",
+            runlevel="async",
+            doas=True,
+        )
+
+        # Create it stacked onto default, so entering default also enters async
+        # ->  rc-update -s add async default
+        yield op(
+            openrc.custom_runlevel,
+            name="Create async stacked on default",
+            runlevel="async",
+            present=True,
+            stacked_to="default",
+            doas=True,
+        )
+
+        # Remove it: rc-update has no runlevel-delete verb, so this unstacks
+        # from every target the facts report, then rm -rf the directory
+        yield op(
+            openrc.custom_runlevel,
+            name="Remove the async runlevel",
+            runlevel="async",
+            present=False,
+            doas=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/openrc/openrc_custom_runlevel.py``.
     """
 
@@ -1157,6 +1258,40 @@ async def config(
     ```
 
     Examples:
+        ```python
+        from reemote import op, openrc
+
+        # Set a variable in the global /etc/rc.conf  ->  rc_parallel="YES"
+        # (the new text is spooled to /tmp over scp, then installed elevated)
+        yield op(
+            openrc.config,
+            name="Enable parallel startup",
+            key="rc_parallel",
+            value="YES",
+            doas=True,
+        )
+
+        # Edit a service's /etc/conf.d/<service> file instead
+        yield op(
+            openrc.config,
+            name="Let chrony run as root",
+            key="OPTS",
+            value="-m",  # -> /etc/conf.d/chronyd carries OPTS="-m"
+            service="chronyd",
+            doas=True,
+        )
+
+        # Unset a variable -- active and commented-out assignments are dropped
+        yield op(
+            openrc.config,
+            name="Drop rc_hotplug",
+            key="rc_hotplug",
+            value="",  # required argument, ignored when present=False
+            present=False,
+            doas=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/openrc/openrc_config.py``.
     """
 

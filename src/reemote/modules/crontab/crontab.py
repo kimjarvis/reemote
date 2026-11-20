@@ -633,6 +633,46 @@ async def crontab(
     ```
 
     Examples:
+        ```python
+        from reemote import op, crontab
+
+        # Run a backup at 02:00 every day (the entry is keyed by its command;
+        # unset schedule fields stay ``*`` -> ``0 2 * * * ...``)
+        yield op(
+            crontab.crontab,
+            name="Nightly backup",
+            command="/usr/local/bin/backup.sh",
+            minute=0,
+            hour=2,
+        )
+
+        # Every half hour on weekdays (a sequence of values is comma-joined
+        # -> ``0,30 * * * 1,2,3,4,5 ...``)
+        yield op(
+            crontab.crontab,
+            command="/usr/local/bin/sync.sh",
+            minute=(0, 30),
+            day_of_week=(1, 2, 3, 4, 5),
+        )
+
+        # A cron nickname instead of the five fields, named with a marker
+        # comment (``# reemote-name=daily-report``) so later changes to the
+        # command overwrite the same entry
+        yield op(
+            crontab.crontab,
+            command="/usr/local/bin/report.sh",
+            cron_name="daily-report",
+            special_time="@daily",
+        )
+
+        # Remove an entry (its marker comment, if any, goes with it)
+        yield op(
+            crontab.crontab,
+            command="/usr/local/bin/backup.sh",
+            present=False,
+        )
+        ```
+
         Examples can be found in ``examples/modules/crontab/crontab_crontab.py``.
     """
 

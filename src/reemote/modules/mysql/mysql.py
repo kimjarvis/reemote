@@ -2002,6 +2002,40 @@ async def database(
     ```
 
     Examples:
+        ```python
+        from reemote import op, mysql
+
+        # Create a database with a specific charset and collation
+        yield op(
+            mysql.database,
+            name="Create app database",
+            database="myapp",
+            charset="utf8mb4",
+            collate="utf8mb4_0900_ai_ci",
+            sudo=True,
+        )
+
+        # Create and grant a user full access on the new database
+        yield op(
+            mysql.database,
+            name="Create reporting DB with user access",
+            database="reporting",
+            user="reporter",
+            user_hostname="%",
+            user_privileges=("SELECT", "INSERT"),
+            sudo=True,
+        )
+
+        # Drop a database
+        yield op(
+            mysql.database,
+            name="Remove old staging database",
+            database="staging",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/mysql/mysql_database.py``.
     """
 
@@ -2146,6 +2180,29 @@ async def dump(
     ```
 
     Examples:
+        ```python
+        from reemote import op, mysql
+
+        # Dump a specific database to a host-side file
+        yield op(
+            mysql.dump,
+            name="Backup app database",
+            dest="/var/backups/myapp.sql",
+            database="myapp",
+            sudo=True,
+        )
+
+        # Dump using a defaults file for connection parameters
+        yield op(
+            mysql.dump,
+            name="Export production data",
+            dest="/srv/exports/prod.sql",
+            database="production",
+            mysql_defaults_file="/root/.my.cnf",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/mysql/mysql_dump.py``.
     """
 
@@ -2261,6 +2318,44 @@ async def index(
     ```
 
     Examples:
+        ```python
+        from reemote import op, mysql
+
+        # Create a BTREE index on a column
+        yield op(
+            mysql.index,
+            name="Index users email",
+            database="myapp",
+            table="users",
+            index="idx_email",
+            columns=("email",),
+            sudo=True,
+        )
+
+        # Create a UNIQUE composite index
+        yield op(
+            mysql.index,
+            name="Unique order constraint",
+            database="myapp",
+            table="orders",
+            index="uq_customer_sku",
+            columns=("customer_id", "sku"),
+            unique=True,
+            sudo=True,
+        )
+
+        # Drop an index
+        yield op(
+            mysql.index,
+            name="Remove deprecated index",
+            database="myapp",
+            table="users",
+            index="idx_old_name",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/mysql/mysql_index.py``.
     """
 
@@ -2392,6 +2487,27 @@ async def kill(
     ```
 
     Examples:
+        ```python
+        from reemote import op, mysql
+
+        # Kill a connection entirely
+        yield op(
+            mysql.kill,
+            name="Terminate runaway connection",
+            process_id=42,
+            sudo=True,
+        )
+
+        # Abort only the running query, keep the connection open
+        yield op(
+            mysql.kill,
+            name="Cancel long-running query",
+            process_id=107,
+            query_only=True,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/mysql/mysql_kill.py``.
     """
 
@@ -2473,6 +2589,29 @@ async def load(
     ```
 
     Examples:
+        ```python
+        from reemote import op, mysql
+
+        # Load a SQL file into a specific database
+        yield op(
+            mysql.load,
+            name="Import seed data",
+            src="/tmp/seed.sql",
+            database="myapp",
+            sudo=True,
+        )
+
+        # Load into a database specified via defaults file
+        yield op(
+            mysql.load,
+            name="Restore schema",
+            src="/var/backups/schema.sql",
+            database="reporting",
+            mysql_defaults_file="/root/.my.cnf",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/mysql/mysql_load.py``.
     """
 
@@ -2560,6 +2699,29 @@ async def optimize(
     ```
 
     Examples:
+        ```python
+        from reemote import op, mysql
+
+        # Optimize tables (reclaims space in InnoDB)
+        yield op(
+            mysql.optimize,
+            name="Optimize hot tables",
+            database="myapp",
+            tables=("orders", "sessions"),
+            sudo=True,
+        )
+
+        # Analyze tables to update index statistics
+        yield op(
+            mysql.optimize,
+            name="Analyze after bulk import",
+            database="myapp",
+            tables=("products",),
+            action="analyze",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/mysql/mysql_optimize.py``.
     """
 
@@ -2657,6 +2819,28 @@ async def plugin(
     ```
 
     Examples:
+        ```python
+        from reemote import op, mysql
+
+        # Install a plugin from a shared library
+        yield op(
+            mysql.plugin,
+            name="Install validate_password",
+            plugin="validate_password",
+            soname="validate_password.so",
+            sudo=True,
+        )
+
+        # Uninstall a plugin
+        yield op(
+            mysql.plugin,
+            name="Remove audit_log plugin",
+            plugin="audit_log",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/mysql/mysql_plugin.py``.
     """
 
@@ -2797,6 +2981,42 @@ async def privileges(
     ```
 
     Examples:
+        ```python
+        from reemote import op, mysql
+
+        # Grant SELECT and INSERT on a specific database
+        yield op(
+            mysql.privileges,
+            name="Grant app user database access",
+            user="app_user",
+            user_hostname="localhost",
+            privileges=("SELECT", "INSERT", "UPDATE"),
+            database="myapp",
+            sudo=True,
+        )
+
+        # Grant ALL on all databases with GRANT OPTION
+        yield op(
+            mysql.privileges,
+            name="Grant admin full access",
+            user="admin",
+            user_hostname="%",
+            privileges="ALL",
+            with_grant_option=True,
+            sudo=True,
+        )
+
+        # Revoke privileges by specifying a narrower desired set
+        yield op(
+            mysql.privileges,
+            name="Restrict reporting to SELECT only",
+            user="reporter",
+            privileges=("SELECT",),
+            database="reporting",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/mysql/mysql_privileges.py``.
     """
 
@@ -2902,6 +3122,34 @@ async def replica(
     ```
 
     Examples:
+        ```python
+        from reemote import op, mysql
+
+        # Start replication on the default channel
+        yield op(
+            mysql.replica,
+            name="Start replica threads",
+            sudo=True,
+        )
+
+        # Stop replication on a named channel
+        yield op(
+            mysql.replica,
+            name="Stop analytics replica",
+            running=False,
+            channel="analytics",
+            sudo=True,
+        )
+
+        # Reset all replication configuration
+        yield op(
+            mysql.replica,
+            name="Reset replica after promotion",
+            reset=True,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/mysql/mysql_replica.py``.
     """
 
@@ -3039,6 +3287,28 @@ async def role(
     ```
 
     Examples:
+        ```python
+        from reemote import op, mysql
+
+        # Create a role and grant it to members
+        yield op(
+            mysql.role,
+            name="Create read-only role",
+            role="readonly",
+            members=("analyst@localhost", "reporting@%"),
+            sudo=True,
+        )
+
+        # Drop a role (revokes all memberships server-side)
+        yield op(
+            mysql.role,
+            name="Remove deprecated role",
+            role="legacy_writer",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/mysql/mysql_role.py``.
     """
 
@@ -3165,6 +3435,27 @@ async def sql(
     ```
 
     Examples:
+        ```python
+        from reemote import op, mysql
+
+        # Execute a schema migration
+        yield op(
+            mysql.sql,
+            name="Add users.last_login column",
+            sql="ALTER TABLE users ADD COLUMN last_login DATETIME NULL",
+            database="myapp",
+            sudo=True,
+        )
+
+        # Configure replication source (escape hatch for unsupported ops)
+        yield op(
+            mysql.sql,
+            name="Configure replication source",
+            sql="CHANGE REPLICATION SOURCE TO SOURCE_HOST='primary', SOURCE_USER='repl'",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/mysql/mysql_sql.py``.
     """
 
@@ -3280,6 +3571,37 @@ async def table(
     ```
 
     Examples:
+        ```python
+        from reemote import op, mysql
+
+        # Create a table with columns and engine
+        yield op(
+            mysql.table,
+            name="Create sessions table",
+            database="myapp",
+            table="sessions",
+            columns=(
+                "id INT PRIMARY KEY AUTO_INCREMENT",
+                "token VARCHAR(255) NOT NULL",
+                "data JSON",
+                "created_at DATETIME DEFAULT CURRENT_TIMESTAMP",
+            ),
+            engine="InnoDB",
+            charset="utf8mb4",
+            sudo=True,
+        )
+
+        # Drop a table
+        yield op(
+            mysql.table,
+            name="Remove temp_staging table",
+            database="myapp",
+            table="temp_staging",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/mysql/mysql_table.py``.
     """
 
@@ -3480,6 +3802,42 @@ async def user(
     ```
 
     Examples:
+        ```python
+        from reemote import op, mysql
+
+        # Create a user with auth_socket plugin
+        yield op(
+            mysql.user,
+            name="Create monitoring user",
+            user="monitoring",
+            user_hostname="localhost",
+            auth_plugin="auth_socket",
+            sudo=True,
+        )
+
+        # Create a user with TLS requirement and resource limits
+        yield op(
+            mysql.user,
+            name="Create remote app user",
+            user="app_user",
+            user_hostname="%",
+            auth_plugin="caching_sha2_password",
+            require="SSL",
+            max_connections=50,
+            max_queries_per_hour=1000,
+            sudo=True,
+        )
+
+        # Drop a user
+        yield op(
+            mysql.user,
+            name="Remove decommissioned service account",
+            user="old_service",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/mysql/mysql_user.py``.
     """
 
@@ -3720,6 +4078,38 @@ async def variable(
     ```
 
     Examples:
+        ```python
+        from reemote import op, mysql
+
+        # Set a global variable (runtime only)
+        yield op(
+            mysql.variable,
+            name="Increase max_connections",
+            variable="max_connections",
+            value="500",
+            sudo=True,
+        )
+
+        # Persist a variable across restarts
+        yield op(
+            mysql.variable,
+            name="Persist innodb_buffer_pool_size",
+            variable="innodb_buffer_pool_size",
+            value="268435456",
+            persist=True,
+            sudo=True,
+        )
+
+        # Remove a persisted override (RESET PERSIST)
+        yield op(
+            mysql.variable,
+            name="Remove persisted sort_buffer_size",
+            variable="sort_buffer_size",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/mysql/mysql_variable.py``.
     """
 
