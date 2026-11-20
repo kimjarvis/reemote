@@ -39,9 +39,15 @@
 # the core matches, NAT target arguments and the ``extras`` escape
 # hatch). ``rule`` gains first-class typed match extensions (``ctstate``,
 # ``destination_ports``/``source_ports`` multiport, ``limit``/
-# ``limit_burst``, ``match_set``, ``log_level``) folded into the same
-# extras comparison the port/comment shortcuts use, plus a ``position`` argument
-# for insertion at an explicit line number. Six reemote originals
+# ``limit_burst``, ``match_set``, ``log_level``, and the ICMP/ICMPv6
+# matchers ``icmp_type``/``icmpv6_type``/``icmpv6_code`` with
+# symbolic-to-numeric normalization) folded into the same extras
+# comparison the port/comment shortcuts use, plus a ``position`` argument
+# for insertion at an explicit line number. The protocol match module is
+# looked up in ``_PROTOCOL_MATCH_MODULE`` rather than guessed from the
+# protocol name, so ``-p ipv6-icmp`` (which loads ``icmp6``) and the
+# module-less protocols (``all``, numeric) converge like ``tcp``/``udp``.
+# Six reemote originals
 # complete the control surface: ``policy`` (standalone built-in chain
 # policy management), ``flush`` (idempotent rule flush), ``zero``
 # (stateless counter reset), ``save``/``restore`` (persistence to/from a
@@ -231,6 +237,110 @@ def _normalize_host(value: str, version: int) -> str:
     if "/" in value:
         return value
     return f"{value}/32" if version == 4 else f"{value}/128"
+
+
+# The protocol match modules iptables auto-loads for ``-p <protocol>``.
+# ``iptables-save`` prints the loaded extension as ``-m <module>``, so a
+# requested rule definition must carry the same pair to compare equal to
+# the fact. The module name usually equals the protocol name, but not
+# always: ``-p ipv6-icmp`` loads the ``icmp6`` extension, which is why
+# the old ``["-m", protocol]`` guess never converged for ICMPv6 (issue
+# #49). Protocols with no match extension -- ``all``, ``ip``, ``ipv6``
+# and numeric protocols like ``47`` -- print no ``-m`` at all, so they
+# are deliberately absent from this map.
+_PROTOCOL_MATCH_MODULE = {
+    "tcp": "tcp",
+    "udp": "udp",
+    "sctp": "sctp",
+    "dccp": "dccp",
+    "udplite": "udplite",
+    "icmp": "icmp",
+    "ipv6-icmp": "icmp6",
+    "icmpv6": "icmp6",
+    "esp": "esp",
+    "ah": "ah",
+}
+
+# The ICMP type names iptables accepts for ``--icmp-type`` (IPv4), mapped
+# to their numeric codes -- the ``xt_icmp_names`` table of
+# ``libipt_icmp``. ``iptables-save`` always prints the numeric form, so a
+# symbolic request must normalize to it before the definition can
+# compare equal to the fact (issue #49: ``echo-request`` never equalled
+# the printed ``8``).
+_ICMP_TYPES = {
+    "echo-reply": 0,
+    "destination-unreachable": 3,
+    "source-quench": 4,
+    "redirect": 5,
+    "echo-request": 8,
+    "router-advertisement": 9,
+    "router-solicitation": 10,
+    "time-exceeded": 11,
+    "parameter-problem": 12,
+    "timestamp-request": 13,
+    "timestamp-reply": 14,
+    "address-mask-request": 17,
+    "address-mask-reply": 18,
+}
+
+# The ICMPv6 type names iptables accepts for ``--icmpv6-type`` (IPv6),
+# mapped to their numeric codes -- the ``xt_icmp_names`` table of
+# ``libip6t_icmp6``. The British ``neighbour`` spelling is iptables'
+# own. The SLAAC-plus-ping set a firewall role allows is 128..136.
+_ICMPV6_TYPES = {
+    "destination-unreachable": 1,
+    "packet-too-big": 2,
+    "time-exceeded": 3,
+    "parameter-problem": 4,
+    "echo-request": 128,
+    "echo-reply": 129,
+    "router-solicitation": 133,
+    "router-advertisement": 134,
+    "neighbour-solicitation": 135,
+    "neighbour-advertisement": 136,
+    "redirect": 137,
+}
+
+
+def _normalize_icmp_type(value: int | str, names: dict[str, int], label: str) -> str:
+    """Normalize one ICMP/ICMPv6 type to the numeric string iptables-save prints.
+
+    Accepts an int, a numeric string, or a symbolic name from ``names``
+    (``echo-request`` -> ``8``). Raises ``ValueError`` for an unknown
+    name or an out-of-range number, so a typo fails the deploy instead
+    of rendering a rule that never compares equal to the fact.
+    """
+    text = str(value).strip().lower()
+    if text in names:
+        number = names[text]
+    else:
+        try:
+            number = int(text)
+        except ValueError:
+            raise ValueError(
+                f"unknown {label} type {value!r} (not a number or a known name)"
+            ) from None
+    if not 0 <= number <= 255:
+        raise ValueError(f"{label} type must be 0-255 (got {number})")
+    return str(number)
+
+
+def _normalize_icmp_code(value: int | str, label: str) -> str:
+    """Normalize one ICMP/ICMPv6 code to its numeric string form.
+
+    Codes carry no symbolic names in iptables, so only an int or a
+    numeric string is accepted; anything else is a ``ValueError``.
+    """
+    text = str(value).strip()
+    try:
+        number = int(text)
+    except ValueError:
+        raise ValueError(
+            f"{label} code must be a number 0-255 (got {value!r})"
+        ) from None
+    if not 0 <= number <= 255:
+        raise ValueError(f"{label} code must be 0-255 (got {number})")
+    return str(number)
 
 
 def _persistence_command(binary: str, path: str) -> str:
@@ -1661,6 +1771,9 @@ async def rule(
     limit: str | None = None,
     limit_burst: int | None = None,
     match_set: tuple[str, str] | None = None,
+    icmp_type: int | str | None = None,
+    icmpv6_type: int | str | None = None,
+    icmpv6_code: int | str | None = None,
     comment: str | None = None,
     extras: str = "",
     **kwargs: Any,
@@ -1736,6 +1849,21 @@ async def rule(
             ``dst`` or a comma combination (e.g. ``("blacklist",
             "src")``); manage the set with ``iptables.ipset``. Defaults
             to None.
+        icmp_type (int | str | None, optional): The ICMP type match for
+            ``protocol="icmp"`` (IPv4) -- a number, a numeric string, or
+            a symbolic name iptables accepts (``echo-request``,
+            ``destination-unreachable``, ...), normalized to the numeric
+            form ``iptables-save`` prints. Requires ``protocol="icmp"``.
+            Defaults to None.
+        icmpv6_type (int | str | None, optional): The ICMPv6 type match
+            for ``protocol="ipv6-icmp"`` (IPv6) -- a number, a numeric
+            string, or a symbolic name (``echo-request``,
+            ``router-solicitation``, ``neighbour-advertisement``, ...),
+            normalized to the numeric form. Requires
+            ``protocol="ipv6-icmp"``. Defaults to None.
+        icmpv6_code (int | str | None, optional): The ICMPv6 code match,
+            rendered as ``--icmpv6-type <type>/<code>``. Requires
+            ``icmpv6_type``. Defaults to None.
         comment (str | None, optional): Rule comment (the ``comment``
             match -- the reliable idempotency/auditing marker).
             Defaults to None.
@@ -1819,6 +1947,33 @@ async def rule(
             sudo=True,
         )
 
+        # Allow ICMP echo-request (ping); the symbolic name normalizes to the
+        # numeric 8 that iptables-save prints, so the rule converges
+        # (iptables -t filter -A INPUT -p icmp --icmp-type 8 -j ACCEPT)
+        yield op(
+            iptables.rule,
+            name="Allow IPv4 ping",
+            chain="INPUT",
+            jump="ACCEPT",
+            protocol="icmp",
+            icmp_type="echo-request",
+            sudo=True,
+        )
+
+        # Allow the ICMPv6 types SLAAC and ping need on IPv6; -p ipv6-icmp
+        # loads the icmp6 match module, which the definition now records
+        # (ip6tables -t filter -A INPUT -p ipv6-icmp --icmpv6-type 128 -j ACCEPT)
+        yield op(
+            iptables.rule,
+            name="Allow IPv6 ping",
+            chain="INPUT",
+            jump="ACCEPT",
+            version=6,
+            protocol="ipv6-icmp",
+            icmpv6_type="echo-request",
+            sudo=True,
+        )
+
         # Remove a rule (present=False deletes the matching rule with -D)
         yield op(
             iptables.rule,
@@ -1847,7 +2002,13 @@ async def rule(
     # parameters folded into the same extras comparison the
     # port/comment shortcuts use, so idempotence works unchanged --
     # iptables-save prints the extensions as ordinary flags and the
-    # sorted pair list compares order-independently. ``log_level``
+    # sorted pair list compares order-independently. The ICMP/ICMPv6
+    # matchers (``icmp_type``/``icmpv6_type``/``icmpv6_code``) join the
+    # same comparison, but normalize a symbolic type to the numeric form
+    # iptables-save prints (``echo-request`` -> ``8``), because the
+    # literal pair would never converge otherwise; their ``-m icmp`` /
+    # ``-m icmp6`` pair comes from the protocol map below, not from the
+    # matcher, so it is never duplicated. ``log_level``
     # renders AFTER the jump (LOG target options must follow -j LOG)
     # but compares through extras, because the fact has no named
     # log_level key. ``position`` inserts a new rule at an explicit line
@@ -1894,17 +2055,47 @@ async def rule(
         extra_bits = f"{extra_bits} --limit-burst {limit_burst}"
     if match_set:
         extra_bits = f"{extra_bits} -m set --match-set {match_set[0]} {match_set[1]}"
+    if icmp_type is not None:
+        if not protocol or protocol.lower() != "icmp":
+            raise ValueError(
+                "iptables icmp_type requires protocol='icmp' "
+                f"(protocol={protocol!r})"
+            )
+        extra_bits = (
+            f"{extra_bits} --icmp-type "
+            f"{_normalize_icmp_type(icmp_type, _ICMP_TYPES, 'ICMP')}"
+        )
+    if icmpv6_type is not None or icmpv6_code is not None:
+        if not protocol or protocol.lower() != "ipv6-icmp":
+            raise ValueError(
+                "iptables icmpv6_type/icmpv6_code requires protocol='ipv6-icmp' "
+                f"(protocol={protocol!r})"
+            )
+        if icmpv6_type is None:
+            raise ValueError("iptables icmpv6_code requires icmpv6_type")
+        rendered_type = _normalize_icmp_type(icmpv6_type, _ICMPV6_TYPES, "ICMPv6")
+        if icmpv6_code is not None:
+            rendered_type = (
+                f"{rendered_type}/{_normalize_icmp_code(icmpv6_code, 'ICMPv6')}"
+            )
+        extra_bits = f"{extra_bits} --icmpv6-type {rendered_type}"
     if comment:
         extra_bits = f"{extra_bits} -m comment --comment {shlex.quote(comment)}"
 
     extras_list = _parse_extras(shlex.split(extra_bits))
 
-    # When protocol is set, iptables automagically adds the matching
-    # extension module (which shows in iptables-save as ``-m tcp``).
+    # When protocol is set, iptables automagically loads the protocol's
+    # match extension, which iptables-save prints as ``-m <module>``.
+    # The module name is looked up rather than guessed from the protocol
+    # name (issue #49): ``-p ipv6-icmp`` loads ``icmp6``, and ``all`` /
+    # numeric protocols load no extension at all, so a blind
+    # ``["-m", protocol]`` never compared equal to the fact for those.
     if protocol:
         protocol = protocol.lower()
-        extras_list.append(["-m", protocol])
-        extras_list.sort()
+        match_module = _PROTOCOL_MATCH_MODULE.get(protocol)
+        if match_module is not None:
+            extras_list.append(["-m", match_module])
+            extras_list.sort()
     elif destination_port or source_port or destination_ports or source_ports:
         # --dport/--sport and multiport need -m [tcp|udp|...], which
         # only -p supplies.

@@ -345,6 +345,7 @@ from reemote.modules.hardware.hardware import (
     NetworkDevice,
 )
 from reemote.modules.iptables.iptables import (
+    _PROTOCOL_MATCH_MODULE,
     IpSet,
     IpsetCreateCommand,
     IpsetDestroyCommand,
@@ -6077,11 +6078,18 @@ class SimulatedHost(Host):
             if key in definition:
                 definition[key] = _normalize_host(definition[key], version)  # type: ignore[literal-required]
         if "protocol" in definition:
-            extras = definition.get("extras", [])
-            if ["-m", definition["protocol"]] not in extras:
-                extras.append(["-m", definition["protocol"]])
-                extras.sort()
-                definition["extras"] = extras
+            # Mirror iptables-save: a protocol auto-loads its match
+            # extension, printed as ``-m <module>``. The module name is
+            # looked up, not guessed from the protocol name (issue #49):
+            # ``ipv6-icmp`` loads ``icmp6``, and ``all``/numeric
+            # protocols load no extension, so they gain no ``-m`` pair.
+            match_module = _PROTOCOL_MATCH_MODULE.get(definition["protocol"])
+            if match_module is not None:
+                extras = definition.get("extras", [])
+                if ["-m", match_module] not in extras:
+                    extras.append(["-m", match_module])
+                    extras.sort()
+                    definition["extras"] = extras
         return definition
 
     def _rebuild_iptables_ordered(self, table: str, version: int) -> None:

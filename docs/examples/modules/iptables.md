@@ -29,8 +29,9 @@ passwordless `sudo -n` and read the empty value on an unprivileged login
 rather than failing, so every gather is safe on any Linux target — point
 `INVENTORY_PATH` at your own file of machines before executing.
 
-The eight operation scripts below open with an idempotent `dnf.packages`
-install of `iptables` and `ipset` (under `sudo=True`): the demo hosts ship
+The nine operation scripts below open with an idempotent `dnf.packages`
+install (`iptables`, plus `ipset` where the script manages sets) under
+`sudo=True`: the demo hosts ship
 without them, and the iptables facts are exit-masked, so the prepare phase
 reads them even before the binary exists while apply installs first and
 then mutates. The two version-fact scripts
@@ -95,6 +96,29 @@ request hashable. Adding an ACCEPT rule only widens what is allowed, so the
 script is safe to run live. The requests are flagged `sudo=True`.
 
 ::: iptables_rule
+    options:
+      members: []
+
+## Allowing ICMP and ICMPv6 with typed matchers
+
+The rule operation's ICMP matchers: `iptables.rule` takes `icmp_type` for
+IPv4 `-p icmp` and `icmpv6_type`/`icmpv6_code` for IPv6 `-p ipv6-icmp`,
+each folded into the same order-independent
+[`IptablesRules`][reemote.modules.iptables.iptables.IptablesRules]
+comparison as the other typed matchers. A symbolic type normalizes to the
+numeric form `iptables-save` prints (`echo-request` → `8`), and the
+protocol's match module is looked up rather than guessed, so `-p
+ipv6-icmp` records `-m icmp6` — the extension `ip6tables-save` actually
+prints — and the rule converges instead of re-appending on every deploy
+(issue #49). The script allows IPv4 ping and the six ICMPv6 types SLAAC
+and ping need (`echo-request`, `echo-reply`, `router-solicitation`,
+`router-advertisement`, `neighbour-solicitation`,
+`neighbour-advertisement`), each request yielded twice — the second a
+guaranteed no-op in apply. Adding ACCEPT rules only widens what is
+allowed, so the script is safe to run live. The requests are flagged
+`sudo=True`.
+
+::: iptables_rule_icmp
     options:
       members: []
 

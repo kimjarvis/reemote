@@ -54,6 +54,9 @@ from reemote.drivers import (
 from reemote.hosts import Host
 from reemote.modules import iptables
 from reemote.modules.iptables.iptables import (
+    _ICMP_TYPES,
+    _ICMPV6_TYPES,
+    _PROTOCOL_MATCH_MODULE,
     Ip6tablesChains,
     Ip6tablesPersistence,
     Ip6tablesRules,
@@ -82,6 +85,8 @@ from reemote.modules.iptables.iptables import (
     IptablesVersion,
     IptablesVersionInfo,
     IptablesZeroCommand,
+    _normalize_icmp_code,
+    _normalize_icmp_type,
     _parse_extras,
     _parse_iptables_rule,
 )
@@ -1601,6 +1606,241 @@ async def test_rule_multiport_requires_protocol():
         [c async for c in iptables.rule(ctx, "INPUT", "ACCEPT", destination_ports=(80,))]
     assert str(excinfo.value) == (
         "iptables cannot filter by destination_port/source_port without a protocol"
+    )
+
+
+# --- iptables.rule: ICMP/ICMPv6 matchers and the protocol match-module map (issue #49)
+
+
+def test_normalize_icmp_type_symbolic_and_numeric():
+    """The normalizer maps a symbolic name to the numeric form iptables-save
+    prints, passes an int/numeric string through, and rejects an unknown
+    name or an out-of-range number."""
+    assert _normalize_icmp_type("echo-request", _ICMP_TYPES, "ICMP") == "8"
+    assert _normalize_icmp_type("ECHO-REQUEST", _ICMP_TYPES, "ICMP") == "8"
+    assert _normalize_icmp_type(8, _ICMP_TYPES, "ICMP") == "8"
+    assert _normalize_icmp_type("8", _ICMP_TYPES, "ICMP") == "8"
+    assert _normalize_icmp_type("router-solicitation", _ICMPV6_TYPES, "ICMPv6") == "133"
+    assert _normalize_icmp_type("neighbour-advertisement", _ICMPV6_TYPES, "ICMPv6") == "136"
+    with pytest.raises(ValueError) as excinfo:
+        _normalize_icmp_type("no-such-type", _ICMP_TYPES, "ICMP")
+    assert str(excinfo.value) == (
+        "unknown ICMP type 'no-such-type' (not a number or a known name)"
+    )
+    with pytest.raises(ValueError) as excinfo:
+        _normalize_icmp_type(256, _ICMP_TYPES, "ICMP")
+    assert str(excinfo.value) == "ICMP type must be 0-255 (got 256)"
+    assert _normalize_icmp_code(0, "ICMPv6") == "0"
+    with pytest.raises(ValueError) as excinfo:
+        _normalize_icmp_code("bad", "ICMPv6")
+    assert str(excinfo.value) == "ICMPv6 code must be a number 0-255 (got 'bad')"
+
+
+def test_protocol_match_module_map():
+    """The map answers the auto-loaded extension per protocol: tcp/udp/icmp
+    keep their name, ipv6-icmp loads icmp6, and the module-less protocols
+    (all, numeric) are absent so no ``-m`` pair is recorded."""
+    assert _PROTOCOL_MATCH_MODULE["tcp"] == "tcp"
+    assert _PROTOCOL_MATCH_MODULE["udp"] == "udp"
+    assert _PROTOCOL_MATCH_MODULE["icmp"] == "icmp"
+    assert _PROTOCOL_MATCH_MODULE["ipv6-icmp"] == "icmp6"
+    assert "all" not in _PROTOCOL_MATCH_MODULE
+    assert "47" not in _PROTOCOL_MATCH_MODULE
+
+
+async def test_rule_icmp_echo_request_normalizes_and_round_trips():
+    """Acceptance criterion 1: a symbolic ``icmp_type='echo-request'`` plans
+    one add rendering the numeric ``--icmp-type 8``, applies through the
+    seam to the ``-m icmp`` definition iptables-save prints, and no-ops on
+    the second pass."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "INPUT", "ACCEPT", protocol="icmp", icmp_type="echo-request"
+        )
+    ]
+    assert ctx.changed
+    assert commands[0].shell() == (
+        "iptables -t filter -A INPUT -p icmp --icmp-type 8 -j ACCEPT"
+    )
+    await send_command(host, commands[0])
+    assert host.iptables_rules["filter"] == [
+        {
+            "chain": "INPUT",
+            "protocol": "icmp",
+            "jump": "ACCEPT",
+            "extras": [["--icmp-type", "8"], ["-m", "icmp"]],
+        }
+    ]
+    ctx2 = make_ctx(host)
+    again = [
+        c
+        async for c in iptables.rule(
+            ctx2, "INPUT", "ACCEPT", protocol="icmp", icmp_type="echo-request"
+        )
+    ]
+    assert not ctx2.changed
+    assert ctx2.reason == "iptables INPUT rule exists"
+    assert again == []
+
+
+async def test_rule_icmpv6_type_round_trips_against_the_icmp6_module():
+    """Acceptance criterion 2: ``-p ipv6-icmp`` records ``-m icmp6`` (not the
+    protocol name), so an ``icmpv6_type=128`` request converges against the
+    ip6tables-save line instead of re-appending every deploy."""
+    host = SimulatedHost(name="h")
+    ctx = make_ctx(host)
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "INPUT", "ACCEPT",
+            version=6, protocol="ipv6-icmp", icmpv6_type=128,
+        )
+    ]
+    assert ctx.changed
+    assert commands[0].shell() == (
+        "ip6tables -t filter -A INPUT -p ipv6-icmp --icmpv6-type 128 -j ACCEPT"
+    )
+    await send_command(host, commands[0])
+    assert host.ip6tables_rules["filter"] == [
+        {
+            "chain": "INPUT",
+            "protocol": "ipv6-icmp",
+            "jump": "ACCEPT",
+            "extras": [["--icmpv6-type", "128"], ["-m", "icmp6"]],
+        }
+    ]
+    ctx2 = make_ctx(host)
+    again = [
+        c
+        async for c in iptables.rule(
+            ctx2, "INPUT", "ACCEPT",
+            version=6, protocol="ipv6-icmp", icmpv6_type=128,
+        )
+    ]
+    assert not ctx2.changed
+    assert again == []
+
+
+async def test_rule_icmpv6_slaac_types_converge_from_the_fact():
+    """The firewall role's SLAAC-plus-ping set: six ip6tables-save lines seeded
+    as the fact, each requested by its symbolic name, all no-op -- the
+    symbolic-to-numeric normalization plus the icmp6 module make the
+    definition compare equal."""
+    seeded = [
+        {"chain": "INPUT", "protocol": "ipv6-icmp", "jump": "ACCEPT",
+         "extras": [["--icmpv6-type", str(n)], ["-m", "icmp6"]]}
+        for n in (128, 129, 133, 134, 135, 136)
+    ]
+    host = SimulatedHost(name="h", ip6tables_rules={"filter": seeded})
+    names = (
+        "echo-request", "echo-reply", "router-solicitation",
+        "router-advertisement", "neighbour-solicitation",
+        "neighbour-advertisement",
+    )
+    for name in names:
+        ctx = make_ctx(host)
+        commands = [
+            c
+            async for c in iptables.rule(
+                ctx, "INPUT", "ACCEPT",
+                version=6, protocol="ipv6-icmp", icmpv6_type=name,
+            )
+        ]
+        assert not ctx.changed, name
+        assert commands == [], name
+
+
+async def test_rule_icmpv6_code_renders_type_slash_code():
+    """``icmpv6_code`` renders the compound ``--icmpv6-type <type>/<code>``
+    form and requires ``icmpv6_type``."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    commands = [
+        c
+        async for c in iptables.rule(
+            ctx, "INPUT", "ACCEPT",
+            version=6, protocol="ipv6-icmp", icmpv6_type=1, icmpv6_code=3,
+        )
+    ]
+    assert commands[0].shell() == (
+        "ip6tables -t filter -A INPUT -p ipv6-icmp --icmpv6-type 1/3 -j ACCEPT"
+    )
+    ctx = make_ctx(SimulatedHost(name="h"))
+    with pytest.raises(ValueError) as excinfo:
+        [
+            c
+            async for c in iptables.rule(
+                ctx, "INPUT", "ACCEPT",
+                version=6, protocol="ipv6-icmp", icmpv6_code=3,
+            )
+        ]
+    assert str(excinfo.value) == "iptables icmpv6_code requires icmpv6_type"
+
+
+async def test_rule_protocol_all_and_numeric_carry_no_match_module():
+    """Acceptance criterion 3: a protocol with no match extension (``all``, a
+    numeric protocol) records no ``-m`` pair, so it converges against the
+    bare iptables-save line -- the map replaced the guess."""
+    host = SimulatedHost(
+        name="h",
+        iptables_rules={
+            "filter": [
+                {"chain": "INPUT", "protocol": "all", "jump": "ACCEPT"},
+                {"chain": "INPUT", "protocol": "47", "jump": "ACCEPT"},
+            ]
+        },
+    )
+    for protocol in ("all", "47"):
+        ctx = make_ctx(host)
+        commands = [
+            c async for c in iptables.rule(ctx, "INPUT", "ACCEPT", protocol=protocol)
+        ]
+        assert not ctx.changed, protocol
+        assert commands == [], protocol
+
+
+async def test_rule_icmp_type_requires_the_icmp_protocol():
+    """``icmp_type`` without ``protocol='icmp'`` is a ValueError, never a
+    dangling ``--icmp-type`` the kernel would reject."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    with pytest.raises(ValueError) as excinfo:
+        [c async for c in iptables.rule(ctx, "INPUT", "ACCEPT", icmp_type="echo-request")]
+    assert str(excinfo.value) == (
+        "iptables icmp_type requires protocol='icmp' (protocol=None)"
+    )
+
+
+async def test_rule_icmpv6_type_requires_the_ipv6_icmp_protocol():
+    """``icmpv6_type`` without ``protocol='ipv6-icmp'`` is a ValueError."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    with pytest.raises(ValueError) as excinfo:
+        [
+            c
+            async for c in iptables.rule(
+                ctx, "INPUT", "ACCEPT", protocol="icmp", icmpv6_type=128
+            )
+        ]
+    assert str(excinfo.value) == (
+        "iptables icmpv6_type/icmpv6_code requires protocol='ipv6-icmp' "
+        "(protocol='icmp')"
+    )
+
+
+async def test_rule_unknown_icmp_type_raises():
+    """A symbolic type iptables does not know fails the deploy rather than
+    rendering a rule that never compares equal to the fact."""
+    ctx = make_ctx(SimulatedHost(name="h"))
+    with pytest.raises(ValueError) as excinfo:
+        [
+            c
+            async for c in iptables.rule(
+                ctx, "INPUT", "ACCEPT", protocol="icmp", icmp_type="bogus"
+            )
+        ]
+    assert str(excinfo.value) == (
+        "unknown ICMP type 'bogus' (not a number or a known name)"
     )
 
 

@@ -79,7 +79,10 @@ existing rule is a flush-and-reapply workflow (`restore`), not an idempotent
 single-rule state. `IptablesDefaultPolicies`/`IptablesNatRules` convenience
 facts — `IptablesChains` already answers policies and every rule fact takes
 a `table` argument. A standalone `match` helper operation — the typed
-matcher parameters on `rule` are the first-class surface. Distro
+matcher parameters on `rule` (conntrack, multiport, limit, ipset, LOG
+level, and the ICMP/ICMPv6 type/code matchers) are the first-class
+surface, so a match extension that mutates nothing has no operation of
+its own. Distro
 auto-detection of the persistence path — the iptables-persistent default is
 explicit and `save`/`restore` take any path. The hardware module's
 `Ipv4Address` entry (of `NetworkDevices`) answers interface addressing; this
@@ -161,10 +164,18 @@ named matches plus the sorted `extras` pair list — against `IptablesRules`
 and yields `-A` (append), `-I` (insert, `append=False` or an explicit
 1-based `position`) or `-D` (remove). The typed-matcher extension makes
 `ctstate`, `destination_ports`/`source_ports` (multiport), `limit`/
-`limit_burst`, `match_set` and `log_level` first-class parameters folded
+`limit_burst`, `match_set`, `log_level` and the ICMP/ICMPv6 matchers
+`icmp_type`/`icmpv6_type`/`icmpv6_code` first-class parameters folded
 into the same comparison the baseline's port/comment shortcuts use, so
 idempotence works unchanged — `iptables-save` prints the extensions as
-ordinary flags and the pair list compares order-independently. `comment`
+ordinary flags and the pair list compares order-independently. The ICMP
+matchers normalize a symbolic type to the numeric form the save file
+prints (`echo-request` → `8`, `router-solicitation` → `133`), and the
+protocol's match module is looked up in a protocol→module map rather than
+guessed from the protocol name — so `-p ipv6-icmp` records `-m icmp6` (the
+extension `ip6tables-save` actually prints) and the module-less protocols
+(`all`, numeric) record no `-m` at all, which is what makes an ICMPv6 rule
+converge instead of re-appending on every deploy (issue #49). `comment`
 is the reliable idempotency/auditing marker; `extras` remains the escape
 hatch for anything untyped. NAT target arguments are validated against
 `table="nat"` and the jump, the baseline's guards preserved verbatim.
@@ -225,7 +236,9 @@ The operation scripts beside them demonstrate `iptables.chain`
 (`iptables_chain.py`, the LOG_DROP user chain twice), `iptables.policy`
 (`iptables_policy.py`, FORWARD DROP — compile-checked, not executed on
 the shared hosts), `iptables.rule` (`iptables_rule.py`, the typed
-conntrack/comment matchers twice), `iptables.flush`
+conntrack/comment matchers twice, and `iptables_rule_icmp.py`, the typed
+ICMP/ICMPv6 matchers — IPv4 ping plus the IPv6 SLAAC types, each twice),
+`iptables.flush`
 (`iptables_flush.py`, a create → seed → flush → no-op composition on a
 demo chain), `iptables.zero` (`iptables_zero.py`, the stateless contract),
 `iptables.save` (`iptables_save.py`, the idempotent default-path save),
