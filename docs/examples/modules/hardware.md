@@ -12,8 +12,10 @@ The read-only fact-gathering examples (`hardware_block_devices.py` reading
 `DiskStats`, `hardware_dmi_info.py` reading `DmiInfo`,
 `hardware_ipv4_addrs.py` reading `Ipv4Addrs`,
 `hardware_ipv6_addrs.py` reading `Ipv6Addrs`, `hardware_lsblk.py` reading
-`LsBlk`, `hardware_network_devices.py` reading `NetworkDevices`, and
-`hardware_smbios_info.py` reading `SmbiosInfo`, each
+`LsBlk`, `hardware_memory.py` reading `Memory`,
+`hardware_network_devices.py` reading `NetworkDevices`,
+`hardware_smbios_info.py` reading `SmbiosInfo`, and
+`hardware_swap_enabled.py` reading `SwapEnabled`, each
 over `gather_fact`) are not rendered
 here — they read a single fact, and the facts themselves are documented on the
 [`hardware` module page](../../modules/hardware.md).

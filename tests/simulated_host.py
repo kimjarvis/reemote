@@ -59,7 +59,7 @@ a real asyncssh transport is missing:
   / ``kernel_modules`` / ``os_kernel_version`` / ``login_records``
   / ``linux_distribution``
   / ``linux_gui`` / ``listening_ports`` / ``locales`` / ``lsb_release``
-  / ``lsblk_devices``
+  / ``lsblk_devices`` / ``memory`` / ``swap_enabled``
   / ``lxd_containers`` / ``lxd_image_aliases`` / ``lxd_images``
   / ``lxd_instance_configs`` / ``lxd_instance_snapshots``
   / ``lxd_instance_states`` / ``lxd_instances`` / ``lxd_networks``
@@ -128,7 +128,7 @@ a real asyncssh transport is missing:
   ``LxdInstanceState``, ``LxdInstances``, ``LxdNetworks``,
   ``LxdOperations``, ``LxdProfiles``, ``LxdProjectConfig``,
   ``LxdProjects``, ``LxdServerInfo``, ``LxdServerResources``,
-  ``LxdStoragePools``, ``LxdStorageVolumes``, ``Mounts``, ``MysqlBinaryLogs``, ``MysqlColumns``,
+  ``LxdStoragePools``, ``LxdStorageVolumes``, ``Memory``, ``Mounts``, ``MysqlBinaryLogs``, ``MysqlColumns``,
   ``MysqlConnections``, ``MysqlDatabases``, ``MysqlEngines``, ``MysqlIndexes``,
   ``MysqlPlugins``, ``MysqlReplication``, ``MysqlStatus``, ``MysqlTables``,
   ``MysqlUserGrants``, ``MysqlUsers``, ``MysqlVariables``, ``NetworkDevices``,
@@ -151,7 +151,7 @@ a real asyncssh transport is missing:
   and ``_AutorelabelPending`` probes read the shared ``command_paths`` and
   ``existing_files`` seams),
   ``SnapPackage``, ``SnapPackages``,
-  ``SmbiosInfo``, ``SimulateOperationWillChange``, ``Sysctl``, ``SysctlFile``,
+  ``SmbiosInfo``, ``SimulateOperationWillChange``, ``SwapEnabled``, ``Sysctl``, ``SysctlFile``,
   ``SysctlFiles`` (the two persistence reads project the shared
   ``remote_files`` seam onto the standard sysctl paths), ``Timezone``,
   ``UfwApplications``, ``UfwRules``, ``UfwStatus``,
@@ -1618,6 +1618,22 @@ class SimulatedHost(Host):
     # simulated machine with no block devices listed, like the fact's []
     # fallback for a failed or undecodable read.
     lsblk_devices: list[LsBlkNode] = field(default_factory=list)
+    # The total installed memory in MB (the parsed ``LANG=C vmstat -s``
+    # answer), backing ``Memory``. Defaults to the baseline's own fixture
+    # value (1024) -- a real machine always answers ``vmstat``, and a fixed
+    # default keeps simulated reads deterministic and never falls through
+    # to the shell (the ``cpus`` seam precedent). int is immutable, so no
+    # copy is needed at the seam.
+    memory: int = 1024
+    # Whether any swap device or file is currently active (the parsed
+    # ``swapon --show`` answer), backing ``SwapEnabled``. Defaults to
+    # ``False`` -- a simulated server runs with swap off until a test says
+    # otherwise; like ``memory``/``cpus`` the default is a real value, never
+    # ``None``, so the seam short-circuits (``False is not None`` holds) and a
+    # simulated read never falls through to the shell. bool is immutable, so
+    # no copy is needed at the seam. A read-only seam: the ``hardware``
+    # namespace holds no swap operation, so nothing mutates it.
+    swap_enabled: bool = False
     # Simulated LXD: one daemon per host (the remote/project kwargs
     # address that daemon, they do not key the seams). Server-wide seams
     # hold the entry lists / documents their facts return verbatim;

@@ -1230,6 +1230,38 @@ async def packages(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apk
+
+        # Install two packages (Alpine writes the root-owned apk DB, so elevate with doas)
+        yield op(
+            apk.packages,
+            name="Install baseline packages",
+            packages=("htop", "tree"),
+            doas=True,
+            when=is_alpine,          # optional eligibility guard
+        )
+
+        # Install with apk-native modifiers  ->  apk add --no-cache --no-scripts curl
+        yield op(
+            apk.packages,
+            name="Install with --no-cache --no-scripts",
+            packages=("curl",),
+            no_cache=True,
+            no_scripts=True,
+            doas=True,
+        )
+
+        # Remove packages
+        yield op(
+            apk.packages,
+            name="Remove old packages",
+            packages=("htop",),
+            present=False,
+            doas=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apk/apk_apk_packages.py``.
     """
 
@@ -1398,6 +1430,28 @@ async def virtual(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apk
+
+        # Create a virtual build-dependency group (apk add -t build-deps ...)
+        yield op(
+            apk.virtual,
+            name="Install build dependencies",
+            tag="build-deps",
+            packages=("gcc", "musl-dev"),
+            doas=True,
+        )
+
+        # Tear the whole group down again (apk del build-deps)
+        yield op(
+            apk.virtual,
+            name="Drop build dependencies",
+            tag="build-deps",
+            present=False,
+            doas=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apk/apk_virtual.py``.
     """
 
@@ -1527,6 +1581,36 @@ async def hold(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apk
+
+        # Hold a package at its installed version (no `version` -> pin to current)
+        yield op(
+            apk.hold,
+            name="Hold curl at its current version",
+            packages=("curl",),
+            doas=True,
+        )
+
+        # Pin to an explicit constraint (apk add curl=8.14.0-r0)
+        yield op(
+            apk.hold,
+            name="Pin curl to 8.14.0-r0",
+            packages=("curl",),
+            version="8.14.0-r0",
+            doas=True,
+        )
+
+        # Release the hold (rewrites the world line with no bound)
+        yield op(
+            apk.hold,
+            name="Release the curl hold",
+            packages=("curl",),
+            present=False,
+            doas=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apk/apk_hold.py``.
     """
 
@@ -1658,6 +1742,18 @@ async def autoremove(ctx: OpContext, **kwargs: Any) -> AsyncGenerator[Command]:
     ```
 
     Examples:
+        ```python
+        from reemote import op, apk
+
+        # Purge orphan packages (writes the root-owned apk DB, so elevate with doas)
+        yield op(
+            apk.autoremove,
+            name="Purge orphan packages",
+            doas=True,
+            when=is_alpine,          # optional eligibility guard
+        )
+        ```
+
         Examples can be found in ``examples/modules/apk/apk_autoremove.py``.
     """
 
@@ -1874,6 +1970,27 @@ async def repository(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apk
+
+        # Add a repository line (a bare URL, or a tagged "@testing <URL>" line)
+        yield op(
+            apk.repository,
+            name="Enable edge/testing",
+            src="@testing https://dl-cdn.alpinelinux.org/alpine/edge/testing",
+            doas=True,
+        )
+
+        # Remove a repository line (present=False)
+        yield op(
+            apk.repository,
+            name="Drop the community repository",
+            src="https://dl-cdn.alpinelinux.org/alpine/v3.19/community",
+            present=False,
+            doas=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apk/apk_repository.py``.
     """
 

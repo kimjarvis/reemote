@@ -49,7 +49,7 @@ operations; typed entry shapes describe returned data, not extra commands.
 
 | Module | Purpose |
 | --- | --- |
-| [hardware](hardware.md) | CPU, DMI/SMBIOS, block devices, disk stats, network interfaces, IPv4/IPv6 addresses |
+| [hardware](hardware.md) | CPU, DMI/SMBIOS, block devices, disk stats, network interfaces, IPv4/IPv6 addresses, memory, swap state |
 | [selinux](selinux.md) | SELinux mode, booleans, file contexts, logins, ports, users, modules, permissive domains |
 | [server](server.md) | Users, groups, hostname, mounts, timezone, kernel modules, locale, `/etc/hosts`, authorized_keys, processes, ports; shell/script/wait operations |
 | [sysctl](sysctl.md) | Kernel parameters — sysctl settings and drop-in `.conf` files |

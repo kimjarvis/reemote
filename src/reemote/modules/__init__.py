@@ -40,7 +40,8 @@ facts beside the ``config``, ``repo`` and ``worktree`` operations,
 and ``GpgSecretKeys`` facts,
 ``modules/hardware/hardware.py`` holds the ``BlockDevices``, ``CpuInfo``,
 ``Cpus``, ``DiskStats``, ``DmiInfo``, ``Ipv4Addrs``, ``Ipv6Addrs``,
-``LsBlk``, ``NetworkDevices`` and ``SmbiosInfo`` facts,
+``LsBlk``, ``Memory``, ``NetworkDevices``, ``SmbiosInfo`` and ``SwapEnabled``
+facts,
 ``modules/iptables/iptables.py`` holds the ``IptablesChains``,
 ``IptablesRules``, ``IptablesRulesOrdered``, ``IptablesTables``,
 ``IptablesVersion``, ``IptablesModules``, ``IpSets`` and

@@ -7,8 +7,9 @@ Re-exports everything from ``hardware.py`` so the facts
 (``hardware.BlockDevices``, ``hardware.CpuInfo``, ``hardware.Cpus``,
 ``hardware.DefaultIpv4Address``, ``hardware.DiskStats``, ``hardware.DmiInfo``,
 ``hardware.Ipv4Addrs``,
-``hardware.Ipv6Addrs``, ``hardware.LsBlk``, ``hardware.NetworkDevices``,
-``hardware.SmbiosInfo``) and their entry TypedDicts
+``hardware.Ipv6Addrs``, ``hardware.LsBlk``, ``hardware.Memory``,
+``hardware.NetworkDevices``, ``hardware.SmbiosInfo``,
+``hardware.SwapEnabled``) and their entry TypedDicts
 (``hardware.BlockDevice``, ``hardware.DefaultIpv4AddressInfo``,
 ``hardware.DiskStat``, ``hardware.LsBlkNode``,
 ``hardware.NetworkDevice``, ``hardware.Ipv4Address``,
@@ -33,9 +34,11 @@ from .hardware import (
     Ipv6Addrs,
     LsBlk,
     LsBlkNode,
+    Memory,
     NetworkDevice,
     NetworkDevices,
     SmbiosInfo,
+    SwapEnabled,
 )
 
 __all__ = [
@@ -54,8 +57,10 @@ __all__ = [
     "Ipv6Addrs",
     "LsBlk",
     "LsBlkNode",
+    "Memory",
     "NetworkDevice",
     "NetworkDevices",
     "SmbiosInfo",
+    "SwapEnabled",
     "hardware",
 ]

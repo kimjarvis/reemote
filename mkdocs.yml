@@ -91,7 +91,7 @@ plugins:
             filters:
               - "!^_"
               - "!^[A-Z][A-Z0-9_]*$"
-              - "!^(parse|process|command|shell|transfer|wait)$" # fact/descriptor plumbing, not public API
+              - "!^(parse|parse_.+|process|command|shell|transfer|wait)$" # fact/descriptor plumbing (e.g. DefaultIpv4Address.parse_route), not public API
               - "!^(name|group|args|kwargs)$" # Host/OperationRequest/LogEntry/InventoryEntry plumbing fields
 
 nav:

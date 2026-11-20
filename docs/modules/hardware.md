@@ -19,9 +19,11 @@
         - Ipv6Addrs
         - LsBlk
         - LsBlkNode
+        - Memory
         - NetworkDevice
         - NetworkDevices
         - SmbiosInfo
+        - SwapEnabled
 
 
 
@@ -36,10 +38,14 @@ default route and its primary IPv4 address read from the routing table,
 `/proc/diskstats`, `DmiInfo`, the system identity, BIOS and chassis fields
 exposed under `/sys/class/dmi/id/`, `Ipv4Addrs`/`Ipv6Addrs`, the IPv4/IPv6
 addresses per network interface, `LsBlk`, the complete block device tree
-reported by `lsblk -J`, `NetworkDevices`, the full network device
-details, the last three read from `ip addr show` or `ifconfig -a`, and
-`SmbiosInfo`, the full SMBIOS/DMI tables decoded by `dmidecode`.
-`DefaultIpv4Address`, `DiskStats`, `DmiInfo`, `LsBlk` and `SmbiosInfo` are reemote originals
+reported by `lsblk -J`, `Memory`, the total installed memory in MB
+reported by `vmstat -s`, `NetworkDevices`, the full network device
+details, the last three read from `ip addr show` or `ifconfig -a`,
+`SmbiosInfo`, the full SMBIOS/DMI tables decoded by `dmidecode`, and
+`SwapEnabled`, whether any swap device or file is currently active read
+from `swapon --show`.
+`DefaultIpv4Address`, `DiskStats`, `DmiInfo`, `LsBlk`, `SmbiosInfo` and
+`SwapEnabled` are reemote originals
 with no baseline counterpart: `DefaultIpv4Address` answers the question
 `Ipv4Addrs` and `NetworkDevices` deliberately leave open — which of the
 listed interfaces is the routable one — by reading the routing table and
@@ -194,6 +200,27 @@ as `[]`; non-dict nodes are skipped at every level and a non-list
 127 — reported as
 [`CommandNotFoundError`][reemote.hosts.CommandNotFoundError].
 
+`Memory` also takes no arguments: it runs `LANG=C vmstat -s` and returns the
+total installed memory in MB as an int, mirroring the baseline's
+`hardware.Memory`. Linux reports the total directly as a `K total memory`
+(the older `free -m`-style spelling) or `total memory` (util-linux
+`vmstat -s`) row in kilobytes, which is converted to MB with
+`round(value / 1024)`. BSD has no such row, so the total is calculated as
+`pages managed * bytes per page / 1024` (kilobytes); FreeBSD 12+ dropped
+`pages managed`, so its output instead sums the `pages active`, `pages
+inactive`, `pages wired down`, `pages free` and `pages in the laundry
+queue` categories — but only when at least one of them is non-zero. A row
+whose first token is not a number (a BSD prose row such as `cache hits
+(68% pos ...)`) is skipped. When neither the Linux row nor a usable BSD
+page calculation is available — empty output, or a total that computes to
+zero — the fact reads as `None`. Two deliberate deviations from the
+baseline: its `requires_command = "vmstat"` gate is dropped, like every
+other `hardware` fact — a missing `vmstat` exits 127, reported as
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError] rather than
+`None`; and a row without a space (the baseline's naive `line.split(" ",
+1)` would raise `ValueError` unpacking it) is skipped instead — reemote
+hardens the parser.
+
 `NetworkDevices` also takes no arguments: it runs the same
 `ip -j addr show 2> /dev/null || ip addr show 2> /dev/null || ifconfig -a`
 and maps each interface to its `NetworkDevice` entry — the `state`
@@ -271,6 +298,25 @@ an unprivileged read. The dict stays plain (no entry TypedDict): its keys
 are `dmidecode`'s verbatim section titles and field names, an open-ended
 set — the agreed dynamic-key exception, the same as `CpuInfo`.
 
+`SwapEnabled` also takes no arguments: it runs `swapon --show` and returns
+whether any swap device or file is currently active as a bool. pyinfra
+implements no such fact; the shape follows the hypothetical
+`hardware.SwapEnabled` sketch in which any output line means an active
+swap area (`len(output) > 0`). Verified against util-linux 2.39: a
+swap-less system prints *nothing* — no header, no hint line — while a
+system with swap on prints the `NAME TYPE SIZE USED PRIO` header followed
+by one row per active area. reemote hardens the parser: the header row is
+recognised by its leading `NAME` token and skipped wherever it appears,
+blank and whitespace-only lines are ignored, and an empty or header-only
+listing reads as `False` (the swap-less answer, hardened against the
+header variants other `swapon` builds emit). Like every `hardware` fact
+there is no `requires_command` gate — a missing `swapon` exits 127,
+reported as
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError]. The
+`hardware` namespace holds no swap operation, so this fact is read-only:
+a `swapoff`/`mkswap` step maps to a Shell action outside a deploy, guarded
+by this fact's answer.
+
 
 ## Example
 
@@ -278,12 +324,13 @@ The read-only fact-gathering scripts `hardware_block_devices.py`,
 `hardware_cpu_info.py`, `hardware_cpus.py`, `hardware_default_ipv4_address.py`,
 `hardware_disk_stats.py`,
 `hardware_dmi_info.py`, `hardware_ipv4_addrs.py`,
-`hardware_ipv6_addrs.py`, `hardware_lsblk.py`,
-`hardware_network_devices.py` and `hardware_smbios_info.py`
+`hardware_ipv6_addrs.py`, `hardware_lsblk.py`, `hardware_memory.py`,
+`hardware_network_devices.py`, `hardware_smbios_info.py` and
+`hardware_swap_enabled.py`
 under
 [`examples/modules/hardware/`](../examples/modules/hardware.md) gather
 `BlockDevices`, `CpuInfo`, `Cpus`, `DefaultIpv4Address`, `DiskStats`, `DmiInfo`, `Ipv4Addrs`,
-`Ipv6Addrs`, `LsBlk`, `NetworkDevices` and `SmbiosInfo` respectively
+`Ipv6Addrs`, `LsBlk`, `Memory`, `NetworkDevices`, `SmbiosInfo` and `SwapEnabled` respectively
 across an inventory with
 [`gather_fact`][reemote.drivers.gather_fact] and print each host's result
 as JSON.

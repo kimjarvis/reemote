@@ -3,7 +3,8 @@
 
 # """The ``hardware`` module: ``BlockDevices``, ``CpuInfo``, ``Cpus``,
 # ``DefaultIpv4Address``, ``DiskStats``, ``DmiInfo``, ``Ipv4Addrs``,
-# ``Ipv6Addrs``, ``LsBlk``, ``NetworkDevices`` and ``SmbiosInfo``.
+# ``Ipv6Addrs``, ``LsBlk``, ``Memory``, ``NetworkDevices``, ``SmbiosInfo``
+# and ``SwapEnabled``.
 #
 # Fact side: ``BlockDevices`` (the mounted block devices and their disk usage,
 # parsed from ``df``), ``CpuInfo`` (the CPU details reported by ``lscpu``),
@@ -16,12 +17,16 @@
 # ``/sys/class/dmi/id/``), ``Ipv4Addrs`` (the IPv4 addresses per network
 # interface), ``Ipv6Addrs`` (the IPv6 addresses per network interface),
 # ``LsBlk`` (the complete block device tree reported by ``lsblk -J``,
-# mounted or not), ``NetworkDevices`` (the full network device details --
+# mounted or not), ``Memory`` (the total installed memory in MB reported by
+# ``vmstat -s``, with the BSD page-count fallback pyinfra's fact of the same
+# name uses), ``NetworkDevices`` (the full network device details --
 # ether, mtu, state and both address families with their mask/broadcast
 # details), the last three parsed from ``ip addr show`` or ``ifconfig -a``,
-# and ``SmbiosInfo`` (the full SMBIOS/DMI tables decoded by ``dmidecode``).
-# ``DefaultIpv4Address``, ``DiskStats``, ``DmiInfo``, ``LsBlk`` and
-# ``SmbiosInfo`` are reemote
+# ``SmbiosInfo`` (the full SMBIOS/DMI tables decoded by ``dmidecode``) and
+# ``SwapEnabled`` (whether any swap device or file is currently active,
+# read from ``swapon --show``).
+# ``DefaultIpv4Address``, ``DiskStats``, ``DmiInfo``, ``LsBlk``,
+# ``SmbiosInfo`` and ``SwapEnabled`` are reemote
 # originals: ``DiskStats`` and ``LsBlk``
 # complement ``BlockDevices``, whose ``df`` listing only shows mounted
 # filesystems, while ``DmiInfo`` and ``SmbiosInfo`` report the machine's
@@ -1203,6 +1208,207 @@ class LsBlk:
         return cls.parse(stdout.splitlines())
 
 
+class Memory:
+    """The total installed memory in MB, as an int (or None).
+
+    **Commands:**
+
+    ```bash
+    LANG=C vmstat -s
+    ```
+
+    **Returns:**
+
+    ```python
+    int | None
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/hardware/hardware_memory.py``.
+    """
+
+    # Mirrors pyinfra's ``hardware.Memory``: ``LANG=C vmstat -s`` prints
+    # ``<count> <description>`` rows, and each row's first
+    # whitespace-separated token is converted with ``float()`` -- a token
+    # that is not a number (a BSD row starting with a word rather than a
+    # count, e.g. ``cache hits (68% pos ...)``) is skipped -- and maps to
+    # the rest of the line as its key, for example::
+    #
+    #     128678
+    #
+    # Linux reports the total directly as a ``K total memory`` (the older
+    # ``free -m``-style spelling) or ``total memory`` (util-linux
+    # ``vmstat -s``) row; whichever key is found wins and the value --
+    # kilobytes on Linux -- is converted to MB with ``round(value / 1024)``.
+    # BSD has no such row: the total is
+    # computed as ``pages managed * bytes per page / 1024`` (kilobytes),
+    # and FreeBSD 12+ dropped ``pages managed``, so its output instead sums
+    # the ``pages active``/``pages inactive``/``pages wired down``/``pages
+    # free``/``pages in the laundry queue`` categories -- but only when at
+    # least one of them is non-zero. When neither the Linux row nor a
+    # usable BSD page calculation is available (empty output, or a total
+    # that computes to zero), the fact reads as ``None``.
+    #
+    # Two deliberate deviations from pyinfra: pyinfra's
+    # ``requires_command = "vmstat"`` gate is dropped, like every other
+    # ``hardware`` fact -- a *missing* ``vmstat`` exits 127, which
+    # ``run_shell`` reports as ``CommandNotFoundError`` rather than
+    # ``None``; and a row without a space (pyinfra's naive
+    # ``line.split(" ", 1)`` would raise ``ValueError`` unpacking it) is
+    # skipped instead -- reemote hardens the parser.
+
+    #: Shell used to gather the total installed memory over SSH.
+    COMMAND = "LANG=C vmstat -s"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> int | None:
+        """Parse ``vmstat -s`` rows into the total memory in MB, or None. Pure/testable.
+
+        Each row's first token converts to a float, mapping the rest of
+        the line to it as its key; a row without a space or whose first
+        token is not a number is skipped. The Linux ``K total memory``/
+        ``total memory`` key wins over a BSD pages calculation, and an
+        output carrying neither -- or whose BSD calculation comes out
+        zero -- reads as ``None``.
+        """
+        data: dict[str, float] = {}
+        for line in output:
+            line = line.strip()
+            if " " not in line:
+                continue
+            value, key = line.split(" ", 1)
+            try:
+                numeric = float(value)
+            except ValueError:
+                continue
+            data[key.strip()] = numeric
+
+        # Easy - Linux just gives us the number.
+        total_memory = data.get("K total memory", data.get("total memory"))
+
+        # BSD - calculate the total from the # pages and the page size.
+        if not total_memory:
+            bytes_per_page = data.get("bytes per page")
+            pages_managed = data.get("pages managed")
+
+            # FreeBSD doesn't report "pages managed", sum page categories instead.
+            if not pages_managed:
+                page_keys = (
+                    "pages active",
+                    "pages inactive",
+                    "pages wired down",
+                    "pages free",
+                    "pages in the laundry queue",
+                )
+                page_counts = [data.get(k, 0) for k in page_keys]
+                if any(page_counts):
+                    pages_managed = sum(page_counts)
+
+            if bytes_per_page and pages_managed:
+                total_memory = (pages_managed * bytes_per_page) / 1024
+
+        if total_memory:
+            return round(total_memory / 1024)
+        return None
+
+    @classmethod
+    async def process(cls, host: Host) -> int | None:
+        memory = getattr(host, "memory", None)
+        if memory is not None:
+            # SimulatedHost seam: read the in-memory count directly.
+            # int is immutable, so no copy is needed.
+            return memory
+        # Real transport: `LANG=C vmstat -s` over asyncssh from the host's connection.
+        stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
+class SwapEnabled:
+    """Whether any swap device or file is currently active, as a bool.
+
+    **Commands:**
+
+    ```bash
+    swapon --show
+    ```
+
+    **Returns:**
+
+    ```python
+    bool
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/hardware/hardware_swap_enabled.py``.
+    """
+
+    # pyinfra does not implement this fact; the shape follows the
+    # hypothetical ``hardware.SwapEnabled`` sketch from the migration
+    # request: ``swapon --show`` answers True when at least one swap
+    # device or file is active. Verified against util-linux 2.39: an
+    # inactive system prints *nothing* -- no header, no hint line -- so
+    # any output line means an active swap area, exactly the sketch's
+    # ``len(output) > 0``; a swap-ful system prints the ``NAME TYPE SIZE
+    # USED PRIORITY`` header followed by one row per active swap area, e.g.::
+    #
+    #     NAME      TYPE SIZE USED PRIO
+    #     /swapfile file 1.9G   0B   -2
+    #
+    # reemote hardens the parser: the header row is recognised by its
+    # leading ``NAME`` token and skipped wherever it appears, blank and
+    # whitespace-only lines are ignored, and an empty output reads as
+    # False. Like every ``hardware`` fact there is no
+    # ``requires_command`` gate -- a missing ``swapon`` exits 127, which
+    # ``run_shell`` reports as ``CommandNotFoundError``.
+
+    #: Shell used to gather the swap activation state over SSH. util-linux
+    #: prints nothing at all when no swap area is active, and a header row
+    #: plus one row per active area otherwise; the command is unguarded, so
+    #: a missing binary surfaces as ``CommandNotFoundError``.
+    COMMAND = "swapon --show"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> bool:
+        """Parse ``swapon --show`` rows into the activation flag. Pure/testable.
+
+        Blank rows and the ``NAME TYPE SIZE USED PRIORITY`` header (a
+        leading ``NAME`` token) are skipped; any remaining row reports
+        ``True``. An empty or header-only listing -- the shape util-linux
+        prints on a swap-less host, hardened against the header variants
+        other ``swapon`` builds emit -- reports ``False``.
+        """
+        for line in output:
+            line = line.strip()
+            if not line or line.split()[0] == "NAME":
+                continue
+            return True
+        return False
+
+    @classmethod
+    async def process(cls, host: Host) -> bool:
+        state = getattr(host, "swap_enabled", None)
+        if state is not None:
+            # SimulatedHost seam: read the in-memory flag directly. A bool
+            # default (even False) is not None, so the house ``is not
+            # None`` short-circuit holds; bool is immutable, no copy needed.
+            return state
+        # Real transport: `swapon --show` over asyncssh from the host's connection.
+        stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
 class Ipv4Address(TypedDict):
     """
     Attributes:
@@ -1728,7 +1934,9 @@ __all__ = [
     "Ipv6Addrs",
     "LsBlk",
     "LsBlkNode",
+    "Memory",
     "NetworkDevice",
     "NetworkDevices",
     "SmbiosInfo",
+    "SwapEnabled",
 ]

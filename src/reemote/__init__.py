@@ -356,9 +356,11 @@ from .modules.hardware.hardware import (
     Ipv6Addrs,
     LsBlk,
     LsBlkNode,
+    Memory,
     NetworkDevice,
     NetworkDevices,
     SmbiosInfo,
+    SwapEnabled,
 )
 from .modules.iptables.iptables import (
     Ip6tablesChains,
@@ -1041,6 +1043,7 @@ __all__ = [
     "LxdStorageVolumeCommand",
     "LxdStorageVolumes",
     "Md5File",
+    "Memory",
     "MkdirCommand",
     "Mode",
     "ModeInfo",
@@ -1220,6 +1223,7 @@ __all__ = [
     "SnapRemoveCommand",
     "Socket",
     "StringCommand",
+    "SwapEnabled",
     "Sysctl",
     "SysctlFile",
     "SysctlFileInstallCommand",

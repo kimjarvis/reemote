@@ -1934,6 +1934,27 @@ async def deb(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apt
+
+        # Install a .deb already staged on the host (upload it first with files.put)
+        yield op(
+            apt.deb,
+            name="Install the local package",
+            src="/tmp/pkg.deb",
+            sudo=True,
+        )
+
+        # Remove the package the .deb provides
+        yield op(
+            apt.deb,
+            name="Remove the local package",
+            src="/tmp/pkg.deb",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apt/apt_deb.py``.
     """
 
@@ -2042,6 +2063,17 @@ async def dist_upgrade(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apt
+
+        # Upgrade every package, resolving dependencies (apt-get dist-upgrade)
+        yield op(
+            apt.dist_upgrade,
+            name="Full dist-upgrade",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apt/apt_dist_upgrade.py``.
     """
 
@@ -2121,6 +2153,17 @@ async def auto_remove(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apt
+
+        # Remove no-longer-needed dependencies (apt-get autoremove)
+        yield op(
+            apt.auto_remove,
+            name="Remove orphaned dependencies",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apt/apt_auto_remove.py``.
     """
 
@@ -2287,6 +2330,32 @@ async def key(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apt
+
+        # ``KEY_STREAM`` is a seekable IO stream of the key bytes, defined once at
+        # module level -- OperationRequest compares it by identity across phases.
+
+        # Install the key; a bare dest resolves under /etc/apt/keyrings/
+        yield op(
+            apt.key,
+            name="Install the signing key",
+            src=KEY_STREAM,
+            dest="example.gpg",
+            sudo=True,
+        )
+
+        # Install and refresh the index afterwards (update_cache appends apt-get update)
+        yield op(
+            apt.key,
+            name="Install the key and update the index",
+            src=KEY_STREAM,
+            dest="example.gpg",
+            update_cache=True,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apt/apt_key.py``.
     """
 
@@ -2418,6 +2487,27 @@ async def mark(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apt
+
+        # Hold packages back from upgrades (apt-mark hold)
+        yield op(
+            apt.mark,
+            name="Hold nginx",
+            packages=("nginx",),
+            sudo=True,
+        )
+
+        # Release held packages again (apt-mark unhold)
+        yield op(
+            apt.mark,
+            name="Unhold nginx",
+            packages=("nginx",),
+            held=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apt/apt_mark.py``.
     """
 
@@ -2690,6 +2780,46 @@ async def packages(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apt
+
+        # Install packages (idempotent: only what is missing is installed)
+        yield op(
+            apt.packages,
+            name="Install web tooling",
+            packages=("nginx", "curl"),
+            sudo=True,
+        )
+
+        # Pin a version -- a wildcard pin converges on any installed 16.x
+        yield op(
+            apt.packages,
+            name="Install Node.js 16.x",
+            packages=("nodejs=16.*",),
+            default_release="bookworm",
+            sudo=True,
+        )
+
+        # Upgrade installed, unpinned names that have a pending upgrade (state=latest)
+        yield op(
+            apt.packages,
+            name="Upgrade curl to latest",
+            packages=("curl",),
+            latest=True,
+            sudo=True,
+        )
+
+        # Remove a package and purge its configuration files
+        yield op(
+            apt.packages,
+            name="Purge nginx",
+            packages=("nginx",),
+            present=False,
+            purge=True,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apt/apt_packages.py``.
     """
 
@@ -2915,6 +3045,25 @@ async def update(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apt
+
+        # Refresh the package index (apt-get update; non-idempotent, always runs)
+        yield op(
+            apt.update,
+            name="Update the package index",
+            sudo=True,
+        )
+
+        # Skip the refresh when the index is less than 10 minutes old
+        yield op(
+            apt.update,
+            name="Update the package index if stale",
+            cache_valid_time=600,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apt/apt_update.py``.
     """
 
@@ -2973,6 +3122,17 @@ async def upgrade(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apt
+
+        # Upgrade all packages without changing dependencies (apt-get upgrade)
+        yield op(
+            apt.upgrade,
+            name="Upgrade all packages",
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apt/apt_upgrade.py``.
     """
 
@@ -3110,6 +3270,28 @@ async def ppa(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apt
+
+        # Add an Ubuntu PPA and refresh the index (apt-add-repository -y + apt-get update)
+        yield op(
+            apt.ppa,
+            name="Add the deadsnakes PPA",
+            src="ppa:deadsnakes/ppa",
+            update_cache=True,
+            sudo=True,
+        )
+
+        # Remove the PPA again
+        yield op(
+            apt.ppa,
+            name="Remove the deadsnakes PPA",
+            src="ppa:deadsnakes/ppa",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apt/apt_ppa.py``.
     """
 
@@ -3397,6 +3579,37 @@ async def repo(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apt
+
+        # Add a repository line to /etc/apt/sources.list
+        yield op(
+            apt.repo,
+            name="Add the backports repository",
+            src="deb http://deb.debian.org/debian bookworm-backports main",
+            sudo=True,
+        )
+
+        # Add it to a dedicated drop-in file instead, then refresh the index
+        yield op(
+            apt.repo,
+            name="Add a third-party repository",
+            src="deb https://pkg.example.com/apt stable main",
+            filename="example",
+            update_cache=True,
+            sudo=True,
+        )
+
+        # Remove the line from every sources file that holds it (present=False)
+        yield op(
+            apt.repo,
+            name="Drop the backports repository",
+            src="deb http://deb.debian.org/debian bookworm-backports main",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apt/apt_repo.py``.
     """
 
@@ -3720,8 +3933,8 @@ async def sources_file(
             fetched control-side and installed as the repo-named keyring
             ``/etc/apt/keyrings/<filename>.asc`` (mode ``0644``, idempotent
             on content), and the sources file references that path --
-            Ansible's ``deb822_repository`` ``signed_by`` URL form (issue
-            #17). With a URL, ``present=False`` also removes the managed
+            Ansible's ``deb822_repository`` ``signed_by`` URL form.
+            With a URL, ``present=False`` also removes the managed
             keyring files. Defaults to None.
         present (bool, optional): Whether the sources file should exist.
             Defaults to True.
@@ -3749,6 +3962,34 @@ async def sources_file(
     ```
 
     Examples:
+        ```python
+        from reemote import op, apt
+
+        # Write a deb822 .sources file under /etc/apt/sources.list.d/
+        yield op(
+            apt.sources_file,
+            name="Manage the Docker repository",
+            filename="docker",
+            types="deb",
+            uris="https://download.docker.com/linux/debian",
+            suites="bookworm",
+            components=("stable",),
+            architectures="amd64",
+            signed_by="/etc/apt/keyrings/docker.gpg",
+            update_cache=True,
+            sudo=True,
+        )
+
+        # Remove the file (and, when signed_by is a URL, its managed keyring)
+        yield op(
+            apt.sources_file,
+            name="Remove the Docker repository",
+            filename="docker",
+            present=False,
+            sudo=True,
+        )
+        ```
+
         Examples can be found in ``examples/modules/apt/apt_sources_file.py``.
     """
 

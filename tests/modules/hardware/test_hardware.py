@@ -3,7 +3,8 @@
 
 """Tests for the hardware module: ``BlockDevices``, ``CpuInfo``, ``Cpus``,
 ``DefaultIpv4Address``, ``DiskStats``, ``DmiInfo``, ``Ipv4Addrs``,
-``Ipv6Addrs``, ``LsBlk``, ``NetworkDevices`` and ``SmbiosInfo``.
+``Ipv6Addrs``, ``LsBlk``, ``Memory``, ``NetworkDevices``, ``SmbiosInfo`` and
+``SwapEnabled``.
 
 Covers ``reemote.modules.hardware.hardware``: the baseline's own fixtures over
 the real-transport path, the documented example results, ``df`` parsing
@@ -18,7 +19,11 @@ columns), sysfs DMI parsing edge cases (uevent/modalias skipping, empty
 values, colons inside values), ``dmidecode -q`` parsing edge cases
 (characteristic lists, duplicate sections, colon-less rows), ``lsblk -J``
 parsing edge cases (nested children, unmounted
-devices, malformed JSON, non-dict nodes), ``ip``/``ifconfig`` parsing
+devices, malformed JSON, non-dict nodes), ``vmstat -s`` parsing edge cases
+(the Linux total-memory row, the BSD pages-managed calculation, the
+FreeBSD page-category sum, a non-numeric first token, a row without a
+space), ``swapon --show`` parsing (the active header-plus-row listing, the
+empty and header-only swap-less shapes, blank-row skipping), ``ip``/``ifconfig`` parsing
 edge cases (the JSON sniff, alias ordering, other-family-only interfaces,
 malformed JSON, duplicate sections, mask normalization, the state
 heuristic), empty output, the ``SimulatedHost`` seams (read, default,
@@ -49,9 +54,11 @@ from reemote.modules.hardware.hardware import (
     Ipv6Addrs,
     LsBlk,
     LsBlkNode,
+    Memory,
     NetworkDevice,
     NetworkDevices,
     SmbiosInfo,
+    SwapEnabled,
 )
 from tests.simulated_host import SimulatedHost
 
@@ -1577,6 +1584,285 @@ def test_lsblk_is_exported_through_the_namespace():
     assert "LsBlk" in hardware.__all__
     assert hardware.LsBlkNode is LsBlkNode
     assert "LsBlkNode" in hardware.__all__
+
+
+# --- Memory --------------------------------------------------------------------
+
+
+async def test_memory_parses_baseline_linux_fixture():
+    # The baseline's own fact fixture
+    # (tests/facts/hardware.Memory/vmstat_linux.json), verbatim: util-linux
+    # reports the total directly as a "total memory" row in kilobytes.
+    host = CannedShellHost(
+        """131766608  total memory
+10646204  used memory
+1175052  active memory
+7246796  inactive memory
+121120408  free memory
+462172  buffer memory
+7716904  swap cache
+4194236  total swap
+0  used swap
+4194236  free swap
+17553436489 non-nice user cpu ticks
+197845521 nice user cpu ticks
+4154732459 system cpu ticks
+61499550500 idle cpu ticks
+29343621 IO-wait cpu ticks
+441566 IRQ cpu ticks
+2330236872 softirq cpu ticks
+0 stolen cpu ticks
+15845356104 pages paged in
+70214659203 pages paged out
+0 pages swapped in
+0 pages swapped out
+167369815 interrupts
+1170722597 CPU context switches
+1502370386 boot time
+1100921978 forks
+"""
+    )
+    assert await Memory.process(host) == 128678
+    assert host.shells == ["LANG=C vmstat -s"]
+
+
+async def test_memory_parses_baseline_bsd_fixture():
+    # The baseline's own fact fixture
+    # (tests/facts/hardware.Memory/vmstat_bsd.json), verbatim: BSD has no
+    # total-memory row, so the total is pages managed * bytes per page.
+    # The two trailing prose rows ("cache hits ...", "deletions ...")
+    # start with a non-numeric token and are skipped.
+    host = CannedShellHost(
+        """4096 bytes per page
+58543 pages managed
+36556 pages free
+2169 pages active
+1700 pages inactive
+0 pages being paged out
+1 pages wired
+4575 pages zeroed
+4 pages reserved for pagedaemon
+6 pages reserved for kernel
+583252 swap pages
+4301 swap pages in use
+393238 page faults
+396884 traps
+81631 interrupts
+138051 cpu context switches
+0 fpu context switches
+62803 software interrupts
+368054 syscalls
+21024 pagein operations
+578 forks
+27 forks where vmspace is shared
+12 kernel map entries
+168249 zeroed page hits
+17892 zeroed page misses
+44 number of times the pagedaemon woke up
+38 revolutions of the clock hand
+140310 pages freed by pagedaemon
+178161 pages scanned by pagedaemon
+0 pages reactivated by pagedaemon
+0 busy pages found by pagedaemon
+33764 total name lookups
+cache hits (68% pos + 2% neg) system 0% per-directory
+deletions 5%, falsehits 0%, toolong 0%
+0 select collisions
+"""
+    )
+    assert await Memory.process(host) == 229
+
+
+async def test_memory_parses_baseline_freebsd_fixture():
+    # The baseline's own fact fixture
+    # (tests/facts/hardware.Memory/vmstat_freebsd.json), verbatim: FreeBSD
+    # 12+ reports neither "total memory" nor "pages managed", so the total
+    # sums the individual page categories instead.
+    host = CannedShellHost(
+        """107554429 cpu context switches
+ 47080979 device interrupts
+       840 software interrupts
+203440363 traps
+340127103 system calls
+        21 kernel threads created
+   1157535  fork() calls
+    423271 vfork() calls
+        56 rfork() calls
+         0 swap pager pageins
+         0 swap pager pages paged in
+         0 swap pager pageouts
+         0 swap pager pages paged out
+      1563 vnode pager pageins
+     18054 vnode pager pages paged in
+         0 vnode pager pageouts
+         0 vnode pager pages paged out
+         0 page daemon wakeups
+   5582796 pages examined by the page daemon
+         0 clean page reclamation shortfalls
+         0 pages reactivated by the page daemon
+  59283848 copy-on-write faults
+     44722 copy-on-write optimized faults
+118833982 zero fill pages zeroed
+      1840 zero fill pages prezeroed
+     69392 intransit blocking page faults
+215440199 total VM faults taken
+      1105 page faults requiring I/O
+         0 pages affected by kernel thread creation
+  40483808 pages affected by  fork()
+  14790437 pages affected by vfork()
+      1916 pages affected by rfork()
+247980357 pages freed
+         0 pages freed by daemon
+163371857 pages freed by exiting processes
+      1952 pages active
+     13625 pages inactive
+         0 pages in the laundry queue
+    161005 pages wired down
+         0 virtual user pages wired down
+      3580 permanently allocated pages
+    323984 pages free
+      4096 bytes per page
+  52953973 total name lookups
+           cache hits (87% pos + 12% neg) system 0% per-directory
+           deletions 0%, falsehits 0%, toolong 0%
+"""
+    )
+    assert await Memory.process(host) == 1955
+
+
+def test_memory_parse_prefers_the_k_total_memory_spelling():
+    # The older "K total memory" spelling wins when both it and a BSD
+    # pages calculation are somehow present.
+    assert (
+        Memory.parse(
+            [
+                "2097152 K total memory",
+                "4096 bytes per page",
+                "58543 pages managed",
+            ]
+        )
+        == 2048
+    )
+
+
+def test_memory_parse_skips_non_numeric_first_tokens():
+    # A row starting with a word rather than a count (a BSD prose row)
+    # contributes nothing and never raises.
+    assert (
+        Memory.parse(["cache hits (68% pos + 2% neg) system 0% per-directory"])
+        is None
+    )
+
+
+def test_memory_parse_skips_rows_without_a_space():
+    # A row with no second field would crash pyinfra's naive
+    # ``line.split(" ", 1)`` unpacking; reemote hardens the parser and
+    # skips it instead.
+    assert Memory.parse(["garbage", "", "4096 bytes per page", "58543 pages managed"]) == 229
+
+
+def test_memory_parse_is_none_when_no_total_is_available():
+    # Neither a Linux total-memory row nor a usable BSD page calculation
+    # (no "bytes per page", no page categories at all) reads as None.
+    assert Memory.parse(["0 pages active", "0 pages free"]) is None
+    assert Memory.parse(["some unrelated row"]) is None
+
+
+async def test_memory_is_none_on_empty_output():
+    # Empty output (a failed read) reads as None, the house fallback for
+    # a scalar fact whose parser found no total.
+    assert await Memory.process(CannedShellHost("")) is None
+    assert Memory.parse([]) is None
+
+
+async def test_memory_reads_the_simulated_seam():
+    host = SimulatedHost(name="h", memory=16384)
+    assert await Memory.process(host) == 16384
+    # The seam defaults to the baseline's fixture value (1024): a fixed
+    # simulated machine, never falling through to the shell.
+    assert await Memory.process(SimulatedHost(name="h")) == 1024
+
+
+async def test_memory_gather_fact_across_hosts():
+    hosts = [
+        SimulatedHost(name="web1", memory=8192),
+        SimulatedHost(name="web2"),
+    ]
+    assert await gather_fact(hosts, Memory) == {"web1": 8192, "web2": 1024}
+
+
+def test_memory_is_exported_through_the_namespace():
+    # Both import paths resolve to the same class: hardware.Memory through
+    # the package and Memory through the module source.
+    assert hardware.Memory is Memory
+    assert "Memory" in hardware.__all__
+
+
+# --- SwapEnabled ---------------------------------------------------------------
+
+
+async def test_swap_enabled_parses_an_active_listing():
+    # util-linux 2.39 prints the header row plus one row per active swap
+    # area when a device or file is on: the header is skipped and the
+    # /swapfile row answers True.
+    host = CannedShellHost(
+        """NAME      TYPE SIZE USED PRIO
+/swapfile file 1.9G   0B   -2
+"""
+    )
+    assert await SwapEnabled.process(host)
+    assert host.shells == ["swapon --show"]
+
+
+async def test_swap_enabled_is_false_on_empty_output():
+    # Verified against util-linux 2.39: a swap-less host prints nothing at
+    # all -- no header, no hint line -- so an empty read answers False.
+    assert await SwapEnabled.process(CannedShellHost("")) is False
+    assert SwapEnabled.parse([]) is False
+
+
+async def test_swap_enabled_is_false_on_a_header_only_listing():
+    # Hardening against the header-variant ``swapon`` builds that print the
+    # column titles even with no rows: the NAME-headed row alone is not an
+    # active swap area.
+    assert (
+        await SwapEnabled.process(
+            CannedShellHost("NAME      TYPE SIZE USED PRIO\n")
+        )
+        is False
+    )
+
+
+def test_swap_enabled_parse_skips_blank_lines_and_header():
+    # Blank/whitespace rows and the header are ignored; any remaining row
+    # (a device or a file) reports True regardless of position.
+    assert SwapEnabled.parse(["", "   ", "NAME TYPE SIZE USED PRIO"]) is False
+    assert (
+        SwapEnabled.parse(["", "NAME TYPE SIZE USED PRIO", "/dev/sda2 partition 2G 0B -1"]) is True
+    )
+
+
+async def test_swap_enabled_reads_the_simulated_seam():
+    assert await SwapEnabled.process(SimulatedHost(name="h", swap_enabled=True)) is True
+    # The seam defaults to False -- a fixed simulated machine with swap off,
+    # never falling through to the shell (the non-None default invariant:
+    # ``False is not None`` holds, so the seam short-circuits).
+    assert await SwapEnabled.process(SimulatedHost(name="h")) is False
+
+
+async def test_swap_enabled_gather_fact_across_hosts():
+    hosts = [
+        SimulatedHost(name="web1", swap_enabled=True),
+        SimulatedHost(name="web2"),
+    ]
+    assert await gather_fact(hosts, SwapEnabled) == {"web1": True, "web2": False}
+
+
+def test_swap_enabled_is_exported_through_the_namespace():
+    # Both import paths resolve to the same class: hardware.SwapEnabled
+    # through the package and SwapEnabled through the module source.
+    assert hardware.SwapEnabled is SwapEnabled
+    assert "SwapEnabled" in hardware.__all__
 
 
 # --- NetworkDevices ------------------------------------------------------------
