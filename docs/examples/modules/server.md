@@ -146,7 +146,10 @@ is not found directly but `device` is given, the mount is located by device
 instead, and that found mount point is what an unmount or remount acts on.
 Like the baseline, `/etc/fstab` is never touched — a
 mount made this way does not survive a reboot unless an fstab entry is
-managed separately. The operation itself requires an existing mount target
+managed separately, which is `server.fstab`'s job (the next section), not
+a `files.edit` recipe: transfers never elevate, so the root-owned fstab
+file is not writable that way. The operation itself requires an existing
+mount target
 directory and a present device, so the script provisions its own
 prerequisites before deploying: `main` first awaits `provision_mounts` from
 the sibling `provision.py`, which creates `/data` and `/scratch` with
@@ -274,6 +277,42 @@ per-phase fact cache visible: the second step sees the entry the first
 wrote and reports no change.
 
 ::: server_etc_hosts
+    options:
+      members: []
+
+## Persisting an fstab mount entry
+
+`server.fstab` in action: the deploy ensures the entry keyed by
+`/swapfile` reads exactly `/swapfile none swap sw 0 0` — the geerlingguy
+swap role's central declaration, Ansible `mount`'s `name: none` form,
+under `sudo` because `/etc/fstab` is root-owned. This is the persistent
+half `server.mount` deliberately does not touch, and the surface the
+earlier docs wrongly called a `files.edit` recipe: a transfer never
+elevates, so the root-owned file could never be written that way. The
+operation is idempotent: it compares the parsed `Fstab` fact first (an
+equivalent line in another spacing — tabs for spaces — reads as no
+change, not a duplicate), unrequested `options`/`dump`/`passno` columns
+merge from the current entry on an update like Ansible rewriting only
+the differing fields, and only a differing entry triggers the write —
+the `AuthorizedKeysFile` raw-content fact reads the file's current text,
+the transform rewrites just the matching line (every other line,
+comment and blank line preserved), and the result rides a
+**spool-and-install** pair: an unprivileged scp to a `/tmp` spool named
+after the managed path, then an elevated `sh -c 'mkdir -p … && cp … &&
+chmod 0644 … && rm -rf …'` install. The scp half stays unprivileged
+even under `sudo=True`, so the log shows the family's two privilege
+levels in one request. `options` is a tuple because `op()` arguments
+must stay hashable (a comma-separated string works too); `present=False`
+with the device removes the entry again, the role's `state: absent`
+path. Activating the swap (`swapon`) is out of scope (issue #47), so the
+entry itself is inert until something runs `swapon` — managing the line
+is all fstab persistence requires. The deploy yields the same request
+twice, so the apply log makes the per-phase fact cache visible: the
+second step sees the entry the first wrote and reports no change. The
+script mutates the shared demo inventory for real: the entry stays in
+each guarded host's `/etc/fstab`, and re-running it is a no-op.
+
+::: server_fstab
     options:
       members: []
 

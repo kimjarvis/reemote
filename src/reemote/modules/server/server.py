@@ -9,7 +9,9 @@
 # one remote file, or None when it is absent), ``Date`` (the current datetime on the
 # server, parsed from an ISO 8601 ``date`` timestamp), ``Env`` (the value
 # of a given environment variable from ``echo $<name>``), ``EtcHosts`` (the
-# hosts file parsed as a mapping of IP address to hostnames), ``FipsEnabled``
+# hosts file parsed as a mapping of IP address to hostnames), ``Fstab`` (the
+# ``/etc/fstab`` lines keyed by mount point, device for a ``none`` swap
+# line), ``FipsEnabled``
 # (whether the kernel is running in FIPS mode, from
 # ``/proc/sys/crypto/fips_enabled``), ``Groups`` (the
 # group names listed in ``/etc/group``), ``HasGui`` (whether a known
@@ -43,6 +45,8 @@
 # ``server.hostname`` plus the ``SetHostnameCommand`` descriptor it yields,
 # ``server.etc_hosts`` plus the ``EtcHostsUploadCommand``/
 # ``EtcHostsInstallCommand`` spool-and-install pair it yields,
+# ``server.fstab`` plus the ``FstabUploadCommand``/``FstabInstallCommand``
+# spool-and-install pair it yields,
 # ``server.kill`` plus the ``KillCommand`` descriptor it yields,
 # ``server.locale`` plus the ``LocaleUploadCommand``/``LocaleInstallCommand``/
 # ``LocaleGenCommand`` spool-and-install trio it yields,
@@ -72,6 +76,11 @@
 # no-op and the ``AuthorizedKeysFile`` raw-content fact feeds a pure rewrite
 # that is spooled and installed over the hosts file (see the operation's
 # comment block for the family details).
+# ``server.fstab`` is the original Ansible-``mount``-parity operation for
+# the persistent half (issue #48): the ``Fstab`` fact gates the no-op and
+# the ``AuthorizedKeysFile`` raw-content fact feeds a pure six-column
+# rewrite that is spooled and installed over ``/etc/fstab``, keyed by mount
+# point (device for a ``none`` swap line).
 # ``server.kill`` mirrors the baseline's ``server.kill`` for ``pid`` and
 # ``signal``: stateless and non-idempotent, it reads no fact and always
 # yields one ``kill -<signal> <pid>`` command.
@@ -726,6 +735,146 @@ class FipsEnabled:
             return fips_enabled
         # Real transport: cat /proc/sys/crypto/fips_enabled over asyncssh.
         stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
+class FstabEntry(TypedDict):
+    """
+    Attributes:
+        device: The first column verbatim -- the device path or its
+            ``UUID=``/``LABEL=``/``PARTUUID=`` spelling, exactly as written.
+        mountpoint: The second column (``none`` for a swap entry).
+        fs_type: The third column (``swap`` for a swap entry).
+        options: The fourth column split on commas, in file order.
+        dump: The fifth column as an int, or ``None`` when the row spells it
+            non-numerically (a stray or malformed line the parser keeps).
+        passno: The sixth column as an int, or ``None`` on a non-numeric
+            spelling.
+    """
+
+    # The single record ``Fstab`` returns for one entry, the ``PortInfo``/
+    # ``AptSource`` shape: ``options`` is a tuple so the record stays
+    # hashable and value-equal across the two deploy phases, and the numeric
+    # columns are ``None`` rather than a crash when the file spells them
+    # oddly.
+    device: str
+    mountpoint: str
+    fs_type: str
+    options: tuple[str, ...]
+    dump: int | None
+    passno: int | None
+
+
+class Fstab:
+    """``/etc/fstab`` parsed as a mapping of mount point to fstab entry.
+
+    **Commands:**
+
+    ```bash
+    cat <path> 2>/dev/null || true
+    ```
+
+    **Returns:**
+
+    ```python
+    dict[str, FstabEntry]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_fstab.py``.
+    """
+
+    # Original reemote fact giving Ansible's ``mount`` module its persistent
+    # half (issue #48; the baseline has no fstab fact and never reads the
+    # static table): each active line of the file at ``path`` (``/etc/fstab``
+    # by default) becomes a ``FstabEntry`` keyed by its mount point, for
+    # example::
+    #
+    #     {
+    #         "/": {"device": "/dev/mapper/root", "mountpoint": "/",
+    #               "fs_type": "ext4", "options": ("errors=remount-ro",),
+    #               "dump": 0, "passno": 1},
+    #         "/swapfile": {"device": "/swapfile", "mountpoint": "none",
+    #                       "fs_type": "swap", "options": ("sw",),
+    #                       "dump": 0, "passno": 0},
+    #     }
+    #
+    # Comments (everything from ``#`` on) and blank lines are skipped, lines
+    # with fewer than six columns are not entries, and whitespace -- tabs
+    # included -- separates the columns, so an equivalent line in another
+    # spacing parses identically. Swap entries all spell ``none`` as their
+    # mount point -- Ansible's ``name: none`` form, where the fstab line is
+    # the managed object and the mount point cannot key it -- so a ``none``
+    # line is keyed by its device instead: the fact keys each entry exactly
+    # the way Ansible's ``mount`` module identifies it (by ``name``, by
+    # ``src`` when the name is ``none``). A repeated key keeps the later
+    # line, like ``Mounts``. The file is world-readable, so the plain
+    # unprivileged ``cat`` of the ``EtcHosts`` shape suffices; a missing
+    # file (the ``cat`` error swallowed by ``|| true``) reads as ``{}``.
+
+    @classmethod
+    def command(cls, path: str = "/etc/fstab") -> str:
+        """Shell cats the fstab file, a missing one printing nothing.
+
+        The path is ``shlex``-quoted (the baseline's ``QuoteString``); the
+        ``|| true`` guard makes a missing file an empty read, never an error
+        (``EtcHosts.command``'s form).
+        """
+        return f"cat {shlex.quote(path)} 2>/dev/null || true"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> dict[str, FstabEntry]:
+        """Parse fstab rows into the mount point -> ``FstabEntry`` mapping.
+
+        Comments and blank lines are dropped, lines with fewer than six
+        columns are skipped, tabs and spaces separate fields alike, and a
+        non-numeric ``dump``/``passno`` column reads as ``None`` rather than
+        failing the whole parse. A ``none`` mount point keys the entry by
+        device (the ``name: none`` swap form); anything else by mount point.
+        Pure and testable.
+        """
+        entries: dict[str, FstabEntry] = {}
+        for raw in output:
+            line = raw.split("#", 1)[0].strip()
+            if not line:
+                continue
+            columns = line.split()
+            if len(columns) < 6:
+                continue
+            device, mountpoint, fs_type, options, dump, passno = columns[:6]
+            entry: FstabEntry = {
+                "device": device,
+                "mountpoint": mountpoint,
+                "fs_type": fs_type,
+                "options": tuple(options.split(",")),
+                "dump": int(dump) if dump.isdigit() else None,
+                "passno": int(passno) if passno.isdigit() else None,
+            }
+            entries[device if mountpoint == "none" else mountpoint] = entry
+        return entries
+
+    @classmethod
+    async def process(cls, host: Host, path: str = "/etc/fstab") -> dict[str, FstabEntry]:
+        remote_files = getattr(host, "remote_files", None)
+        if remote_files is not None:
+            # SimulatedHost seam: parse the content the simulated remote
+            # filesystem holds at the path; an absent file reads as {}. The
+            # same store the ``install_fstab_file`` mutator writes the
+            # installed bytes back into (the ``EtcHosts`` pattern), so a
+            # simulated write always reads back consistently through this
+            # fact with no second store to keep in sync.
+            data = remote_files.get(path)
+            if data is None:
+                return {}
+            return cls.parse(data.decode("utf-8").splitlines())
+        # Real transport: `cat /etc/fstab` over asyncssh.
+        stdout = await host.run_shell(cls.command(path))
         return cls.parse(stdout.splitlines())
 
 
@@ -5432,6 +5581,381 @@ async def mount(
         ctx.reason = f"filesystem {path} is {'mounted' if mounted else 'not mounted'}"
 
 
+def _fstab_spool_path(dest: str) -> str:
+    """The deterministic ``/tmp`` spool *file* path ``fstab`` uploads to.
+
+    The content is spooled to a fixed ``fstab`` file *inside* a sha1-derived
+    ``/tmp`` directory rather than at the top level of ``/tmp``; the elevated
+    install ``rm -rf``s the whole directory afterwards.
+
+    Derived from the managed fstab file's sha1 (``_hosts_spool_path`` /
+    ``_keys_spool_path`` pattern), even though most requests edit the one
+    ``/etc/fstab``: the ``path`` option means two requests in one deploy can
+    target different fstab files, and they must not clobber each other's
+    spool. The same ``dest`` always yields the same name in both phases, so
+    the descriptors stay deterministic. The name avoids *collisions*, not a
+    hostile local user: it is predictable, so on a multi-tenant host the
+    ``/tmp`` spool is still a symlink-race exposure (the trade-off every
+    spool-and-install operation here makes).
+    """
+    digest = hashlib.sha1(dest.encode()).hexdigest()[:16]
+    return f"/tmp/reemote-server-fstab-{digest}/fstab"
+
+
+def _fstab_content(
+    current: str | None,
+    key: str,
+    columns: tuple[str, str, str, str, str, str],
+    present: bool,
+) -> str:
+    """The pure fstab rewrite: ensure or drop every line keyed by ``key``.
+
+    The ``_hosts_content`` loop transposed to six-column rows, functional on
+    the controller: a line is an entry when it is active (not a ``#``
+    comment, not blank) and carries at least six whitespace-separated
+    columns, and its key is the ``Fstab`` fact's own rule -- the mount point
+    column, the device column for a ``none`` (swap) mount point. With
+    ``present=True`` every matching line becomes the rendered ``columns``
+    and additional duplicates collapse into that one rewritten line rather
+    than surviving side by side; when no line matches, the rendered line is
+    appended. With
+    ``present=False`` every matching line is dropped. Comments on an
+    *edited* line are not preserved (the ``_hosts_content`` parity); every
+    other line, comment and blank line survives in order and byte-for-byte.
+    Line endings are normalised to ``\\n`` and the result carries one
+    trailing newline unless it is empty, so a removal that empties the file
+    yields ``""``. Idempotent (``f(f(x)) == f(x)``) and side-effect free, so
+    both deploy phases compute the same content from the same fact value.
+    """
+    desired = " ".join(columns)
+    new_lines: list[str] = []
+    found = False
+    for line in current.splitlines() if current else []:
+        stripped = line.split("#", 1)[0].strip()
+        if not stripped:
+            new_lines.append(line)
+            continue
+        tokens = stripped.split()
+        if len(tokens) < 6:
+            new_lines.append(line)
+            continue
+        line_key = tokens[0] if tokens[1] == "none" else tokens[1]
+        if line_key != key:
+            new_lines.append(line)
+            continue
+        if present and not found:
+            new_lines.append(desired)
+        # A further duplicate line collapses into the rewritten one above;
+        # a removal drops the line entirely.
+        found = True
+    if present and not found:
+        new_lines.append(desired)
+    new_content = "\n".join(new_lines)
+    if new_content:
+        new_content += "\n"
+    return new_content
+
+
+@dataclass(frozen=True)
+class FstabUploadCommand(TransferCommand):
+    """Spool the transformed fstab content to a ``/tmp`` path on the target.
+
+    The first half of ``fstab``'s write and a *non-shell* descriptor: it
+    copies the content over the connection's scp channel via
+    ``Host.upload_file`` rather than running shell text, so it has no
+    ``shell()`` and its loggable form is the ``__str__`` rendering
+    ``command_shell`` falls back to. Like ``EtcHostsUploadCommand`` the
+    content is not a caller-supplied stream but the whole fstab-file text
+    the operation just derived from the file's current content, so the
+    field is a plain ``str`` -- hashable and identical across phases --
+    wrapped in a fresh ``io.BytesIO`` only at transfer time. The copy rides
+    as the login user (transfers are unprivileged, so the request's ``sudo``
+    does not apply to it), which is why the spool path is world-writable
+    ``/tmp`` rather than root-owned ``/etc``.
+    """
+
+    content: str  # the whole transformed fstab-file text
+    dest: str  # spool path on the target host
+
+    def __str__(self) -> str:
+        return f"scp <fstab file> -> {self.dest}"
+
+    async def transfer(self, host: Host) -> None:
+        # scp does not create parent directories, and the spool lives inside
+        # a sha1-derived /tmp directory rather than at the top level, so
+        # mkdir -p it first. Unprivileged: /tmp is world-writable, so the
+        # login user can create the directory, and a transfer never elevates.
+        parent = shlex.quote(str(PurePosixPath(self.dest).parent))
+        await host.run_shell(f"mkdir -p {parent}")
+        await host.upload_file(io.BytesIO(self.content.encode()), self.dest)
+
+
+@dataclass(frozen=True)
+class FstabInstallCommand(Command):
+    """Install the spooled fstab file ``0644``, then remove the spool.
+
+    The second half of ``fstab``'s write and the elevated one: the whole
+    sequence is wrapped in ``sh -c`` -- a bare ``sudo`` prefix would elevate
+    only the first command of the ``&&`` chain and leave the cleanup running
+    as the login user, whereas ``sudo sh -c '...'`` runs every step elevated,
+    which can always remove the login-user spool file. The sequence ensures
+    the destination directory, copies the spooled content over the fstab
+    file, chmods it ``0644`` (the ``EtcHostsInstallCommand`` pattern) and
+    removes the spool directory. No chown is needed: ``/etc/fstab`` is
+    root-owned and ``cp`` over an existing file preserves its owner; a
+    freshly created file is root-owned already because the whole chain runs
+    under ``sudo``. All paths are shell-quoted.
+    """
+
+    spool: str  # where FstabUploadCommand wrote the content
+    dest: str  # the fstab-file path being managed
+
+    def shell(self) -> str:
+        spool = shlex.quote(self.spool)
+        # The spool file lives inside a sha1-derived /tmp directory; remove
+        # the whole directory so no leftover lands in /tmp.
+        spool_dir = shlex.quote(str(PurePosixPath(self.spool).parent))
+        dest = shlex.quote(self.dest)
+        parent = shlex.quote(str(PurePosixPath(self.dest).parent))
+        inner = (
+            f"mkdir -p {parent} && "
+            f"cp {spool} {dest} && "
+            f"chmod 0644 {dest} && rm -rf {spool_dir}"
+        )
+        return f"sh -c {shlex.quote(inner)}"
+
+
+async def fstab(
+    ctx: OpContext,
+    device: str | None = None,
+    mountpoint: str | None = None,
+    fs_type: str | None = None,
+    options: list[str] | tuple[str, ...] | str | None = None,
+    dump: int | None = None,
+    passno: int | None = None,
+    present: bool = True,
+    path: str = "/etc/fstab",
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Add, update or remove an entry in ``/etc/fstab``, Ansible ``mount`` parity.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        device (str | None, optional): The device (or ``UUID=``/``LABEL=``
+            spelling) in the entry's first column. Required when
+            ``present=True``; for ``present=False`` it is the removal key
+            when no ``mountpoint`` is given (the ``name: none`` swap form).
+            Defaults to None.
+        mountpoint (str | None, optional): The mount point in the entry's
+            second column -- ``none`` for a swap entry, where the entry is
+            keyed by ``device`` exactly like Ansible's ``mount`` module with
+            ``name: none``. Required when ``present=True``; for
+            ``present=False`` it is the removal key. Defaults to None.
+        fs_type (str | None, optional): The filesystem type (``swap`` for a
+            swap entry). Required when ``present=True``; on an update,
+            ``None`` keeps the entry's current value. Defaults to None.
+        options (list[str] | tuple[str, ...] | str | None, optional): The
+            option columns; a comma-separated string or a list/tuple of
+            option strings (prefer tuples when building requests via
+            ``op()``, which must stay hashable). On an update ``None``
+            keeps the entry's current options; on an append it defaults to
+            ``("defaults",)``, the fstab(5) spelling. Defaults to None.
+        dump (int | None, optional): The dump column. On an update ``None``
+            keeps the current value; on an append it defaults to ``0``.
+            Defaults to None.
+        passno (int | None, optional): The fsck passno column. On an update
+            ``None`` keeps the current value; on an append it defaults to
+            ``0``. Defaults to None.
+        present (bool, optional): Whether the entry should be present or
+            absent. Defaults to True.
+        path (str, optional): Path to the fstab file. Defaults to
+            ``/etc/fstab``.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The spool-and-install pair carrying the new fstab-file
+            content, when the entry differs from the request.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
+
+    Examples:
+        ```python
+        from reemote import op, server
+
+        # Persist a swap file in /etc/fstab (root-owned file, so elevate with sudo)
+        yield op(
+            server.fstab,
+            name="Persist the swap file",
+            device="/swapfile",
+            mountpoint="none",
+            fs_type="swap",
+            options=("sw",),
+            dump=0,
+            passno=0,
+            sudo=True,
+        )
+
+        # Remove the entry again (the swap role's state=absent path)
+        yield op(
+            server.fstab,
+            name="Unpersist the swap file",
+            device="/swapfile",
+            present=False,
+            sudo=True,
+        )
+        ```
+
+        Examples can be found in ``examples/modules/server/server_fstab.py``.
+    """
+
+    # Original reemote operation giving Ansible's ``mount`` module its
+    # fstab half for geerlingguy.swap's central declaration (``name: none``,
+    # ``src``, ``fstype: swap``, ``opts``, ``state: present|absent``; issue
+    # #48), built in-repo as the keyed editors of root-owned files are --
+    # ``server.etc_hosts`` above and ``sysctl._edit_conf``. Idempotent: the
+    # parsed ``Fstab`` fact gates the no-op ("already present in", "already
+    # absent from", the etc_hosts reason shapes), the key is the fact's own
+    # rule (mount point, device for a ``none`` swap line), and the
+    # comparison is per-field: ``fs_type``/``options``/``dump``/``passno``
+    # given in the request must equal the entry's, ``None`` options/dump/
+    # passno keep the current entry's values on an update (Ansible rewrites
+    # only the differing fields of the parsed line), ``device``/``mountpoint``
+    # are the key so a differing device on a mount-point-keyed entry is a
+    # rewrite like Ansible's. Whitespace is normalized by the parse, so an
+    # equivalent entry in another spelling (tab vs space) reads as no
+    # change, and ``options`` compares order-sensitively like etc_hosts'
+    # hostnames. When a change is due, the namespace's raw-content fact
+    # ``AuthorizedKeysFile`` supplies the file's current text and the pure
+    # ``_fstab_content`` transform rewrites just the matching lines
+    # (appending when absent, dropping on removal) while every other line,
+    # comment and blank line survives verbatim; a content-level fixpoint
+    # guard no-ops when the transform's output equals the current text even
+    # though the fact stage wanted an edit.
+    #
+    # The write is spool-and-install, the ``etc_hosts`` family shape: one
+    # ``FstabUploadCommand`` scp's the text to a ``/tmp`` spool whose name
+    # is derived from the managed path (two requests targeting different
+    # fstab files never share one spool), then one ``FstabInstallCommand``
+    # overlays the fstab file with it under ``sh -c`` with a ``chmod 0644``
+    # reset. The transfer stays unprivileged regardless of ``sudo`` -- only
+    # the install elevates -- which is the two-privilege-level signature of
+    # the family. ``/etc/fstab`` is root-owned: flag the request
+    # ``sudo=True``. This is the persistent half ``server.mount``
+    # deliberately does not touch: ``mount`` keeps managing the live table
+    # (``/proc/self/mountinfo``) and composes with this operation -- the
+    # earlier docs recipe pointing at ``files.edit`` for persistence could
+    # not work, since a transfer never elevates and cannot write the
+    # root-owned file.
+    #
+    # Deviations from Ansible's ``mount`` (developer decisions): a matched
+    # line is rewritten wholesale from the merged columns rather than
+    # field-spliced, so a hand-tuned option not carried in the request is
+    # silently overwritten on an update that touches any field; a commented
+    # entry is not reactivated (Ansible uncomments a matching entry under
+    # some states) and is left verbatim; ``state: mounted``/``unmounted``
+    # do not belong here -- the live table stays ``server.mount``'s (swap
+    # activation is ``swapon``, see #47). ``options`` accepts the
+    # comma-separated string Ansible spells, split on commas. Parameter
+    # validation raises the house ``ValueError``; ``**kwargs`` absorbs any
+    # further global arguments (``op()`` already strips ``name``/``sudo``/
+    # ``su``).
+    if isinstance(options, str):
+        opts: tuple[str, ...] | None = tuple(options.split(","))
+    elif options is None:
+        opts = None
+    else:
+        opts = tuple(options)
+
+    if present:
+        if device is None:
+            raise ValueError("device must be provided when present=True")
+        if mountpoint is None:
+            raise ValueError("mountpoint must be provided when present=True")
+        if fs_type is None:
+            raise ValueError("fs_type must be provided when present=True")
+    elif device is None and mountpoint is None:
+        raise ValueError("device or mountpoint must be provided when present=False")
+
+    key = device if mountpoint in (None, "none") else mountpoint
+    if key is None:
+        # A ``none`` mountpoint keys nothing -- every swap line spells it --
+        # so Ansible's ``name: none`` entries are addressed by their src.
+        raise ValueError("device must be provided for a 'none' mountpoint")
+    entries = await ctx.facts.get(Fstab, path)
+    current_entry = entries.get(key)
+
+    if present:
+        assert mountpoint is not None and fs_type is not None
+        if current_entry is None:
+            # Fresh append: the fstab(5)/Ansible defaults stand in for the
+            # columns the request leaves out.
+            desired = (
+                device or "",
+                mountpoint,
+                fs_type,
+                opts if opts is not None else ("defaults",),
+                dump if dump is not None else 0,
+                passno if passno is not None else 0,
+            )
+        else:
+            wanted_options = opts if opts is not None else current_entry["options"]
+            wanted_dump = dump if dump is not None else current_entry["dump"]
+            wanted_passno = passno if passno is not None else current_entry["passno"]
+            if (
+                current_entry["device"] == device
+                and current_entry["mountpoint"] == mountpoint
+                and current_entry["fs_type"] == fs_type
+                and current_entry["options"] == wanted_options
+                and current_entry["dump"] == wanted_dump
+                and current_entry["passno"] == wanted_passno
+            ):
+                ctx.reason = f"{key} entry already present in {path}"
+                return
+            desired = (
+                device or "",
+                mountpoint,
+                fs_type,
+                wanted_options,
+                # A malformed current column (parsed as None) is normalized
+                # to the fstab(5) default rather than re-planned every run.
+                wanted_dump if wanted_dump is not None else 0,
+                wanted_passno if wanted_passno is not None else 0,
+            )
+    else:
+        if current_entry is None:
+            ctx.reason = f"{key} already absent from {path}"
+            return
+        # Removal renders only the key columns; the rest of the line goes.
+        desired = (device or "", mountpoint or "", "", (), 0, 0)
+
+    current = await ctx.facts.get(AuthorizedKeysFile, path)
+    rendered = (
+        desired[0],
+        desired[1],
+        desired[2],
+        ",".join(desired[3]),
+        str(desired[4]),
+        str(desired[5]),
+    )
+    new = _fstab_content(current, key, rendered, present)
+    if new == (current or ""):
+        # The fact wanted an edit the file's own text says is unnecessary.
+        ctx.reason = f"{key} entry already written in {path}"
+        return
+
+    ctx.changed = True
+    spool = _fstab_spool_path(path)
+    ctx.reason = (
+        f"{key} entry will be written to {path}" if present else f"{key} will be removed from {path}"
+    )
+    yield FstabUploadCommand(content=new, dest=spool)
+    yield FstabInstallCommand(spool=spool, dest=path)
+
+
 # ``SystemctlCommand`` and the ``service`` operation relocated to the
 # ``systemd`` namespace; both are re-exported above for backward
 # compatibility (``server.service`` is a deprecated alias of
@@ -5903,6 +6427,10 @@ __all__ = [
     "EtcHosts",
     "EtcHostsInstallCommand",
     "EtcHostsUploadCommand",
+    "Fstab",
+    "FstabEntry",
+    "FstabInstallCommand",
+    "FstabUploadCommand",
     "GroupAddCommand",
     "GroupDelCommand",
     "Groups",
@@ -5949,6 +6477,7 @@ __all__ = [
     "WaitForFactCommand",
     "Which",
     "etc_hosts",
+    "fstab",
     "group",
     "hostname",
     "is_active",

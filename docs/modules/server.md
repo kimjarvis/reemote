@@ -46,6 +46,8 @@ back as an error `Result` (exit 127), never an exception. See the
         - Env
         - EtcHosts
         - FipsEnabled
+        - Fstab
+        - FstabEntry
         - Groups
         - HasGui
         - Home
@@ -73,6 +75,7 @@ back as an error `Result` (exit 127), never an exception. See the
         - Users
         - Which
         - etc_hosts
+        - fstab
         - group
         - hostname
         - kill
@@ -93,11 +96,11 @@ back as an error `Result` (exit 127), never an exception. See the
 `reemote.modules.server.server` combines the server facts and the server
 operations in a single source, so the read side (`Arch`, `AuthorizedKeys`,
 `AuthorizedKeysFile`,
-`Date`, `Env`, `EtcHosts`, `FipsEnabled`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
+`Date`, `Env`, `EtcHosts`, `FipsEnabled`, `Fstab`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
 `KernelVersion`, `Last`, `LinuxDistribution`, `LinuxGui`, `LinuxName`,
 `Locales`, `LsbRelease`, `Mounts`, `Port`, `Processes`, `PythonVersion`,
 `Timezone`, `Uptime`, `User`, `Users`, `Which`)
-sits beside the `server.etc_hosts`, `server.group`, `server.hostname`, `server.kill`,
+sits beside the `server.etc_hosts`, `server.fstab`, `server.group`, `server.hostname`, `server.kill`,
 `server.locale`,
 `server.modprobe`, `server.mount`, `server.security_limit`, `server.timezone`, `server.user`,
 `server.user_authorized_keys`,
@@ -127,14 +130,16 @@ shell — mirroring the baseline's `server.AuthorizedKeys`. `AuthorizedKeysFile`
 takes an explicit key-file `path` and returns that file's raw text as a
 `str`, or `None` when it is absent — the namespace's raw-content fact (the
 `AptSourcesFile`/`DnfRepoFile` pattern) behind the spool-and-install writes
-of `server.user_authorized_keys`, `server.etc_hosts`, `server.locale` and
+of `server.user_authorized_keys`, `server.etc_hosts`, `server.fstab`,
+`server.locale` and
 `server.security_limit`. A `test -e` guard
 plus a marker line keeps absent (`None`) distinguishable from
 present-but-empty (`""`), and comments, blank lines and ordering survive
 verbatim — the fact never interprets the text. Unlike `AuthorizedKeys`
 there is no tilde branch: `user_authorized_keys` resolves `Home` first and
 always passes the explicit key-file path, `etc_hosts` passes its
-`path` option (default `/etc/hosts`) directly, `locale` passes the
+`path` option (default `/etc/hosts`) directly, `fstab` passes its
+`path` option (default `/etc/fstab`) the same way, `locale` passes the
 fixed `/etc/locale.gen` and `security_limit` passes the fixed
 `/etc/security/limits.conf`. `Date` takes no
 arguments: it runs `date +'%Y-%m-%dT%H:%M:%S%z'` and parses the ISO 8601
@@ -169,6 +174,20 @@ by `|| true`) both read as `False`. An original reemote fact giving Ansible's
 `postgresql_auth_method: "{{ ansible_facts.fips | ternary('scram-sha-256', 'md5') }}"`
 resolves in the program's gather-then-plan step as
 `"scram-sha-256" if fips else "md5"` — md5 is unavailable on a FIPS host.
+`Fstab` takes an optional `path` (default `/etc/fstab`): it cats the file
+and parses every active line into a `FstabEntry` keyed by mount point —
+by the entry's `device` for a swap line's `none` mount point, Ansible's
+`mount` module identification rule (`name: none`). Each entry holds
+`device`, `mountpoint`, `fs_type`, `options` as a tuple in file order,
+and `dump`/`passno` as ints (`None` when the column spells them
+non-numerically). Comments (from `#` on) and blank lines are skipped,
+lines with fewer than six columns are not entries, and whitespace —
+tabs included — separates the columns, so an equivalent line in another
+spacing parses identically; a repeated key keeps the later line, like
+`Mounts`. A missing file (the `cat` error swallowed by `|| true`) reads
+as `{}`, and the world-readable file needs no elevation. It gates
+`server.fstab`'s no-op below; the file's *text* for the rewrite comes
+from `AuthorizedKeysFile`, never from rebuilding these parsed entries.
 `Groups` takes no arguments: it cats `/etc/group` and
 returns the first `:`-separated field of every colon-bearing line — the
 group names in file order, with no dedup or sorting — mirroring the baseline's
@@ -423,6 +442,42 @@ read, transform and install now live in one operation, so a single deploy
 suffices (see the
 [etc_hosts example](../examples/modules/server.md#managing-etchosts-entries)).
 
+`server.fstab` is reemote's original fstab half of Ansible's `mount`
+module (the baseline has no equivalent): it adds, updates or removes one
+entry in `/etc/fstab` — or in the `path` file — keyed by mount point, the
+`device` for a `none` (swap) line. Idempotent, it gates on the parsed
+`Fstab` fact first ("`<key>` entry already present in", "`<key>` already
+absent from") and the comparison is per-field: unrequested
+`options`/`dump`/`passno` merge from the current entry on an update
+(Ansible rewrites only the differing fields), `options` accepts the
+comma-separated string spelling or a list/tuple (prefer tuples in `op()`
+requests, which must stay hashable), and equivalent whitespace reads as
+no change rather than a duplicate. `device`, `mountpoint` and `fs_type`
+are required when `present=True`; `present=False` needs `device` or
+`mountpoint` as the removal key — a bare `none` mountpoint names no
+entry — and missing columns raise `ValueError`, the house validation
+style. When a change is due the write is a **spool-and-install** pair —
+the `AuthorizedKeysFile` raw-content fact feeds the pure
+`_fstab_content` rewrite (only the lines matching the key are replaced,
+or dropped on removal; every other line, comment and blank line survives
+verbatim), the whole new text rides an unprivileged scp to a spool named
+after the managed path
+(`/tmp/reemote-server-fstab-<sha1(dest)[:16]>/fstab`), and the elevated
+`FstabInstallCommand` installs it with `sh -c 'mkdir -p … && cp … &&
+chmod 0644 … && rm -rf …'` — with a content-level fixpoint guard
+(`"<key> entry already written in <path>"`) no-oping when the transform
+output already equals the file's text even though the fact stage wanted
+an edit. Two deliberate deviations from Ansible: a matched line is
+rewritten wholesale from the merged columns, so a hand-tuned option the
+request does not carry is overwritten on an update that touches any
+field, and a commented-out entry is left verbatim, never reactivated.
+The live half is not here: `server.mount` below keeps managing mounted
+filesystems (activating a swap file is `swapon`), and `/etc/fstab` is
+root-owned, so flag the request `sudo=True` — the earlier docs claim
+that persistence was a `files.edit` recipe could not hold, since a
+transfer never elevates (see the
+[fstab example](../examples/modules/server.md#persisting-an-fstab-mount-entry)).
+
 `server.group` mirrors the baseline's `server.group` for `group`, `present`,
 `system` and `gid`: it compares the name against the `Groups` fact and yields
 a `GroupAddCommand` (`groupadd`) or `GroupDelCommand` (`groupdel`) only when
@@ -495,8 +550,11 @@ carries the full requested option set. `options`
 accepts a list/tuple of option strings (prefer tuples in `op()` requests,
 which must stay hashable), and every path, device and option string is
 shell-quoted, so a value carrying metacharacters reaches `mount` literally.
-Like the baseline, `/etc/fstab` is never touched — persistence across reboots is
-a `files.edit` recipe. The commands need root, so flag the request
+Like the baseline, `/etc/fstab` is never touched here — persistence
+across reboots is `server.fstab` above (the earlier claim that it was a
+`files.edit` recipe was wrong: transfers never elevate, so the
+root-owned fstab is not writable that way). The commands need root, so
+flag the request
 `sudo=True`.
 
 `server.service` is a deprecated alias of `systemd.service`, re-exported here

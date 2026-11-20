@@ -51,7 +51,7 @@ operations; typed entry shapes describe returned data, not extra commands.
 | --- | --- |
 | [hardware](hardware.md) | CPU, DMI/SMBIOS, block devices, disk stats, network interfaces, IPv4/IPv6 addresses, memory, swap state |
 | [selinux](selinux.md) | SELinux mode, booleans, file contexts, logins, ports, users, modules, permissive domains |
-| [server](server.md) | Users, groups, hostname, mounts, timezone, kernel modules, locale, `/etc/hosts`, authorized_keys, processes, ports; shell/script/wait operations |
+| [server](server.md) | Users, groups, hostname, mounts, fstab entries, timezone, kernel modules, locale, `/etc/hosts`, authorized_keys, processes, ports; shell/script/wait operations |
 | [sysctl](sysctl.md) | Kernel parameters — sysctl settings and drop-in `.conf` files |
 | [crontab](crontab.md) | Scheduled cron entries — add/update/remove one crontab entry |
 

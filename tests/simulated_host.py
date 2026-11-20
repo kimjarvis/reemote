@@ -509,6 +509,8 @@ from reemote.modules.server.server import (
     AuthorizedKeysUploadCommand,
     EtcHostsInstallCommand,
     EtcHostsUploadCommand,
+    FstabInstallCommand,
+    FstabUploadCommand,
     GroupAddCommand,
     GroupDelCommand,
     HttpEndpoint,
@@ -624,7 +626,8 @@ class SimulatedHost(Host):
     # stream's bytes into it, and a simulated ``files.get`` reads them back out
     # into the destination stream. The ``dnf.key``/``dnf.repo``/``apt.key``/
     # ``apt.sources_file``/``gpg.key``/``gpg.import_key``/``files.install``/
-    # ``server.user_authorized_keys``/``server.etc_hosts``/``server.locale``/
+    # ``server.user_authorized_keys``/``server.etc_hosts``/``server.fstab``/
+    # ``server.locale``/
     # ``server.security_limit``/
     # ``openrc.config``/``selinux.config``
     # spool uploads land
@@ -632,6 +635,7 @@ class SimulatedHost(Host):
     # ``import_key``/``install_repo_file``/``install_apt_key``/
     # ``install_apt_sources_file``/``install_gpg_key``/``import_gpg_key``/
     # ``install_file``/``install_authorized_keys_file``/``install_etc_hosts_file``/
+    # ``install_fstab_file``/
     # ``install_locale_gen_file``/``install_security_limits_file``/
     # ``install_openrc_config_file``/
     # ``install_selinux_config_file`` pop
@@ -2308,6 +2312,15 @@ class SimulatedHost(Host):
                 # needs refreshing and a repeat run reads the entry as
                 # already written.
                 self.install_etc_hosts_file(spool, dest)
+            case FstabUploadCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
+            case FstabInstallCommand(spool=spool, dest=dest):
+                # server.fstab's install mutation stores the fstab-file
+                # content plus its existence/metadata seams; the Fstab fact
+                # parses remote_files directly, so no second store needs
+                # refreshing and a repeat run reads the entry as already
+                # written.
+                self.install_fstab_file(spool, dest)
             case LocaleUploadCommand(content=content, dest=dest):
                 self.put_file(io.BytesIO(content.encode()), dest)
             case LocaleInstallCommand(spool=spool, dest=dest):
@@ -4085,6 +4098,44 @@ class SimulatedHost(Host):
         mode-644 one, and the path joins ``existing_files``. An empty
         payload is legitimate (a removal that empties the hosts file) and
         installs as empty bytes. An absent spool path installs nothing.
+        """
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        self.remote_files[dest] = data
+        self.existing_files.add(dest)
+        stats = self.file_stats.get(dest)
+        if isinstance(stats, dict):
+            stats["mode"] = 644
+            stats["size"] = len(data)
+        else:
+            self.file_stats[dest] = {
+                "user": "root",
+                "group": "root",
+                "mode": 644,
+                "size": len(data),
+            }
+
+    def install_fstab_file(self, spool: str, dest: str) -> None:
+        """Record a simulated ``fstab`` install of the spooled fstab text.
+
+        ``server.fstab`` first uploads the transformed fstab-file content
+        to a ``/tmp`` spool path (the paired ``FstabUploadCommand`` runs
+        through ``put_file``, storing the bytes in ``remote_files``), then
+        installs it over the fstab file and removes the spool. This mirrors
+        the install-and-remove: the spool bytes are popped out of
+        ``remote_files`` and stored at ``dest`` -- the same store
+        ``AuthorizedKeysFile`` reads back and ``Fstab`` parses directly, so
+        no separate parsed seam exists to refresh and a repeat request with
+        identical arguments is a no-op, since the fresh per-step fact cache
+        sees these bytes and the entry matches. ``cp`` over an existing
+        file preserves its owner, so an existing ``file_stats`` row keeps
+        its user/group while the mode resets to 644 (the real command's
+        ``chmod 0644``) and the size refreshes; a descriptor-only test with
+        no prior row gets a minimal root-owned mode-644 one, and the path
+        joins ``existing_files``. An empty payload is legitimate (a removal
+        that empties the fstab file) and installs as empty bytes. An absent
+        spool path installs nothing.
         """
         data = self.remote_files.pop(spool, None)
         if data is None:

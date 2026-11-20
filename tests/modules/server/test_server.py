@@ -17,7 +17,9 @@ comment/duplicate-IP parsing edge cases, and the shared ``remote_files``
 ``SimulatedHost`` seam), the ``FipsEnabled`` fact (canned
 ``/proc/sys/crypto/fips_enabled`` output over the real-transport path,
 absent-file and stray-output parsing edge cases, and the ``SimulatedHost``
-seam), the
+seam), the ``Fstab`` fact (a miniature ``/etc/fstab`` over the
+real-transport path, the ``none``-swap device keying and parsing edge
+cases, and the shared ``remote_files`` ``SimulatedHost`` seam), the
 ``Groups`` fact (the baseline's own
 fixture over the real-transport path, ``/etc/group`` parsing edge cases, and
 the ``SimulatedHost`` seam), the ``HasGui`` fact (the baseline's own fixtures over
@@ -85,6 +87,11 @@ the ``etc_hosts`` operation and its ``EtcHostsUploadCommand``/
 ``EtcHostsInstallCommand`` spool-and-install pair (the baseline's own nine
 operation fixtures, the pure hosts-file rewrite, both no-op levels and
 the end-to-end lockstep run),
+the ``fstab`` operation and its ``FstabUploadCommand``/
+``FstabInstallCommand`` spool-and-install pair (the Ansible ``mount``
+parity plans, the pure six-column rewrite with ``none``-swap device
+keying, both no-op levels, the validation errors and the end-to-end
+lockstep run),
 the ``hostname``
 operation and its ``SetHostnameCommand`` descriptor (the baseline's own six
 operation fixtures replayed over the ``SimulatedHost`` seams with the
@@ -165,6 +172,9 @@ from reemote.modules.server.server import (
     EtcHostsInstallCommand,
     EtcHostsUploadCommand,
     FipsEnabled,
+    Fstab,
+    FstabInstallCommand,
+    FstabUploadCommand,
     GroupAddCommand,
     GroupDelCommand,
     Groups,
@@ -209,6 +219,8 @@ from reemote.modules.server.server import (
     WaitForFactCommand,
     Which,
     _add_keys,
+    _fstab_content,
+    _fstab_spool_path,
     _HomeChownCommand,
     _HomeDirectory,
     _HomeIsLink,
@@ -7065,6 +7077,646 @@ async def test_etc_hosts_add_then_remove_in_one_deploy():
 async def test_etc_hosts_dry_run_sends_nothing():
     _plans, report, hosts = await run(
         INVENTORY, hosts_deploy, host_factory=SimulatedHost.from_inventory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert host.remote_files == {}
+        assert host.file_stats == {}
+
+
+# --- server.fstab ------------------------------------------------------------
+
+# The issue's acceptance call: geerlingguy.swap's central fstab entry,
+# ``/swapfile none swap sw 0 0`` -- Ansible mount's ``name: none`` form,
+# keyed by device.
+FT_PATH = "/etc/fstab"
+FT_SPOOL = _fstab_spool_path(FT_PATH)
+FT_SPOOL_DIR = FT_SPOOL.rsplit("/", 1)[0]
+FT_INSTALL_INNER = (
+    f"mkdir -p /etc && cp {FT_SPOOL} {FT_PATH} && "
+    f"chmod 0644 {FT_PATH} && rm -rf {FT_SPOOL_DIR}"
+)
+FT_SWAP_COLS = ("/swapfile", "none", "swap", "sw", "0", "0")
+FT_SWAP_KWARGS = {
+    "device": "/swapfile",
+    "mountpoint": "none",
+    "fs_type": "swap",
+    "options": ("sw",),
+    "dump": 0,
+    "passno": 0,
+}
+FT_SWAP = {
+    "device": "/swapfile",
+    "mountpoint": "none",
+    "fs_type": "swap",
+    "options": ("sw",),
+    "dump": 0,
+    "passno": 0,
+}
+# A miniature fstab: header comment, the root entry, a tab-separated line,
+# the swap entry in its ``none`` form, a commented-out entry (never an
+# entry) and a malformed short line (fewer than six columns).
+FT_FILE = (
+    "# /etc/fstab: static file system information.\n"
+    "/dev/mapper/root / ext4 errors=remount-ro 0 1\n"
+    "/dev/sda2\t/data\text4\trw,noatime\t0\t2\n"
+    "/swapfile none swap sw 0 0\n"
+    "# /dev/sdb1 /mnt/usb vfat defaults 0 0\n"
+    "malformed line\n"
+)
+FT_FIXTURE_FACT = {
+    "/": {
+        "device": "/dev/mapper/root",
+        "mountpoint": "/",
+        "fs_type": "ext4",
+        "options": ("errors=remount-ro",),
+        "dump": 0,
+        "passno": 1,
+    },
+    "/data": {
+        "device": "/dev/sda2",
+        "mountpoint": "/data",
+        "fs_type": "ext4",
+        "options": ("rw", "noatime"),
+        "dump": 0,
+        "passno": 2,
+    },
+    "/swapfile": FT_SWAP,
+}
+
+
+def test_fstab_command_quotes_the_path():
+    assert Fstab.command() == "cat /etc/fstab 2>/dev/null || true"
+    assert Fstab.command("/etc dir/my fstab") == (
+        "cat '/etc dir/my fstab' 2>/dev/null || true"
+    )
+
+
+async def test_fstab_parses_a_miniature_fstab():
+    # Comments and the malformed short line dropped, the tab-separated
+    # /data line parsed like a space-separated one, the ``none`` swap line
+    # keyed by device.
+    host = CannedShellHost(FT_FILE)
+    assert await Fstab.process(host) == FT_FIXTURE_FACT
+    assert host.shells == ["cat /etc/fstab 2>/dev/null || true"]
+    # A missing file: the || true guard turns the cat error into empty
+    # output, which reads as {} (no fstab means no entries).
+    assert await Fstab.process(CannedShellHost("")) == {}
+
+
+def test_fstab_parse_edge_cases():
+    # Fewer than six columns is not an entry, comments and blanks drop.
+    assert Fstab.parse(["malformed line", "# comment", "  ", ""]) == {}
+    # A non-numeric dump/passno column reads as None, not a failed parse
+    # (and negatives never pass the isdigit guard either).
+    assert Fstab.parse(["/dev/x /x ext4 defaults big -1"]) == {
+        "/x": {
+            "device": "/dev/x",
+            "mountpoint": "/x",
+            "fs_type": "ext4",
+            "options": ("defaults",),
+            "dump": None,
+            "passno": None,
+        }
+    }
+    # A trailing comment strips before the column split; extra columns
+    # beyond the sixth are ignored.
+    assert "/y" in Fstab.parse(["/dev/y /y ext4 defaults 0 2 # managed"])
+    assert "/z" in Fstab.parse(["/dev/z /z ext4 defaults 0 0 extra"])
+    # A repeated key keeps the later line (the Mounts rule)...
+    parsed = Fstab.parse(["/a /m ext4 defaults 0 0", "/b /m ext4 rw 0 0"])
+    assert parsed["/m"]["device"] == "/b"
+    # ...while swap lines all spell ``none`` yet key apart by device.
+    parsed = Fstab.parse(["/swap1 none swap sw 0 0", "/swap2 none swap sw 0 0"])
+    assert set(parsed) == {"/swap1", "/swap2"}
+
+
+async def test_fstab_reads_the_simulated_seam():
+    # The seam parses the shared remote_files store directly (the EtcHosts
+    # pattern), so a simulated install reads back through this fact with no
+    # second parsed store to keep in sync.
+    host = SimulatedHost(
+        name="h",
+        remote_files={
+            FT_PATH: FT_FILE.encode(),
+            "/etc/fstab.custom": b"/dev/sdz /z ext4 defaults 0 2\n",
+        },
+    )
+    assert await Fstab.process(host) == FT_FIXTURE_FACT
+    assert await Fstab.process(host, "/etc/fstab.custom") == {
+        "/z": {
+            "device": "/dev/sdz",
+            "mountpoint": "/z",
+            "fs_type": "ext4",
+            "options": ("defaults",),
+            "dump": 0,
+            "passno": 2,
+        }
+    }
+    assert await Fstab.process(host, "/no/such/fstab") == {}
+
+
+async def test_fstab_gather_fact_forwards_the_path():
+    hosts = [
+        SimulatedHost(
+            name="web1", remote_files={"/custom/fstab": b"/swapfile none swap sw 0 0\n"}
+        ),
+        SimulatedHost(name="web2"),
+    ]
+    assert await gather_fact(hosts, Fstab, "/custom/fstab") == {
+        "web1": {"/swapfile": FT_SWAP},
+        "web2": {},
+    }
+
+
+def test_fstab_content_transform_purity_and_fixpoint():
+    # Absent file becomes just the entry; a repeat application is a fixpoint.
+    once = _fstab_content(None, "/swapfile", FT_SWAP_COLS, True)
+    assert once == "/swapfile none swap sw 0 0\n"
+    assert _fstab_content(once, "/swapfile", FT_SWAP_COLS, True) == once
+    # Untouched lines survive verbatim; the edited line keeps its position
+    # mid-file (the _hosts_content shape) and rewrites normalize spacing.
+    current = (
+        "/dev/mapper/root / ext4 errors=remount-ro 0 1\n"
+        "/dev/sdb1 /data ext4 defaults 0 2\n"
+    )
+    updated = _fstab_content(
+        current, "/data", ("/dev/sdb1", "/data", "ext4", "rw,noatime", "0", "2"), True
+    )
+    assert updated == (
+        "/dev/mapper/root / ext4 errors=remount-ro 0 1\n"
+        "/dev/sdb1 /data ext4 rw,noatime 0 2\n"
+    )
+    assert _fstab_content(
+        updated, "/data", ("/dev/sdb1", "/data", "ext4", "rw,noatime", "0", "2"), True
+    ) == updated
+    # Appending to a file that ends in comments and blanks keeps them.
+    content = "# managed\n\n/dev/mapper/root / ext4 defaults 0 1\n"
+    assert _fstab_content(content, "/swapfile", FT_SWAP_COLS, True) == (
+        f"{content}/swapfile none swap sw 0 0\n"
+    )
+    # A comment on the edited line is dropped (the _hosts_content parity),
+    # CRLF is normalised and a missing trailing newline is restored.
+    assert _fstab_content(
+        "/dev/sdb1 /data ext4 defaults 0 2 # old\n",
+        "/data",
+        ("/dev/sdb1", "/data", "ext4", "rw", "0", "2"),
+        True,
+    ) == "/dev/sdb1 /data ext4 rw 0 2\n"
+    assert _fstab_content("/dev/mapper/root / ext4 defaults 0 1", "/swapfile", FT_SWAP_COLS, True) == (
+        "/dev/mapper/root / ext4 defaults 0 1\n/swapfile none swap sw 0 0\n"
+    )
+    assert _fstab_content("/dev/mapper/root / ext4 defaults 0 1\r\n", "/swapfile", FT_SWAP_COLS, True) == (
+        "/dev/mapper/root / ext4 defaults 0 1\n/swapfile none swap sw 0 0\n"
+    )
+    # Duplicate lines for one key collapse into the single rewritten line.
+    dup = "/a /m ext4 defaults 0 0\n/b /m ext4 rw 0 0\n"
+    assert _fstab_content(
+        dup, "/m", ("/c", "/m", "ext4", "defaults", "0", "0"), True
+    ) == "/c /m ext4 defaults 0 0\n"
+
+
+def test_fstab_content_removal_directions():
+    current = (
+        "/dev/mapper/root / ext4 errors=remount-ro 0 1\n"
+        "/swapfile none swap sw 0 0\n"
+    )
+    removed = _fstab_content(current, "/swapfile", FT_SWAP_COLS, False)
+    assert removed == "/dev/mapper/root / ext4 errors=remount-ro 0 1\n"
+    assert _fstab_content(removed, "/swapfile", FT_SWAP_COLS, False) == removed
+    # A mount-point key drops regular lines; a swap line is never keyed by
+    # its ``none`` mountpoint, so that removal is a no-op on the text.
+    assert _fstab_content(current, "/", FT_SWAP_COLS, False) == (
+        "/swapfile none swap sw 0 0\n"
+    )
+    assert _fstab_content(current, "none", FT_SWAP_COLS, False) == current
+    # A removal that empties the file yields "" (a legitimate payload).
+    assert _fstab_content("/swapfile none swap sw 0 0\n", "/swapfile", FT_SWAP_COLS, False) == ""
+    assert _fstab_content(None, "/swapfile", FT_SWAP_COLS, False) == ""
+
+
+def test_fstab_upload_command_rendering():
+    upload = FstabUploadCommand(content="/swapfile none swap sw 0 0\n", dest=FT_SPOOL)
+    # The transfer is a non-shell descriptor: its loggable form is __str__,
+    # and command_shell never prefixes it with sudo/su -- transfers ride the
+    # login user's scp channel regardless of the request's elevation.
+    assert str(upload) == f"scp <fstab file> -> {FT_SPOOL}"
+    assert command_shell(upload, sudo=True) == f"scp <fstab file> -> {FT_SPOOL}"
+    assert command_shell(upload, su=True) == f"scp <fstab file> -> {FT_SPOOL}"
+    # The content field is a plain str: hashable and value-equal across the
+    # prepare/apply phases. An empty payload (a removal that empties the
+    # file) is legitimate too.
+    assert hash(upload) == hash(
+        FstabUploadCommand(content="/swapfile none swap sw 0 0\n", dest=FT_SPOOL)
+    )
+    assert str(FstabUploadCommand(content="", dest=FT_SPOOL)) == (
+        f"scp <fstab file> -> {FT_SPOOL}"
+    )
+
+
+def test_fstab_install_command_shell_rendering():
+    install = FstabInstallCommand(spool=FT_SPOOL, dest=FT_PATH)
+    assert install.shell() == f"sh -c {shlex.quote(FT_INSTALL_INNER)}"
+    # Sudo elevates the whole sh -c, so every step of the && chain -- cp,
+    # chmod and the spool cleanup -- runs as the elevated shell.
+    assert command_shell(install, sudo=True) == f"sudo {install.shell()}"
+    assert command_shell(install, su=True) == f"su -c {shlex.quote(install.shell())}"
+    # Quoting proof: a space in the DIRECTORY (shlex.quote leaves space-free
+    # paths bare). Recover the inner script with shlex.split, never a raw
+    # substring of the quoted text.
+    path = "/etc dir/fstab file"
+    spool = _fstab_spool_path(path)
+    spool_dir = spool.rsplit("/", 1)[0]
+    inner = shlex.split(FstabInstallCommand(spool=spool, dest=path).shell())[2]
+    assert inner.startswith("mkdir -p '/etc dir' && ")
+    assert inner.endswith(f"&& rm -rf {spool_dir}")
+
+
+def test_fstab_spool_path_is_dest_derived_and_deterministic():
+    # Same dest -> same spool in both phases; different dest -> different
+    # spool, so two path-scoped requests never clobber one another's upload.
+    assert _fstab_spool_path(FT_PATH) == FT_SPOOL
+    assert _fstab_spool_path(FT_PATH) == _fstab_spool_path(FT_PATH)
+    assert _fstab_spool_path("/etc/fstab.custom") != FT_SPOOL
+    digest = hashlib.sha1(FT_PATH.encode()).hexdigest()[:16]
+    assert FT_SPOOL == f"/tmp/reemote-server-fstab-{digest}/fstab"
+
+
+@pytest.mark.parametrize(
+    ("seed", "kwargs", "content", "reason"),
+    [
+        # The acceptance call on a fresh host: the swap entry is appended
+        # and the whole new text rides one spool-and-install pair.
+        (
+            None,
+            FT_SWAP_KWARGS,
+            "/swapfile none swap sw 0 0\n",
+            "/swapfile entry will be written to /etc/fstab",
+        ),
+        # Appending to an existing table: every other line survives verbatim.
+        (
+            b"/dev/mapper/root / ext4 errors=remount-ro 0 1\n",
+            FT_SWAP_KWARGS,
+            (
+                "/dev/mapper/root / ext4 errors=remount-ro 0 1\n"
+                "/swapfile none swap sw 0 0\n"
+            ),
+            "/swapfile entry will be written to /etc/fstab",
+        ),
+        # The second apply of the acceptance call: exact entry -> no-op.
+        (
+            b"/dev/mapper/root / ext4 errors=remount-ro 0 1\n/swapfile none swap sw 0 0\n",
+            FT_SWAP_KWARGS,
+            None,
+            "/swapfile entry already present in /etc/fstab",
+        ),
+        # An equivalent spelling (tabs, run-together whitespace) reads as
+        # no change through the parse's normalization, not a duplicate.
+        (
+            b"/swapfile\tnone\tswap\tsw\t0\t0\n",
+            FT_SWAP_KWARGS,
+            None,
+            "/swapfile entry already present in /etc/fstab",
+        ),
+        # Options drift: only the swap line rewrites, the root line stays.
+        (
+            (
+                b"/dev/mapper/root / ext4 errors=remount-ro 0 1\n"
+                b"/swapfile none swap sw,noauto 0 0\n"
+            ),
+            FT_SWAP_KWARGS,
+            (
+                "/dev/mapper/root / ext4 errors=remount-ro 0 1\n"
+                "/swapfile none swap sw 0 0\n"
+            ),
+            "/swapfile entry will be written to /etc/fstab",
+        ),
+        # A partial update keeps the current entry's unrequested columns
+        # (Ansible rewrites only the differing fields), so this is a no-op.
+        (
+            b"/dev/sdb1 /data ext4 rw,noatime 0 2\n",
+            {"device": "/dev/sdb1", "mountpoint": "/data", "fs_type": "ext4"},
+            None,
+            "/data entry already present in /etc/fstab",
+        ),
+        # One-field drift: passno 2 -> 1, the options merge from the entry.
+        (
+            b"/dev/sdb1 /data ext4 rw,noatime 0 2\n/swapfile none swap sw 0 0\n",
+            {
+                "device": "/dev/sdb1",
+                "mountpoint": "/data",
+                "fs_type": "ext4",
+                "passno": 1,
+            },
+            "/dev/sdb1 /data ext4 rw,noatime 0 1\n/swapfile none swap sw 0 0\n",
+            "/data entry will be written to /etc/fstab",
+        ),
+        # Removal by device (the ``name: none`` swap form).
+        (
+            b"/dev/mapper/root / ext4 errors=remount-ro 0 1\n/swapfile none swap sw 0 0\n",
+            {"device": "/swapfile", "present": False},
+            "/dev/mapper/root / ext4 errors=remount-ro 0 1\n",
+            "/swapfile will be removed from /etc/fstab",
+        ),
+        # Removal by mount point drops only that entry's line.
+        (
+            b"/dev/sdb1 /data ext4 defaults 0 2\n/swapfile none swap sw 0 0\n",
+            {"mountpoint": "/data", "present": False},
+            "/swapfile none swap sw 0 0\n",
+            "/data will be removed from /etc/fstab",
+        ),
+        # Removal against an absent entry (or absent file): no-op.
+        (
+            None,
+            {"device": "/swapfile", "present": False},
+            None,
+            "/swapfile already absent from /etc/fstab",
+        ),
+        # The comma-separated string spelling Ansible uses splits on commas.
+        (
+            None,
+            {
+                "device": "/dev/x",
+                "mountpoint": "/x",
+                "fs_type": "ext4",
+                "options": "defaults,nofail",
+            },
+            "/dev/x /x ext4 defaults,nofail 0 0\n",
+            "/x entry will be written to /etc/fstab",
+        ),
+        # A fresh append defaults the omitted columns: options ``defaults``
+        # (the fstab(5) spelling), dump and passno 0.
+        (
+            None,
+            {"device": "/dev/x", "mountpoint": "/x", "fs_type": "ext4"},
+            "/dev/x /x ext4 defaults 0 0\n",
+            "/x entry will be written to /etc/fstab",
+        ),
+        # ``**kwargs`` absorbs any further global arguments.
+        (
+            None,
+            {**FT_SWAP_KWARGS, "future_flag": True},
+            "/swapfile none swap sw 0 0\n",
+            "/swapfile entry will be written to /etc/fstab",
+        ),
+    ],
+)
+async def test_fstab_plans_match_ansible_mount_parity(
+    seed: bytes | None, kwargs: dict, content: str | None, reason: str
+):
+    # Every changed case seeds remote_files too: Fstab parses that store
+    # directly, so a parsed-only seed would no-op at the fact stage and
+    # silently stop exercising the install.
+    host = SimulatedHost(
+        name="h", remote_files={FT_PATH: seed} if seed is not None else {}
+    )
+    ctx, commands = await materialize(host, op(server.fstab, **kwargs))
+    expected = (
+        []
+        if content is None
+        else [
+            FstabUploadCommand(content=content, dest=FT_SPOOL),
+            FstabInstallCommand(spool=FT_SPOOL, dest=FT_PATH),
+        ]
+    )
+    assert commands == expected
+    assert ctx.changed == bool(expected)
+    assert ctx.reason == reason
+
+
+async def test_fstab_validates_required_columns():
+    host = SimulatedHost(name="h")
+    with pytest.raises(ValueError, match="device must be provided when present=True"):
+        await materialize(
+            host, op(server.fstab, mountpoint="/x", fs_type="ext4")
+        )
+    with pytest.raises(ValueError, match="mountpoint must be provided when present=True"):
+        await materialize(host, op(server.fstab, device="/dev/x", fs_type="ext4"))
+    with pytest.raises(ValueError, match="fs_type must be provided when present=True"):
+        await materialize(host, op(server.fstab, device="/dev/x", mountpoint="/x"))
+    with pytest.raises(
+        ValueError, match="device or mountpoint must be provided when present=False"
+    ):
+        await materialize(host, op(server.fstab, present=False))
+    # ``none`` keys nothing -- every swap line spells it -- so a removal
+    # addressed only by that mountpoint cannot name one entry.
+    with pytest.raises(ValueError, match="provided for a 'none' mountpoint"):
+        await materialize(host, op(server.fstab, mountpoint="none", present=False))
+
+
+async def test_fstab_content_noop_when_transform_is_a_fixpoint():
+    # A negative passno column parses as None (the isdigit guard), so the
+    # fact stage wants a change against a request spelling -1 -- but the
+    # rendered line equals the file's own text, so the content guard no-ops
+    # instead of spooling an identical file.
+    host = SimulatedHost(
+        name="h", remote_files={FT_PATH: b"/dev/x /x ext4 defaults 0 -1\n"}
+    )
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.fstab,
+            device="/dev/x",
+            mountpoint="/x",
+            fs_type="ext4",
+            options=("defaults",),
+            dump=0,
+            passno=-1,
+        ),
+    )
+    assert not ctx.changed
+    assert ctx.reason == "/x entry already written in /etc/fstab"
+    assert commands == []
+
+
+async def test_fstab_honours_custom_path():
+    path = "/etc/fstab.custom"
+    host = SimulatedHost(
+        name="h", remote_files={path: b"/dev/mapper/root / ext4 defaults 0 1\n"}
+    )
+    ctx, commands = await materialize(host, op(server.fstab, path=path, **FT_SWAP_KWARGS))
+    assert ctx.changed
+    assert ctx.reason == f"/swapfile entry will be written to {path}"
+    assert commands == [
+        FstabUploadCommand(
+            content="/dev/mapper/root / ext4 defaults 0 1\n/swapfile none swap sw 0 0\n",
+            dest=_fstab_spool_path(path),
+        ),
+        FstabInstallCommand(spool=_fstab_spool_path(path), dest=path),
+    ]
+
+
+async def test_fstab_upload_seam_writes_only_the_spool():
+    # The transfer half stores bytes at the spool and touches nothing else.
+    host = SimulatedHost(name="h")
+    await send_command(
+        host,
+        FstabUploadCommand(content="/swapfile none swap sw 0 0\n", dest=FT_SPOOL),
+    )
+    assert host.remote_files == {FT_SPOOL: b"/swapfile none swap sw 0 0\n"}
+    assert FT_PATH not in host.existing_files
+    assert host.file_stats == {}
+
+
+async def test_fstab_install_seam_updates_every_store():
+    # send_command must keep remote_files, existing_files and file_stats in
+    # lockstep; Fstab parses remote_files directly, so no separate parsed
+    # store exists to refresh.
+    host = SimulatedHost(
+        name="h",
+        file_stats={FT_PATH: {"user": "root", "group": "root", "mode": 600}},
+        remote_files={FT_PATH: b"/swapfile none swap sw,noauto 0 0\n"},
+    )
+    await send_command(
+        host,
+        FstabUploadCommand(content="/swapfile none swap sw 0 0\n", dest=FT_SPOOL),
+    )
+    await send_command(host, FstabInstallCommand(spool=FT_SPOOL, dest=FT_PATH))
+    # The spool is consumed; the dest holds the new bytes.
+    assert host.remote_files == {FT_PATH: b"/swapfile none swap sw 0 0\n"}
+    assert FT_PATH in host.existing_files
+    # cp over an existing file preserves its owner; chmod 0644 + size refresh.
+    assert host.file_stats[FT_PATH] == {
+        "user": "root",
+        "group": "root",
+        "mode": 644,
+        "size": len("/swapfile none swap sw 0 0\n"),
+    }
+    # The parsed fact reads the installed bytes back -- content-based, so a
+    # repeat upload+install never duplicates the entry.
+    assert await Fstab.process(host) == {"/swapfile": FT_SWAP}
+    await send_command(
+        host,
+        FstabUploadCommand(content="/swapfile none swap sw 0 0\n", dest=FT_SPOOL),
+    )
+    await send_command(host, FstabInstallCommand(spool=FT_SPOOL, dest=FT_PATH))
+    assert host.remote_files == {FT_PATH: b"/swapfile none swap sw 0 0\n"}
+    # Install without its spool changes nothing (the tolerance arm).
+    await send_command(host, FstabInstallCommand(spool=FT_SPOOL, dest=FT_PATH))
+    assert host.remote_files == {FT_PATH: b"/swapfile none swap sw 0 0\n"}
+
+
+async def test_fstab_install_seam_without_prior_stats_seeds_root_row():
+    # Descriptor-only install against a fresh host: a minimal root-owned
+    # mode-644 row (the file the elevated cp created).
+    host = SimulatedHost(name="h")
+    await send_command(
+        host,
+        FstabUploadCommand(content="/swapfile none swap sw 0 0\n", dest=FT_SPOOL),
+    )
+    await send_command(host, FstabInstallCommand(spool=FT_SPOOL, dest=FT_PATH))
+    assert host.file_stats[FT_PATH] == {
+        "user": "root",
+        "group": "root",
+        "mode": 644,
+        "size": len("/swapfile none swap sw 0 0\n"),
+    }
+    assert FT_PATH in host.existing_files
+
+
+def fstab_deploy(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: persist the swap entry in /etc/fstab (elevated)."""
+    yield op(
+        server.fstab,
+        name="Persist the swap file",
+        sudo=True,
+        **FT_SWAP_KWARGS,
+    )
+
+
+async def test_fstab_end_to_end_creates_then_noops():
+    hosts_by_name: dict[str, Host] = {}
+
+    def factory(entry: dict) -> Host:
+        host = SimulatedHost.from_inventory(entry)
+        hosts_by_name[entry["host"]] = host
+        return host
+
+    plans, report, hosts = await run(INVENTORY, fstab_deploy, host_factory=factory)
+    assert [p.changed for p in plans["web1"]] == [True]
+    (entry,) = report.log[0:1]
+    assert entry.changed
+    log = format_log(report)
+    # Two privilege levels in one request: the scp half stays unprivileged
+    # even under sudo=True, only the install shell elevates. The fstab text
+    # rides the scp payload, so it never appears as a shell command.
+    assert f"    $ scp <fstab file> -> {FT_SPOOL}" in log
+    install = FstabInstallCommand(spool=FT_SPOOL, dest=FT_PATH)
+    assert f"    $ sudo {install.shell()}" in log
+    for host in hosts:
+        assert host.remote_files[FT_PATH] == b"/swapfile none swap sw 0 0\n"
+        assert FT_SPOOL not in host.remote_files
+    # Reusing the mutated hosts (not a fresh factory) proves the install
+    # left every seam coherent: the second run plans nothing.
+    plans2, _report2, _hosts2 = await run(
+        INVENTORY,
+        fstab_deploy,
+        host_factory=lambda entry: hosts_by_name[entry["host"]],
+    )
+    assert [p.changed for p in plans2["web1"]] == [False]
+
+
+async def test_fstab_repeat_request_is_noop_in_apply():
+    def twice(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.fstab,
+            name="Add entry first",
+            sudo=True,
+            **FT_SWAP_KWARGS,
+        )
+        yield op(
+            server.fstab,
+            name="Add entry again",
+            sudo=True,
+            **FT_SWAP_KWARGS,
+        )
+
+    host = SimulatedHost(name="h")
+    runtimes, plans = await run_prepare([host], twice)
+    # Prepare shares one cache across the two requests and never sends, so
+    # both identical requests plan a change...
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # ...while the per-step cache recreation makes the second a no-op.
+    assert [e.changed for e in report.log] == [True, False]
+    assert host.remote_files[FT_PATH] == b"/swapfile none swap sw 0 0\n"
+
+
+async def test_fstab_add_then_remove_in_one_deploy():
+    # Append the swap entry, then remove it in the same deploy: prepare
+    # shares one fact cache, so against the pre-add snapshot the removal
+    # plans nothing -- while the apply phase's per-step cache sees the
+    # entry the first step wrote and removes it again, leaving the root
+    # entry untouched.
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.fstab, name="Add entry", sudo=True, **FT_SWAP_KWARGS
+        )
+        yield op(
+            server.fstab,
+            name="Remove entry",
+            device="/swapfile",
+            present=False,
+            sudo=True,
+        )
+
+    host = SimulatedHost(
+        name="h",
+        remote_files={FT_PATH: b"/dev/mapper/root / ext4 errors=remount-ro 0 1\n"},
+    )
+    runtimes, plans = await run_prepare([host], deploy)
+    assert [p.changed for p in plans["h"]] == [True, False]
+    report = await run_apply(runtimes, plans=plans)
+    assert [e.changed for e in report.log] == [True, True]
+    assert host.remote_files == {
+        FT_PATH: b"/dev/mapper/root / ext4 errors=remount-ro 0 1\n"
+    }
+    assert FT_SPOOL not in host.remote_files
+
+
+async def test_fstab_dry_run_sends_nothing():
+    _plans, report, hosts = await run(
+        INVENTORY, fstab_deploy, host_factory=SimulatedHost.from_inventory, dry=True
     )
     assert report is None
     for host in hosts:
