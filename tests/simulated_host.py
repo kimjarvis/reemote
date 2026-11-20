@@ -34,7 +34,7 @@ a real asyncssh transport is missing:
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``rpm_gpg_keys`` / ``services`` / ``enabled_services``
-  / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_update_stamp`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``deb_files``
+  / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_update_stamp`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``crontab_text`` / ``deb_files``
   / ``date`` / ``default_ipv4_addr`` / ``disk_stats`` / ``dmi_info`` / ``os_env``
   / ``firewalld_default_zone``
   / ``firewalld_ipsets`` / ``firewalld_lockdown`` / ``firewalld_panic_mode``
@@ -100,7 +100,7 @@ a real asyncssh transport is missing:
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``, ``RpmGpgKeys``,
   ``SystemdServiceState``, ``SystemdServiceEnabled``, ``SystemdStatus``, ``SystemdEnabled``, ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState``, ``SystemdDependencies``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``ApkRepositoriesFile``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpdateStamp``, ``AptUpgradable``, ``Arch``,
-  ``AuthorizedKeys``, ``AuthorizedKeysFile``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Date``, ``DebPackage``,
+  ``AuthorizedKeys``, ``AuthorizedKeysFile``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Crontab`` (reads the whole-table ``crontab_text`` seam), ``Date``, ``DebPackage``,
   ``DefaultIpv4Address``, ``DiskStats``, ``DmiInfo``, ``Env``, ``EtcHosts`` (parses the shared
   ``remote_files`` seam at the hosts-file path), ``FirewalldStatus``, ``FirewalldDefaultZone``,
   ``FirewalldZones``, ``FirewalldServices``, ``FirewalldIpSets``,
@@ -224,6 +224,10 @@ from reemote.modules.apt.apt import (
     DebPackageInfo,
     _is_version_glob,
     _pin_satisfied_by,
+)
+from reemote.modules.crontab.crontab import (
+    CrontabInstallCommand,
+    CrontabUploadCommand,
 )
 from reemote.modules.dnf.dnf import (
     DnfCleanCommand,
@@ -640,6 +644,14 @@ class SimulatedHost(Host):
     # transfer a no-op: execute_command mutates it, and the next step's fresh
     # fact cache sees the mutation.
     remote_files: dict[str, bytes] = field(default_factory=dict)
+    # The invoking user's whole crontab table as raw text, backing the
+    # ``crontab.Crontab`` fact (its default ``""`` is a user with no crontab,
+    # like empty ``crontab -l`` output). ``crontab.crontab`` spools the edited
+    # text into ``remote_files`` (a ``CrontabUploadCommand``) and its
+    # ``CrontabInstallCommand`` mutator ``install_crontab`` pops that spool and
+    # stores its text here, so a repeat with the entry already in state is a
+    # no-op -- the whole-table model of ``sysctl``'s content seams.
+    crontab_text: str = ""
     # Archive path -> the member names a simulated extraction materializes,
     # backing the ``UnarchiveCommand`` seam of ``files.unarchive`` (no fact
     # reads it directly). A test seeds the archive's listing -- relative
@@ -2401,6 +2413,10 @@ class SimulatedHost(Host):
                 self.remove_sysctl_conf_file(path)
             case SysctlReloadCommand(path=path):
                 self.reload_sysctl_file(path)
+            case CrontabUploadCommand(content=content, dest=dest):
+                self.put_file(io.BytesIO(content.encode()), dest)
+            case CrontabInstallCommand(spool=spool):
+                self.install_crontab(spool)
             case SystemdTmpfilesCommand():
                 pass  # the simulation models no runtime files/dirs to create
             case SystemdSysusersCommand():
@@ -4383,6 +4399,22 @@ class SimulatedHost(Host):
             return
         for key, value in _parse_conf(data.decode("utf-8")).items():
             self.set_sysctl(key, value)
+
+    def install_crontab(self, spool: str) -> None:
+        """Record a simulated ``crontab <spool>``: replace the whole table.
+
+        The ``crontab.crontab`` write direction: the paired
+        ``CrontabUploadCommand`` spools the edited text into ``remote_files``
+        (through ``put_file``), then this install pops the spool and stores its
+        text in ``crontab_text`` -- the store ``Crontab`` reads back -- so a
+        repeat with the entry already in state is a no-op. ``crontab`` installs
+        into the user's table, not a file path, so nothing lands in
+        ``existing_files``/``file_stats``. An absent spool installs nothing.
+        """
+        data = self.remote_files.pop(spool, None)
+        if data is None:
+            return
+        self.crontab_text = data.decode("utf-8")
 
     def _set_systemd_unit_file_state(self, unit: str, state: str) -> None:
         """Set a unit's boot state in both stores the systemd facts consult.

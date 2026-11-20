@@ -11,6 +11,9 @@ single source, so ``modules/apk/apk.py`` holds the apk fact classes
 command descriptors they yield,
 ``modules/apt/apt.py`` holds the apt fact classes (``AptKeys``,
 ``AptPackages``, ``AptUpgradable``, ``AptAutoremovable``),
+``modules/crontab/crontab.py`` holds the ``Crontab`` whole-table fact and
+its structured ``CrontabEntries`` companion beside the ``crontab``
+entry-management operation and the typed command descriptors it yields,
 ``modules/dnf/dnf.py`` holds the dnf fact classes
 (``DnfPackages``, ``DnfRepositories``, ``DnfEnabledModules``,
 ``DnfDisabledModules``) beside the ``packages`` operation and the typed
@@ -127,6 +130,7 @@ and read ``apk.ApkInstalledPackages`` / ``apt.AptKeys`` / ``dnf.packages`` /
 from . import (
     apk,
     apt,
+    crontab,
     dnf,
     files,
     firewalld,
@@ -152,6 +156,7 @@ from . import (
 __all__ = [
     "apk",
     "apt",
+    "crontab",
     "dnf",
     "files",
     "firewalld",

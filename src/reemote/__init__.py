@@ -87,6 +87,7 @@ from .hosts import (
 from .modules import (
     apk,
     apt,
+    crontab,
     dnf,
     files,
     firewalld,
@@ -166,6 +167,13 @@ from .modules.apt.apt import (
     DebPackage,
     DebPackageInfo,
     SimulateOperationWillChange,
+)
+from .modules.crontab.crontab import (
+    Crontab,
+    CrontabEntries,
+    CrontabEntry,
+    CrontabInstallCommand,
+    CrontabUploadCommand,
 )
 from .modules.dnf.dnf import (
     DnfAvailableGroups,
@@ -768,6 +776,11 @@ __all__ = [
     "CopyCommand",
     "CpuInfo",
     "Cpus",
+    "Crontab",
+    "CrontabEntries",
+    "CrontabEntry",
+    "CrontabInstallCommand",
+    "CrontabUploadCommand",
     "Date",
     "DebInstallCommand",
     "DebPackage",
@@ -1268,6 +1281,7 @@ __all__ = [
     "changed_hosts",
     "command_shell",
     "compose",
+    "crontab",
     "dnf",
     "files",
     "firewalld",

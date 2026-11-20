@@ -1,6 +1,6 @@
 # Modules
 
-reemote's facts and operations are grouped into twenty-two self-contained
+reemote's facts and operations are grouped into twenty-three self-contained
 *module namespaces*, each shipped under `reemote.modules.<name>` and
 imported into a deploy by that name — `from reemote import apt, files,
 systemd`. A namespace keeps its own facts, operations, typed entry shapes
@@ -53,6 +53,7 @@ operations; typed entry shapes describe returned data, not extra commands.
 | [selinux](selinux.md) | SELinux mode, booleans, file contexts, logins, ports, users, modules, permissive domains |
 | [server](server.md) | Users, groups, hostname, mounts, timezone, kernel modules, locale, `/etc/hosts`, authorized_keys, processes, ports; shell/script/wait operations |
 | [sysctl](sysctl.md) | Kernel parameters — sysctl settings and drop-in `.conf` files |
+| [crontab](crontab.md) | Scheduled cron entries — add/update/remove one crontab entry |
 
 ## Security and keys
 

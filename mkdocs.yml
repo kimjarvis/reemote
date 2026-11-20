@@ -41,6 +41,7 @@ plugins:
           paths:
             - examples/modules/apk
             - examples/modules/apt
+            - examples/modules/crontab
             - examples/modules/dnf
             - examples/modules/files
             - examples/modules/firewalld
@@ -118,6 +119,7 @@ nav:
           - Overview: modules/index.md
           - apk: modules/apk.md
           - apt: modules/apt.md
+          - crontab: modules/crontab.md
           - dnf: modules/dnf.md
           - files: modules/files.md
           - firewalld: modules/firewalld.md
@@ -149,6 +151,7 @@ nav:
       - Modules:
           - apk: examples/modules/apk.md
           - apt: examples/modules/apt.md
+          - crontab: examples/modules/crontab.md
           - dnf: examples/modules/dnf.md
           - files: examples/modules/files.md
           - firewalld: examples/modules/firewalld.md
