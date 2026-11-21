@@ -421,6 +421,41 @@ group are skipped without connecting.
     options:
       members: []
 
+## Generating an SSH key pair
+
+`server.SshKeyPair` and `server.ssh_keypair` in action: the script first
+gathers the fingerprint of the login user's conventional `~/.ssh/id_rsa.pub`
+across the guarded hosts with `gather_fact` — the read-only half of the
+surface, two-tier so a key inside another user's `700` `.ssh` is retried
+elevated, and `None` means there is no pair yet — then deploys three requests,
+all under `sudo`: an unprotected `ed25519` pair commented with `user@host`,
+the identical request again (the per-phase fact cache, so the plan shows both
+as changes while the apply log makes the second a no-op), and an `rsa` pair at
+the default `~/.ssh/id_rsa` with the conventional 4096 bits. The operation
+is idempotent — it reads `Home` to resolve the directory, a private
+`_KeysPathStat` probe for that directory's owner and mode, and the
+`SshKeyPair` fact for the public half — so a user with no `~/.ssh` yet gets
+`mkdir -p` + `chmod 700` + `chown` before the pair, while a host that already
+has one plans nothing at all. The generation is one `ssh-keygen` command
+wrapped in `sh -c` and run as the target user through `su -s /bin/sh <user>`,
+so the pair is born owned by them (`600` private, `644` public) with no
+follow-up chown — and that su is why the requests carry `sudo=True` even for
+the login user's own home. The type drives the default file name
+(`id_ed25519` here) and only `rsa`/`rsa1` carry `size` as `-b`, so the
+ed25519 line in the log has no `-b` in it. No request passes a `passphrase`:
+passphrase-protected generation is out of scope — following `gpg.gen_key`, no
+secret may ride a plan, a log or a `/tmp` spool on the target — so a non-empty
+one raises `ValueError` while the request materializes, in the prepare phase,
+before a fact is read or a command sent. Every request carries `when=is_centos`, the
+static-inventory guard, applied by hand to the `gather_fact` fan-out too,
+which takes no `when` of its own. The script mutates the demo hosts for real —
+the key pairs stay in place — and re-running it is a no-op; `force=True` is the
+only thing that would regenerate one.
+
+::: server_ssh_keypair
+    options:
+      members: []
+
 ## Starting a service and waiting for it
 
 The waiting design in action: `server.service` starts and enables httpd under

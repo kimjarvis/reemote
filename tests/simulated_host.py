@@ -85,7 +85,8 @@ a real asyncssh transport is missing:
   / ``selinux_fcontext_mappings`` / ``selinux_ports`` / ``selinux_mode``
   / ``selinux_logins`` / ``selinux_users`` / ``selinux_modules``
   / ``selinux_permissive_domains``
-  / ``smbios_info`` / ``snap_package_info`` / ``sysctls`` / ``systemd_dependencies`` / ``systemd_failed_units``
+  / ``smbios_info`` / ``snap_package_info`` / ``ssh_key_pairs`` / ``sysctls`` /
+  ``systemd_dependencies`` / ``systemd_failed_units``
   / ``systemd_reload_pending`` / ``systemd_system_state`` / ``systemd_timers`` / ``systemd_unit_files``
   / ``systemd_unit_properties`` / ``systemd_version`` / ``os_timezone`` / ``os_user`` / ``os_users``
   / ``ufw_applications`` / ``ufw_rules`` / ``ufw_status``
@@ -153,7 +154,7 @@ a real asyncssh transport is missing:
   and ``_AutorelabelPending`` probes read the shared ``command_paths`` and
   ``existing_files`` seams),
   ``SnapPackage``, ``SnapPackages``,
-  ``SmbiosInfo``, ``SimulateOperationWillChange``, ``SwapEnabled``, ``Sysctl``, ``SysctlFile``,
+  ``SmbiosInfo``, ``SimulateOperationWillChange``, ``SshKeyPair``, ``SwapEnabled``, ``Sysctl``, ``SysctlFile``,
   ``SysctlFiles`` (the two persistence reads project the shared
   ``remote_files`` seam onto the standard sysctl paths), ``Timezone``,
   ``UfwApplications``, ``UfwRules``, ``UfwStatus``,
@@ -533,6 +534,7 @@ from reemote.modules.server.server import (
     SecurityLimitUploadCommand,
     SetHostnameCommand,
     SetTimezoneCommand,
+    SshKeyPairGenerateCommand,
     UserAddCommand,
     UserDelCommand,
     UserModCommand,
@@ -1983,6 +1985,16 @@ class SimulatedHost(Host):
     # reads as None, like a missing path. A read-only seam: a test seeds
     # it directly; the read copies the dict.
     socket_stats: dict[str, dict[str, Any] | bool] = field(default_factory=dict)
+    # SSH key-pair fingerprints (the ``ssh-keygen -lf`` answers backing
+    # ``SshKeyPair``), keyed by username for the default
+    # ``~user/.ssh/id_rsa.pub`` path and by the literal public-key path for
+    # explicit reads (the ``AuthorizedKeys`` seam convention). An absent key
+    # reads as None, like a missing key pair. ``generate_ssh_keypair`` (the
+    # simulated ``ssh-keygen`` behind ``server.ssh_keypair``) stores under
+    # the generated public path, which is the shape the operation always
+    # re-reads, so a repeat run sees the pair and no-ops; a test can also
+    # seed it directly.
+    ssh_key_pairs: dict[str, str] = field(default_factory=dict)
     # Sysctl settings (key -> the parsed value ``Sysctl`` returns -- an int,
     # a string, or a list of ints/strings), backing the relocated
     # ``sysctl.Sysctl`` fact. A keys filter selects the named settings; an
@@ -2335,6 +2347,17 @@ class SimulatedHost(Host):
                 # AuthorizedKeys fact seam in one place, so a repeat run
                 # reads the keys as already written.
                 self.install_authorized_keys_file(spool, dest)
+            case SshKeyPairGenerateCommand(
+                user=user,
+                private_path=private_path,
+                public_path=public_path,
+                key_type=key_type,
+            ):
+                # server.ssh_keypair's generation writes the simulated pair
+                # into the content/metadata seams and records its
+                # fingerprint under the public path, so the fresh per-step
+                # fact cache sees the pair and a repeat run is a no-op.
+                self.generate_ssh_keypair(user, private_path, public_path, key_type)
             case EtcHostsUploadCommand(content=content, dest=dest):
                 self.put_file(io.BytesIO(content.encode()), dest)
             case EtcHostsInstallCommand(spool=spool, dest=dest):
@@ -4139,6 +4162,52 @@ class SimulatedHost(Host):
         self.authorized_keys[dest] = AuthorizedKeys.parse(
             data.decode("utf-8").splitlines()
         )
+
+    def generate_ssh_keypair(
+        self,
+        user: str,
+        private_path: str,
+        public_path: str,
+        key_type: str,
+    ) -> None:
+        """Record a simulated ``ssh-keygen`` pair generation run as ``user``.
+
+        ``server.ssh_keypair`` yields one ``SshKeyPairGenerateCommand`` (it
+        refuses a passphrase, so there is no spool transfer to model). The
+        simulation models what the elevated chain does: a deterministic fake
+        fingerprint derived from the public path's sha1 (padded to the real
+        ``SHA256:`` base64 length) joins ``ssh_key_pairs`` under the public
+        path -- the shape the operation always re-reads, so a repeat run
+        sees the pair and no-ops -- and both halves land in the
+        content/metadata seams: a fixed PEM placeholder for the private file
+        at mode 600 and a synthetic key row for the public file at mode 644,
+        both owned by the target user because ``ssh-keygen`` ran as them (the
+        operation needs no chown follow-up, and a re-generation over an
+        existing pair simply rewrites the rows).
+        """
+        digest = hashlib.sha1(public_path.encode()).hexdigest()[:43]
+        self.ssh_key_pairs[public_path] = f"SHA256:{digest}"
+        public_data = (
+            f"{key_type} AAAADEMO{digest[:32]} {user}@simulated "
+            f"({key_type.upper()})\n"
+        ).encode()
+        self.remote_files[public_path] = public_data
+        self.existing_files.add(public_path)
+        self.file_stats[public_path] = {
+            "user": user,
+            "group": user,
+            "mode": 644,
+            "size": len(public_data),
+        }
+        private_data = b"-----BEGIN OPENSSH PRIVATE KEY-----\n"
+        self.remote_files[private_path] = private_data
+        self.existing_files.add(private_path)
+        self.file_stats[private_path] = {
+            "user": user,
+            "group": user,
+            "mode": 600,
+            "size": len(private_data),
+        }
 
     def install_etc_hosts_file(self, spool: str, dest: str) -> None:
         """Record a simulated ``etc_hosts`` install of the spooled hosts text.

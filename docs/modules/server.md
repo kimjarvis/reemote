@@ -71,6 +71,7 @@ back as an error `Result` (exit 127), never an exception. See the
         - Processes
         - PythonVersion
         - PythonVersionInfo
+        - SshKeyPair
         - Timezone
         - Uptime
         - User
@@ -85,6 +86,7 @@ back as an error `Result` (exit 127), never an exception. See the
         - modprobe
         - mount
         - security_limit
+        - ssh_keypair
         - timezone
         - user
         - user_authorized_keys
@@ -101,10 +103,10 @@ operations in a single source, so the read side (`Arch`, `AuthorizedKeys`,
 `Date`, `Env`, `EtcHosts`, `FipsEnabled`, `Fstab`, `GroupDetails`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
 `KernelVersion`, `Last`, `LinuxDistribution`, `LinuxGui`, `LinuxName`,
 `Locales`, `LsbRelease`, `Mounts`, `Port`, `Processes`, `PythonVersion`,
-`Timezone`, `Uptime`, `User`, `Users`, `Which`)
+`SshKeyPair`, `Timezone`, `Uptime`, `User`, `Users`, `Which`)
 sits beside the `server.etc_hosts`, `server.fstab`, `server.group`, `server.hostname`, `server.kill`,
 `server.locale`,
-`server.modprobe`, `server.mount`, `server.security_limit`, `server.timezone`, `server.user`,
+`server.modprobe`, `server.mount`, `server.security_limit`, `server.ssh_keypair`, `server.timezone`, `server.user`,
 `server.user_authorized_keys`,
 `server.wait` and
 `server.wait_service`
@@ -353,7 +355,27 @@ raises `ValueError`, and the command is `shlex`-quoted, so a virtualenv's
 question — an *already-created virtualenv's own* interpreter version — is
 deliberately not this fact's: the `pip` namespace answers it with a
 private guarded probe, because a missing virtualenv is a normal first run,
-not an error. `Sysctl` has relocated to the
+not an error. `SshKeyPair` takes a username and an optional explicit
+public-key `path`: it runs `ssh-keygen -lf` on that file and returns its
+`SHA256:...` fingerprint — the legacy colon-separated MD5 digest parses
+identically — which is exactly the state `server.ssh_keypair` compares
+against, the public-half identity Ansible's `user` module checks. The
+default path is the conventional `~user/.ssh/id_rsa.pub`, resolved through
+shell tilde expansion, so an unsafe username raises `ValueError` instead of
+reaching the shell, exactly like `AuthorizedKeys`; the operation always
+passes the explicit path, since it knows the key type. A `test -e` guard
+plus a marker line keeps an absent pair (`None`) distinguishable from a
+present one, and the read is two-tier (the `files.FileContents` precedent):
+a key inside another user's `700` `.ssh` is unreadable as the login user,
+so the fact re-reads it elevated through `run_shell_privileged` and only
+then reports a fingerprint — restrictive `.ssh` modes therefore keep key
+idempotence rather than forcing a regeneration. A pair still unreadable
+elevated reads as `None`: in practice no `ssh-keygen` on the host, which
+the guarded shell masks into the unreadable arm instead of raising
+`CommandNotFoundError`, so an operation can only plan a generation that
+then fails loudly at apply rather than the fact guessing an answer. A row
+the parser does not know raises `ValueError` — a tool format change is never
+a state to guess at. `Sysctl` has relocated to the
 `sysctl` namespace (`sysctl.Sysctl`, keeping the baseline's `server.Sysctl`
 parse verbatim); `server` no longer exports it, and the persistence facts
 and management operations live there too. `Timezone` takes no arguments: it
@@ -404,7 +426,7 @@ for its BusyBox probe.
 Operations live in namespace modules so a deploy reads `server.etc_hosts`,
 `server.group`,
 `server.hostname`, `server.kill`, `server.locale`, `server.modprobe`, `server.mount`,
-`server.security_limit`, `server.service`, `server.timezone`, `server.user`,
+`server.security_limit`, `server.service`, `server.ssh_keypair`, `server.timezone`, `server.user`,
 `server.user_authorized_keys`,
 `server.wait` and
 `server.wait_service`,
@@ -791,6 +813,53 @@ final newline is rewritten once even when the line itself is correct; and
 operation replaces the earlier `files.edit` + demo-side install
 [security-limit recipe](../examples/modules/server.md#ensuring-a-resource-limit-baseline-serversecurity_limit-parity),
 which is now a thin single-deploy example of it.
+
+`server.ssh_keypair` is the Ansible `user` module's `generate_ssh_key` parity
+that the ansible-users migration flagged as a gap (issue #60): for `user`,
+`type` (default `rsa`), `size` (default `4096`), the private-key `path`,
+`comment`, `passphrase` (accepted, then refused — see below) and `force` it
+ensures the key directory and
+generates the pair wherever the public half has no fingerprint yet.
+Idempotent, it gates on the `SshKeyPair` fact — a pair with a fingerprint
+needs nothing, and only `force=True` regenerates one — and the directory half
+is the `server.user_authorized_keys` ensure block verbatim (the private
+`_KeysPathStat` probe plus `_HomeMkdirCommand`, `_KeysChmodCommand` mode `700`
+and `_HomeChownCommand`, a path that exists as the wrong type raising
+[`OperationError`][reemote.core.OperationError] in the prepare phase, an
+unknown `user` — the `Home` fact answering `None` — raising the same error
+before any command is planned). The key files themselves get no state verbs:
+the single `SshKeyPairGenerateCommand` runs `ssh-keygen` **as the target
+user** through `su -s /bin/sh <user>` inside one `sudo sh -c` chain, so the
+pair is born owned by them (`600` private, `644` public) instead of being
+fixed up afterwards. That wrapper is also why every request carries
+`sudo=True`, even one for the login user's own home: only root may `su`
+without a password. `-t` carries the type and the default private name embeds
+it (`id_<type>`), `-b` is rendered only for `rsa`/`rsa1` (`ed25519` has no
+length, `ecdsa` and `dsa` take only fixed ones, so passing `size` to them
+would fail the command), `-C` the comment, and `-q` the banner suppression;
+an explicit `path` names the *private* file — Ansible's
+`generate_ssh_key_file` — and bypasses the `Home` read, its public half being
+`<path>.pub`, and `force` prepends an `rm -f` of both halves inside the same
+chain. Every username, path and comment is `shlex`-quoted, so a metacharacter
+reaches `ssh-keygen` literally.
+
+`passphrase` follows `gpg.gen_key`, which drops the option so that no secret can
+ever ride a plan or a log: passphrase-protected generation is out of scope here
+as well, and a non-empty value raises `ValueError` while the request
+materializes — in the prepare phase, before a single fact is read, so no
+directory is created and no key is generated anywhere. Refusing rather than
+quietly ignoring is the point: a dropped passphrase would leave the caller
+holding an unprotected private key they asked to have protected. Spooling the
+secret instead — the road the file-editing operations of this module take —
+would put it on a multi-tenant host's shared `/tmp` under a name derived from
+the key path, a symlink-race target the predictable name cannot avoid, for a
+payload far more sensitive than a config file. So `-N` always carries the empty
+string. The only fact the
+operation cannot see is an unreadable *private* half — the public fingerprint
+is the identity Ansible itself checks. The runnable
+[key pair example](../examples/modules/server.md#generating-an-ssh-key-pair)
+shows both halves: the `SshKeyPair` read on its own with `gather_fact`, and a
+deploy whose second step is a no-op against the pair the first one generated.
 
 
 ## Waiting for a condition

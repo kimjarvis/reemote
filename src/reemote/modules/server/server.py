@@ -2899,6 +2899,171 @@ class PythonVersion:
         return cls.parse(stdout.splitlines())
 
 
+class _UnreadableKeyPair:
+    """Sentinel type: a public key file the login user cannot read."""
+
+
+#: The single sentinel instance ``SshKeyPair._read`` returns for a present
+#: but unreadable public key; ``process`` re-reads it elevated (the
+#: ``FileContents`` two-tier read pattern). A private object, so no
+#: fingerprint string can ever compare equal to it.
+_UNREADABLE_KEY_PAIR = _UnreadableKeyPair()
+
+
+class SshKeyPair:
+    """The fingerprint of a user's SSH key pair, or None when it is absent.
+
+    Reads the public half of the pair with ``ssh-keygen -lf`` and reports
+    its ``SHA256:...`` fingerprint. A public key the login user cannot read
+    is re-read elevated with ``sudo``, so restrictive ``.ssh`` modes keep
+    key-pair idempotence; the run-as user and any password come from the
+    inventory ``privilege`` data, never from a fact or operation.
+
+    **Commands:**
+
+    ```bash
+    test -e ~<user>/.ssh/id_rsa.pub && { printf '#reemote-sshkeypair\\n'; ssh-keygen -lf ~<user>/.ssh/id_rsa.pub 2>/dev/null || printf '#reemote-sshkeypair-unreadable\\n'; }
+    ```
+
+    **Returns:**
+
+    ```python
+    str | None
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError, PrivilegeError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in
+        ``examples/modules/server/server_ssh_keypair.py``.
+    """
+
+    # Closes the missing idempotence half of the Ansible ``user`` module's
+    # ``generate_ssh_key`` support (issue #60): existence plus fingerprint of
+    # the pair's public half is exactly the state ``server.ssh_keypair``
+    # compares against, and the ``ssh-keygen -lf`` fingerprint is the
+    # human-readable identity a deployer diffuses or verifies. The read is
+    # two-tier (the ``files.FileContents`` precedent): the first read rides
+    # unprivileged, and a file that is present but unreadable -- another
+    # user's ``700`` ``.ssh`` directory, the normal case under ``sudo`` --
+    # prints the ``UNREADABLE`` marker line instead of the row, which
+    # ``process`` turns into one elevated re-read. A missing file produces
+    # no output at all and reads as ``None`` -- never the empty string --
+    # so absence stays distinguishable from a present key. The guarded
+    # shell also masks a missing ``ssh-keygen`` (exit 127 lands on the
+    # ``UNREADABLE`` arm), so this fact never raises
+    # ``CommandNotFoundError``.
+
+    #: Marker printed before the ``ssh-keygen`` row, only when ``test -e``
+    #: passes, so ``_read`` can tell an existing key file from a missing one
+    #: (no marker on stdout).
+    MARKER = "#reemote-sshkeypair"
+
+    #: Marker printed instead of the row when the fingerprint read fails
+    #: (unreadable as the login user, or no ``ssh-keygen``): stdout is then
+    #: exactly the two marker lines, which ``process`` detects to trigger
+    #: the elevated re-read.
+    UNREADABLE = "#reemote-sshkeypair-unreadable"
+
+    @classmethod
+    def command(cls, user: str, path: str | None = None) -> str:
+        """Shell printing ``MARKER`` then the ``ssh-keygen -lf`` row, if the key exists.
+
+        The ``test -e`` guard means a missing file produces no output at all
+        (not even the marker), while an existing one always leads with the
+        marker line; a failing read prints ``UNREADABLE`` instead of the row.
+        Tilde expansion resolves the user's home without another fact
+        round-trip, so the username is validated rather than quoted; the
+        default file is the conventional ``id_rsa.pub``. An explicit path
+        (what ``server.ssh_keypair`` always passes, since it knows the key
+        type) is quoted normally.
+        """
+        if path is None:
+            _check_tilde_username(user)
+            target = f"~{user}/.ssh/id_rsa.pub"
+        else:
+            target = shlex.quote(path)
+        return (
+            f"test -e {target} && {{ printf '{cls.MARKER}\\n'; "
+            f"ssh-keygen -lf {target} 2>/dev/null "
+            f"|| printf '{cls.UNREADABLE}\\n'; }}"
+        )
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> str | None:
+        """Parse the ``ssh-keygen -lf`` row into the bare fingerprint, or None.
+
+        The row reads ``<bits> <fingerprint> <comment> (<type>)``; the second
+        token is the answer -- a modern ``SHA256:...`` digest or the legacy
+        colon-separated ``MD5`` one -- and is returned verbatim. Blank output
+        reads as ``None``; a non-blank row without a colon-bearing second
+        token raises ``ValueError`` -- the tool answered with something this
+        parser does not know, which is a format change, never a state to
+        guess at. Pure and testable.
+        """
+        for line in output:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            tokens = stripped.split()
+            if len(tokens) < 2 or ":" not in tokens[1]:
+                raise ValueError(f"unparsable ssh-keygen output: {stripped!r}")
+            return tokens[1]
+        return None
+
+    @classmethod
+    async def process(cls, host: Host, user: str, path: str | None = None) -> str | None:
+        # Build the shell first, even on the simulated path, so an unsafe
+        # tilde username is rejected identically on both transports.
+        cls.command(user, path)
+        key_pairs = getattr(host, "ssh_key_pairs", None)
+        if key_pairs is not None:
+            # SimulatedHost seam: the state is keyed by username for the
+            # default path and by the explicit public-key path otherwise; an
+            # absent key reads as None, like a missing file. str is
+            # immutable, so no copy is needed.
+            return key_pairs.get(user if path is None else path)
+        fingerprint = await cls._read(host, user, path, privileged=False)
+        if fingerprint is _UNREADABLE_KEY_PAIR:
+            # Present but unreadable as the login user: re-read elevated.
+            # The run-as user and any password come from the inventory
+            # privilege data (run_shell_privileged), never from here.
+            fingerprint = await cls._read(host, user, path, privileged=True)
+            if fingerprint is _UNREADABLE_KEY_PAIR:
+                # Even elevated the row failed to read -- in practice no
+                # ``ssh-keygen`` on the host, which the guarded shell hides.
+                # Reads as absent: an operation can only plan a generation,
+                # and that command then fails loudly at apply rather than
+                # the fact guessing an answer.
+                return None
+        return fingerprint
+
+    @classmethod
+    async def _read(
+        cls, host: Host, user: str, path: str | None, *, privileged: bool
+    ) -> str | None | _UnreadableKeyPair:
+        command = cls.command(user, path)
+        if privileged:
+            stdout = await host.run_shell_privileged(command, sudo=True)
+        else:
+            stdout = await host.run_shell(command)
+        prefix = f"{cls.MARKER}\n"
+        if not stdout.startswith(prefix):
+            # The test -e guard failed: no public key file, no fingerprint.
+            return None
+        body = stdout[len(prefix) :]
+        if body.startswith(cls.UNREADABLE):
+            # Present but the row did not read: unprivileged, this is the
+            # signal to retry elevated; elevated, it means there is no
+            # ``ssh-keygen`` at all and ``process`` reads the pair as absent.
+            return _UNREADABLE_KEY_PAIR
+        return cls.parse(body.splitlines())
+
+
 class Timezone:
     """The current system timezone (e.g. ``Europe/Amsterdam``).
 
@@ -4499,6 +4664,259 @@ async def user_authorized_keys(
     )
     yield AuthorizedKeysUploadCommand(content=new, dest=spool)
     yield AuthorizedKeysInstallCommand(spool=spool, dest=key_file)
+
+    ctx.reason = "; ".join(reasons)
+
+
+# --- server.ssh_keypair -------------------------------------------------------
+
+#: Key types ``ssh-keygen`` accepts a free ``-b`` bit length for. ``ed25519``
+#: and ``ed448`` carry no size at all, ``ecdsa`` takes only the fixed curve
+#: sizes (256/384/521) and ``dsa`` only 2048, so ``-b`` is rendered with the
+#: default ``size=4096`` only for these types -- everywhere else it would
+#: make the generation command fail.
+_SIZEFUL_KEY_TYPES = ("rsa", "rsa1")
+
+
+@dataclass(frozen=True)
+class SshKeyPairGenerateCommand(Command):
+    """One ``ssh-keygen`` key-pair generation, run as the target user.
+
+    The elevated half of ``ssh_keypair``, wrapped in ``sh -c`` -- a bare
+    ``sudo`` prefix would elevate only the first command of the ``&&``
+    chain, whereas ``sudo sh -c '...'`` runs every step elevated (the
+    ``AuthorizedKeysInstallCommand`` precedent). Inside the chain,
+    ``su -s /bin/sh <user> -c '<ssh-keygen ...>'`` drops to the target user
+    so the pair is created with the right owner outright -- no chown
+    follow-up, where the key file itself needs none of the
+    ``user_authorized_keys`` fix-ups. ``-q`` silences the banner,
+    ``-t``/``-f`` pass the key type and private-key path, and ``-b`` is
+    rendered only for the types that take a free bit length
+    (``_SIZEFUL_KEY_TYPES``). ``-N ''`` always writes an unprotected key --
+    ``ssh_keypair`` refuses a passphrase, so no secret ever rides a plan or
+    log (the ``gpg.gen_key`` ``%no-protection`` precedent). With ``force`` an
+    ``rm -f`` of both halves runs first (the operation decides regeneration
+    from the ``SshKeyPair`` fact; the prefix keeps the command
+    self-contained). Usernames and all paths are shell-quoted.
+    """
+
+    user: str  # the account the pair is generated for (run as via su)
+    private_path: str  # ssh-keygen -f target; the public half is + ".pub"
+    public_path: str  # removed alongside on force, never passed to ssh-keygen
+    key_type: str  # rendered as -t
+    size: int  # rendered as -b only for _SIZEFUL_KEY_TYPES
+    comment: str | None = None  # rendered as -C when given
+    force: bool = False  # set -> rm -f both halves first
+
+    def shell(self) -> str:
+        private = shlex.quote(self.private_path)
+        public = shlex.quote(self.public_path)
+        parts = ["ssh-keygen", "-q", "-t", shlex.quote(self.key_type)]
+        if self.key_type in _SIZEFUL_KEY_TYPES:
+            parts += ["-b", str(self.size)]
+        parts += ["-f", private, "-N", "''"]
+        if self.comment:
+            parts += ["-C", shlex.quote(self.comment)]
+        keygen = " ".join(parts)
+        run_as = f"su -s /bin/sh {shlex.quote(self.user)} -c {shlex.quote(keygen)}"
+        inner = f"rm -f {private} {public} && " if self.force else ""
+        inner += run_as
+        return f"sh -c {shlex.quote(inner)}"
+
+
+async def ssh_keypair(
+    ctx: OpContext,
+    user: str,
+    type: str = "rsa",
+    size: int = 4096,
+    path: str | None = None,
+    comment: str | None = None,
+    passphrase: str | None = None,
+    force: bool = False,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Generate an SSH key pair for a user, idempotently.
+
+    The Ansible ``user`` module's ``generate_ssh_key`` parity: the pair is
+    created only where its public half has no fingerprint yet, and the
+    generation runs as the target user so the files land owned correctly.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        user (str): Name of the user the key pair belongs to.
+        type (str, optional): Key type passed to ``ssh-keygen -t``; the
+            default private-key name embeds it (``id_<type>``). Only
+            ``rsa``/``rsa1`` receive the ``size`` as ``-b``. Defaults to "rsa".
+        size (int, optional): Bit length passed to ``ssh-keygen -b`` for the
+            key types that take a free size; skipped for ``ed25519``,
+            ``ecdsa`` and ``dsa``, where the tool rejects or fixes it.
+            Defaults to 4096.
+        path (str | None, optional): The *private* key file path, mirroring
+            Ansible's ``generate_ssh_key_file``; the public half is
+            ``<path>.pub``. Defaults to the user's ``Home`` fact resolved to
+            ``<home>/.ssh/id_<type>`` -- a user with no resolvable home
+            directory (unknown to the host) raises ``OperationError``.
+            Defaults to None.
+        comment (str | None, optional): Key comment passed to
+            ``ssh-keygen -C`` (typically ``user@host``). Defaults to None.
+        passphrase (str | None, optional): Accepted for Ansible
+            ``ssh_key_passphrase`` call-site parity, but passphrase-protected
+            generation is out of scope: any non-empty value raises
+            ``ValueError`` while materializing, because no secret may ride a
+            plan or a command log (the ``gpg.gen_key`` ``%no-protection``
+            precedent). ``None`` or ``""`` generates an unprotected key.
+            Defaults to None.
+        force (bool, optional): Regenerate the pair when one already exists
+            (both halves are removed first). Defaults to False.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The ``.ssh`` directory setup commands and the one
+            ``ssh-keygen`` generation command -- only where the facts show a
+            delta.
+
+    **Raises:**
+
+    ```python
+    HostConnectionError, OperationError, PrivilegeError, ValueError
+    ```
+
+    Examples:
+        ```python
+        from reemote import op, server
+
+        # Give the deploy user an unprotected ed25519 pair (writes another user's ~/.ssh, so elevate)
+        yield op(
+            server.ssh_keypair,
+            name="Create the deploy key pair",
+            user="deploy",
+            type="ed25519",
+            sudo=True,
+        )
+
+        # The rsa default with a comment; the key stays unprotected, because
+        # a passphrase is refused rather than spooled or passed on a command
+        yield op(
+            server.ssh_keypair,
+            name="Create the backup key pair",
+            user="backup",
+            comment="backup@web01.example.com",
+            sudo=True,
+        )
+        ```
+
+        Examples can be found in
+        ``examples/modules/server/server_ssh_keypair.py``.
+    """
+
+    # Mirrors the Ansible ``user`` module's ``generate_ssh_key``/
+    # ``generate_ssh_key_file``/``ssh_key_type``/``ssh_key_bits``/
+    # ``ssh_key_comment``/``ssh_key_passphrase``/``ssh_key_force`` set, as its
+    # reemote port asked for in issue #60 (the ansible-users migration's
+    # GAP-2). Idempotence rides the ``SshKeyPair`` fact: a public half with a
+    # fingerprint needs nothing (unless ``force``), and the re-read is
+    # elevated-fault-tolerant, so a ``700`` ``.ssh`` owned by the target user
+    # -- the state this operation itself creates -- still reads. The
+    # directory half is the ``user_authorized_keys`` ensure block verbatim
+    # (``_KeysPathStat`` probe, ``_HomeMkdirCommand``/``_KeysChmodCommand``
+    # 700/``_HomeChownCommand`` pair, wrong-typed path raises
+    # ``OperationError``); the key files themselves need no state verbs here,
+    # because ``ssh-keygen`` is run as the target user through the elevated
+    # path -- ``su -s /bin/sh <user>`` inside one ``sudo sh -c`` chain -- so
+    # the pair is born with the right owner and mode (``-f`` writes 600, the
+    # public half 644 under the user's umask) instead of being fixed up.
+    #
+    # The ``Home`` fact answers ``None`` for a user the host does not know,
+    # which reads as an ``OperationError`` naming the user before any command
+    # is planned (the ``user_authorized_keys`` guard, enforced identically);
+    # an explicit ``path`` bypasses the Home read entirely.
+    #
+    # ``passphrase`` follows the ``gpg.gen_key`` precedent instead of the
+    # spool-and-install road: passphrase-protected generation is deliberately
+    # out of scope, because a secret must never ride a plan, a command log or
+    # a ``/tmp`` file on a multi-tenant host. Rather than silently ignoring the
+    # option -- which would leave the caller believing the key is protected --
+    # a non-empty value raises here, before any fact is read or command
+    # planned, and the message never quotes the secret itself. Ansible call
+    # sites that pass ``ssh_key_passphrase`` therefore fail fast and visibly;
+    # unprotected generation (``None`` or ``""``, and everything the Ansible
+    # ``user`` role examples do) is unaffected.
+    #
+    # A key pair with an unreadable private half is never detected here -- the
+    # public half's fingerprint is the identity Ansible itself checks
+    # (``os.path.exists`` on the public path).
+    #
+    # ``force`` is passed through to the descriptor unconditionally: the
+    # ``rm -f`` prefix is harmless when nothing exists, so the request never
+    # branches on the fact for the command shape -- only for whether a
+    # generation is planned at all. ``**kwargs`` absorbs the baseline's
+    # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    if passphrase:
+        raise ValueError(
+            "ssh_keypair cannot generate a passphrase-protected key: no secret "
+            "may ride a plan or a command log, so passphrase support is out of "
+            "scope (drop the passphrase argument for an unprotected pair)"
+        )
+    if path is None:
+        home = await ctx.facts.get(Home, user=user)
+        if home is None:
+            raise OperationError(f"cannot resolve a home directory for user {user!r}")
+        private_path = f"{home}/.ssh/id_{type}"
+    else:
+        private_path = path
+
+    public_path = f"{private_path}.pub"
+    key_directory = str(PurePosixPath(private_path).parent)
+
+    reasons: list[str] = []
+
+    dir_info = await ctx.facts.get(_KeysPathStat, key_directory)
+    if dir_info is False:
+        raise OperationError(f"{key_directory} exists and is not a directory")
+    if dir_info is None:
+        ctx.changed = True
+        reasons.append(f"{key_directory} missing, will create")
+        yield _HomeMkdirCommand(path=key_directory)
+        yield _KeysChmodCommand(path=key_directory, mode=_SSH_DIR_MODE)
+        yield _HomeChownCommand(path=key_directory, user=user, group=user)
+    else:
+        if dir_info["mode"] != _SSH_DIR_MODE:
+            ctx.changed = True
+            reasons.append(
+                f"mode {dir_info['mode']} differs, will chmod {_SSH_DIR_MODE}"
+            )
+            yield _KeysChmodCommand(path=key_directory, mode=_SSH_DIR_MODE)
+        if dir_info["user"] != user or dir_info["group"] != user:
+            ctx.changed = True
+            reasons.append(
+                f"owner {dir_info['user']}:{dir_info['group']} differs, will chown"
+            )
+            yield _HomeChownCommand(path=key_directory, user=user, group=user)
+        if not ctx.changed:
+            reasons.append(f"directory {key_directory} already exists")
+
+    fingerprint = await ctx.facts.get(SshKeyPair, user, path=public_path)
+    if fingerprint is not None and not force:
+        if not ctx.changed:
+            reasons.append(f"key pair {public_path} already exists")
+        ctx.reason = "; ".join(reasons)
+        return
+
+    if fingerprint is None:
+        reasons.append(f"{public_path} missing, will generate")
+    else:
+        reasons.append(f"key pair {public_path} exists, will regenerate")
+    ctx.changed = True
+
+    yield SshKeyPairGenerateCommand(
+        user=user,
+        private_path=private_path,
+        public_path=public_path,
+        key_type=type,
+        size=size,
+        comment=comment,
+        force=force,
+    )
 
     ctx.reason = "; ".join(reasons)
 
@@ -6655,6 +7073,8 @@ __all__ = [
     "SecurityLimitUploadCommand",
     "SetHostnameCommand",
     "SetTimezoneCommand",
+    "SshKeyPair",
+    "SshKeyPairGenerateCommand",
     "SystemctlCommand",
     "SystemdServiceEnabled",
     "SystemdServiceState",
@@ -6679,6 +7099,7 @@ __all__ = [
     "mount",
     "security_limit",
     "service",
+    "ssh_keypair",
     "timezone",
     "unit_name",
     "user",

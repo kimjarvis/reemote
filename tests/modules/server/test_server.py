@@ -63,7 +63,9 @@ record deliberately differs from the baseline's tuple -- and the
 ``Processes`` fact
 (the baseline's own Linux and BusyBox fixtures over the real-transport path,
 busybox-dispatched command and parser edge cases, and the ``SimulatedHost``
-seam), the ``Timezone`` fact (the baseline's own
+seam), the ``SshKeyPair`` fact (the tilde and explicit-path commands, the
+``ssh-keygen -lf`` row parsing, the ``ssh_key_pairs`` ``SimulatedHost``
+seam and the two-tier elevated re-read), the ``Timezone`` fact (the baseline's own
 fixture over the real-transport path, parsing edge cases, and the
 ``SimulatedHost`` seam), the ``Uptime`` fact (the baseline's own Linux fixture
 over the real-transport path, the ``/proc/uptime`` command and parser edge
@@ -88,6 +90,11 @@ operation and its ``AuthorizedKeysUploadCommand``/
 ``AuthorizedKeysInstallCommand`` spool-and-install pair (the baseline's own
 operation fixtures, the in-place state verbs, the ``delete_keys``
 whole-file rewrite, both no-op levels and the end-to-end lockstep run),
+the ``ssh_keypair`` operation and its ``SshKeyPairGenerateCommand`` descriptor
+(the Ansible ``generate_ssh_key`` parity
+plans, the ``SshKeyPair``-driven idempotence, the run-as-user generation
+shell, the passphrase refused before anything is sent, both no-op levels
+and the end-to-end lockstep run),
 the ``etc_hosts`` operation and its ``EtcHostsUploadCommand``/
 ``EtcHostsInstallCommand`` spool-and-install pair (the baseline's own nine
 operation fixtures, the pure hosts-file rewrite, both no-op levels and
@@ -215,6 +222,8 @@ from reemote.modules.server.server import (
     SecurityLimitUploadCommand,
     SetHostnameCommand,
     SetTimezoneCommand,
+    SshKeyPair,
+    SshKeyPairGenerateCommand,
     SystemdServiceEnabled,
     SystemdServiceState,
     Timezone,
@@ -6751,6 +6760,736 @@ async def test_user_authorized_keys_dry_run_sends_nothing():
         assert host.remote_files == {}
         assert UA_SSH_DIR not in host.directory_stats
         assert UA_KEYS_FILE not in host.file_stats
+
+
+# --- server.ssh_keypair -------------------------------------------------------
+
+# The Ansible ``user`` module's ``generate_ssh_key`` parity (issue #60) replayed
+# over the ``SimulatedHost`` seams: the user whose pair is managed, both key
+# paths, and the passphrase that is refused rather than carried into a command.
+# ``KP_FINGERPRINT`` is exactly what
+# ``SimulatedHost.generate_ssh_keypair`` records for ``KP_PUB``.
+KP_USER = "someuser"
+KP_HOME = "/home/someuser"
+KP_DIR = "/home/someuser/.ssh"
+KP_PRIV = "/home/someuser/.ssh/id_rsa"
+KP_PUB = f"{KP_PRIV}.pub"
+KP_PASSPHRASE = "hunter2"
+KP_FINGERPRINT = f"SHA256:{hashlib.sha1(KP_PUB.encode()).hexdigest()[:43]}"
+# The three nested layers of the generation command: the bare keygen, the
+# run-as-user wrapper it rides, and the whole chain the descriptor emits.
+KP_KEYGEN = f"ssh-keygen -q -t rsa -b 4096 -f {KP_PRIV} -N ''"
+KP_RUN_AS = f"su -s /bin/sh {KP_USER} -c {shlex.quote(KP_KEYGEN)}"
+KP_INNER = KP_RUN_AS
+# The plain generation the operation plans for the default arguments.
+KP_GEN = SshKeyPairGenerateCommand(
+    user=KP_USER,
+    private_path=KP_PRIV,
+    public_path=KP_PUB,
+    key_type="rsa",
+    size=4096,
+)
+
+
+class KeyPairFallbackHost(Host):
+    """Answers the unprivileged fingerprint read as unreadable, then elevated.
+
+    The stand-in the ``files`` suite uses for the ``FileContents`` two-tier
+    read: it records every unprivileged shell and every privileged shell with
+    its ``sudo`` flag, so a test can assert exactly which tier ran (and that a
+    missing file never triggers the elevated one).
+    """
+
+    def __init__(self, unprivileged: str, privileged: str):
+        super().__init__(name="fallback")
+        self._unprivileged = unprivileged
+        self._privileged = privileged
+        self.shells: list[str] = []
+        self.privileged_calls: list[tuple[str, bool]] = []
+
+    async def run_shell(self, shell: str, *, check: bool = False) -> str:
+        self.shells.append(shell)
+        return self._unprivileged
+
+    async def run_shell_privileged(
+        self, shell: str, *, sudo: bool = False, su: bool = False, doas: bool = False
+    ) -> str:
+        self.privileged_calls.append((shell, sudo))
+        return self._privileged
+
+
+def test_ssh_keypair_command_forms():
+    # The default path rides tilde expansion of the conventional id_rsa.pub,
+    # so the username is validated rather than quoted; an explicit path (what
+    # the operation always passes, since it knows the key type) is quoted
+    # normally. Both print the existence MARKER first and turn a failing read
+    # into the UNREADABLE line.
+    marker = SshKeyPair.MARKER
+    unreadable = SshKeyPair.UNREADABLE
+    assert SshKeyPair.command(KP_USER) == (
+        f"test -e ~{KP_USER}/.ssh/id_rsa.pub && "
+        f"{{ printf '{marker}\\n'; ssh-keygen -lf ~{KP_USER}/.ssh/id_rsa.pub "
+        f"2>/dev/null || printf '{unreadable}\\n'; }}"
+    )
+    quoted = shlex.quote("/srv/keys/my key.pub")
+    assert SshKeyPair.command(KP_USER, path="/srv/keys/my key.pub") == (
+        f"test -e {quoted} && "
+        f"{{ printf '{marker}\\n'; ssh-keygen -lf {quoted} "
+        f"2>/dev/null || printf '{unreadable}\\n'; }}"
+    )
+    # The stderr redirect is what keeps a missing ssh-keygen (exit 127 lands on
+    # the UNREADABLE arm) from raising CommandNotFoundError through the fact.
+    assert "2>/dev/null" in SshKeyPair.command(KP_USER)
+
+
+async def test_ssh_keypair_rejects_unsafe_tilde_usernames():
+    # ``~user`` cannot be quoted without disabling the expansion, so an unsafe
+    # username raises on both transports -- the shell is built before the seam
+    # is consulted, so a simulated host rejects it identically.
+    for user in ("bad;rm", "a b", "$(whoami)", "-x"):
+        with pytest.raises(ValueError, match="Unsafe username"):
+            await SshKeyPair.process(CannedShellHost(""), user)
+        with pytest.raises(ValueError, match="Unsafe username"):
+            await SshKeyPair.process(SimulatedHost(name="h"), user)
+    # An explicit path never uses tilde expansion, so the username is not
+    # consulted at all.
+    host = CannedShellHost("")
+    assert await SshKeyPair.process(host, "bad;rm", path="/keys/id_rsa.pub") is None
+    assert host.shells == [SshKeyPair.command("bad;rm", path="/keys/id_rsa.pub")]
+
+
+def test_ssh_keypair_parse_reads_the_fingerprint_column():
+    # The row is ``<bits> <fingerprint> <comment> (<type>)``; the second token
+    # is the answer, verbatim.
+    assert SshKeyPair.parse([f"4096 {KP_FINGERPRINT} {KP_USER}@host (RSA)"]) == (
+        KP_FINGERPRINT
+    )
+    # The legacy colon-separated MD5 digest parses the same way, blank and
+    # whitespace-only lines are skipped and anything after the first row goes.
+    assert SshKeyPair.parse(
+        ["", "   ", "256 MD5:11:22:33 a@b (DSA)", "ignored"]
+    ) == "MD5:11:22:33"
+    assert SshKeyPair.parse([]) is None
+    assert SshKeyPair.parse(["", "   "]) is None
+    # A row this parser does not know is a tool format change, never a state to
+    # guess at.
+    with pytest.raises(ValueError, match="unparsable ssh-keygen output"):
+        SshKeyPair.parse(["Please pass a key file."])
+    with pytest.raises(ValueError, match="unparsable ssh-keygen output"):
+        SshKeyPair.parse(["4096"])
+
+
+async def test_ssh_keypair_reads_the_simulated_seam():
+    # Keyed by username for the default path and by the explicit public path,
+    # the ``AuthorizedKeys`` convention; an absent pair reads as None.
+    host = SimulatedHost(
+        name="h",
+        ssh_key_pairs={"alice": "SHA256:aaa", "/etc/ssh/keys/alice.pub": "SHA256:bbb"},
+    )
+    assert await SshKeyPair.process(host, "alice") == "SHA256:aaa"
+    assert (
+        await SshKeyPair.process(host, "alice", path="/etc/ssh/keys/alice.pub")
+        == "SHA256:bbb"
+    )
+    assert await SshKeyPair.process(host, "bob") is None
+
+
+async def test_ssh_keypair_gather_fact_across_hosts():
+    # The issue's offline acceptance criterion, straight through the public
+    # namespace: one read per host, results keyed by host name.
+    hosts = [
+        SimulatedHost(name="web1", ssh_key_pairs={"foo": "SHA256:one"}),
+        SimulatedHost(name="web2", ssh_key_pairs={"foo": "SHA256:two"}),
+    ]
+    assert await gather_fact(hosts, server.SshKeyPair, "foo") == {
+        "web1": "SHA256:one",
+        "web2": "SHA256:two",
+    }
+    # A host that has no pair for that user answers None, not an error.
+    hosts.append(SimulatedHost(name="web3"))
+    assert await gather_fact(hosts, server.SshKeyPair, "foo") == {
+        "web1": "SHA256:one",
+        "web2": "SHA256:two",
+        "web3": None,
+    }
+
+
+async def test_ssh_keypair_rereads_elevated_when_unreadable():
+    # A present key the login user cannot read -- another user's 700 ``.ssh``,
+    # the normal case under sudo -- is the FileContents two-tier read: one
+    # unprivileged shell, then exactly one elevated retry.
+    command = SshKeyPair.command(KP_USER, path=KP_PUB)
+    host = KeyPairFallbackHost(
+        unprivileged=f"{SshKeyPair.MARKER}\n{SshKeyPair.UNREADABLE}\n",
+        privileged=f"{SshKeyPair.MARKER}\n4096 {KP_FINGERPRINT} {KP_USER}@h (RSA)\n",
+    )
+    assert await SshKeyPair.process(host, KP_USER, path=KP_PUB) == KP_FINGERPRINT
+    assert host.shells == [command]
+    assert host.privileged_calls == [(command, True)]
+
+
+async def test_ssh_keypair_absent_file_never_elevates():
+    # No MARKER line: the ``test -e`` guard failed, so the pair is simply
+    # absent and there is nothing to re-read elevated.
+    host = KeyPairFallbackHost(unprivileged="", privileged="")
+    assert await SshKeyPair.process(host, KP_USER, path=KP_PUB) is None
+    assert host.shells == [SshKeyPair.command(KP_USER, path=KP_PUB)]
+    assert host.privileged_calls == []
+
+
+async def test_ssh_keypair_unreadable_when_elevated_reads_absent():
+    # Even elevated the row did not read -- in practice no ``ssh-keygen`` on
+    # the host, which the guarded shell masks into the UNREADABLE arm. The fact
+    # reports None rather than guessing: an operation can only plan a
+    # generation, which then fails loudly at apply.
+    host = KeyPairFallbackHost(
+        unprivileged=f"{SshKeyPair.MARKER}\n{SshKeyPair.UNREADABLE}\n",
+        privileged=f"{SshKeyPair.MARKER}\n{SshKeyPair.UNREADABLE}\n",
+    )
+    assert await SshKeyPair.process(host, KP_USER, path=KP_PUB) is None
+    assert len(host.privileged_calls) == 1
+
+
+def test_ssh_keypair_generate_command_shell_rendering():
+    # The whole chain rides ``sh -c``, so one sudo elevates every step, and the
+    # keygen drops to the target user through ``su -s /bin/sh`` -- the pair is
+    # born owned correctly, so no chown follow-up is needed for the keys.
+    assert KP_GEN.shell() == f"sh -c {shlex.quote(KP_INNER)}"
+    assert shlex.split(KP_GEN.shell())[2] == KP_INNER
+    run_as = shlex.split(KP_INNER)
+    assert run_as[:5] == ["su", "-s", "/bin/sh", KP_USER, "-c"]
+    assert run_as[5] == KP_KEYGEN
+    # Sudo elevates the wrapped chain, su routes through its own wrapper.
+    assert command_shell(KP_GEN, sudo=True) == f"sudo {KP_GEN.shell()}"
+    assert command_shell(KP_GEN, su=True) == f"su -c {shlex.quote(KP_GEN.shell())}"
+    # -t and -b carry the type and size, -f the *private* path (-q the banner
+    # suppression), and no passphrase means an unprotected -N ''.
+    assert "-t rsa" in KP_KEYGEN
+    assert "-b 4096" in KP_KEYGEN
+    assert KP_KEYGEN.endswith(f"-f {KP_PRIV} -N ''")
+
+
+@pytest.mark.parametrize(
+    ("key_type", "size", "has_size"),
+    [
+        ("rsa", 4096, True),
+        ("rsa1", 2048, True),
+        ("ed25519", 4096, False),
+        ("ecdsa", 256, False),
+        ("dsa", 2048, False),
+    ],
+)
+def test_ssh_keypair_generate_command_size_only_for_sizeful_types(
+    key_type: str, size: int, has_size: bool
+):
+    # ed25519 has no length at all, ecdsa and dsa take only fixed ones, so
+    # rendering -b for them would make the generation fail outright.
+    gen = SshKeyPairGenerateCommand(
+        user=KP_USER,
+        private_path=KP_PRIV,
+        public_path=KP_PUB,
+        key_type=key_type,
+        size=size,
+    )
+    assert (f"-b {size}" in gen.shell()) == has_size
+    assert f"-t {key_type}" in gen.shell()
+
+
+def test_ssh_keypair_generate_command_option_rendering():
+    # -C carries the comment and force prepends the rm -f of both halves; -N
+    # stays the empty string, because ssh_keypair refuses a passphrase instead
+    # of spooling or quoting one, so no secret can reach the planned text.
+    comment = f"{KP_USER}@web01.example.com"
+    keygen = f"ssh-keygen -q -t rsa -b 4096 -f {KP_PRIV} -N '' -C {comment}"
+    inner = (
+        f"rm -f {KP_PRIV} {KP_PUB} && su -s /bin/sh {KP_USER} -c "
+        f"{shlex.quote(keygen)}"
+    )
+    gen = SshKeyPairGenerateCommand(
+        user=KP_USER,
+        private_path=KP_PRIV,
+        public_path=KP_PUB,
+        key_type="rsa",
+        size=4096,
+        comment=comment,
+        force=True,
+    )
+    assert gen.shell() == f"sh -c {shlex.quote(inner)}"
+    assert shlex.split(gen.shell())[2] == inner
+    # The equality above already pins the empty -N; nothing is read back from a
+    # spool file, so the chain carries no /tmp path and no command substitution.
+    assert "/tmp" not in gen.shell()
+    assert "cat " not in gen.shell()
+
+
+def test_ssh_keypair_generate_command_quotes_everything():
+    # A hostile username, key paths and comment stay data: recovering the
+    # nested scripts with shlex.split (never a raw substring of the quoted
+    # text) shows the keygen reaches su as one argument and the username as
+    # one word.
+    private = "/home/evil $(id)/.ssh/id_rsa"
+    comment = "a b' c"
+    gen = SshKeyPairGenerateCommand(
+        user="evil;id",
+        private_path=private,
+        public_path=f"{private}.pub",
+        key_type="rsa",
+        size=4096,
+        comment=comment,
+    )
+    run_as = shlex.split(gen.shell())[2]
+    argv = shlex.split(run_as)
+    assert argv[:4] == ["su", "-s", "/bin/sh", "evil;id"]
+    assert argv[4] == "-c"
+    assert argv[5].startswith(f"ssh-keygen -q -t rsa -b 4096 -f {shlex.quote(private)}")
+    assert argv[5].endswith(f"-N '' -C {shlex.quote(comment)}")
+
+
+def test_ssh_keypair_generate_command_is_hashable():
+    # Plain str/int/bool fields: hashable and value-equal across the
+    # prepare/apply phases (the determinism guard compares descriptors, and
+    # compose(dedupe=True) hashes the request that carries it).
+    assert hash(KP_GEN) == hash(
+        SshKeyPairGenerateCommand(
+            user=KP_USER,
+            private_path=KP_PRIV,
+            public_path=KP_PUB,
+            key_type="rsa",
+            size=4096,
+        )
+    )
+    assert KP_GEN != SshKeyPairGenerateCommand(
+        user=KP_USER,
+        private_path=KP_PRIV,
+        public_path=KP_PUB,
+        key_type="rsa",
+        size=2048,
+    )
+
+
+# The ``.ssh`` directory row the ensure block considers already correct.
+KP_DIR_OK = {KP_DIR: {"user": KP_USER, "group": KP_USER, "mode": 700}}
+
+
+@pytest.mark.parametrize(
+    ("seed", "kwargs", "expected"),
+    [
+        # Ansible's generate_ssh_key against a host where everything is in
+        # place: the directory matches and the public half has a fingerprint.
+        ({"directory_stats": KP_DIR_OK, "ssh_key_pairs": {KP_PUB: KP_FINGERPRINT}}, {}, []),
+        # The same state with force: exactly one regeneration, rm -f prefix and
+        # all.
+        (
+            {"directory_stats": KP_DIR_OK, "ssh_key_pairs": {KP_PUB: KP_FINGERPRINT}},
+            {"force": True},
+            [
+                SshKeyPairGenerateCommand(
+                    user=KP_USER,
+                    private_path=KP_PRIV,
+                    public_path=KP_PUB,
+                    key_type="rsa",
+                    size=4096,
+                    force=True,
+                )
+            ],
+        ),
+        # The directory exists with the wrong mode and no pair yet: one chmod
+        # followed by the generation.
+        (
+            {"directory_stats": {KP_DIR: {"user": KP_USER, "group": KP_USER, "mode": 755}}},
+            {},
+            [_KeysChmodCommand(path=KP_DIR, mode=700), KP_GEN],
+        ),
+        # A comment is carried through to -C, and a fresh user gets the whole
+        # ensure block first.
+        (
+            {},
+            {"comment": f"{KP_USER}@web01.example.com"},
+            [
+                _HomeMkdirCommand(path=KP_DIR),
+                _KeysChmodCommand(path=KP_DIR, mode=700),
+                _HomeChownCommand(path=KP_DIR, user=KP_USER, group=KP_USER),
+                SshKeyPairGenerateCommand(
+                    user=KP_USER,
+                    private_path=KP_PRIV,
+                    public_path=KP_PUB,
+                    key_type="rsa",
+                    size=4096,
+                    comment=f"{KP_USER}@web01.example.com",
+                ),
+            ],
+        ),
+        # An empty passphrase is the unprotected request spelled out: no error,
+        # and the plan is the plain generation with -N '' in it.
+        (
+            {"directory_stats": KP_DIR_OK},
+            {"passphrase": ""},
+            [KP_GEN],
+        ),
+    ],
+)
+async def test_ssh_keypair_plans_match_ansible(
+    seed: dict, kwargs: dict, expected: list
+):
+    host = SimulatedHost(name="h", home_directories={KP_USER: KP_HOME}, **seed)
+    ctx, commands = await materialize(
+        host, op(server.ssh_keypair, user=KP_USER, **kwargs)
+    )
+    assert [cmd for cmd in commands] == expected
+    assert ctx.changed == bool(expected)
+
+
+async def test_ssh_keypair_creates_the_directory_then_generates():
+    # The acceptance criterion's first run: the ensure block for the missing
+    # ``.ssh`` directory plus one generation, nothing else -- the key files
+    # themselves need no state verbs because ssh-keygen runs as the target user.
+    host = SimulatedHost(name="h", home_directories={KP_USER: KP_HOME})
+    ctx, commands = await materialize(host, op(server.ssh_keypair, user=KP_USER))
+    assert ctx.changed
+    assert ctx.reason == (
+        f"{KP_DIR} missing, will create; {KP_PUB} missing, will generate"
+    )
+    assert commands == [
+        _HomeMkdirCommand(path=KP_DIR),
+        _KeysChmodCommand(path=KP_DIR, mode=700),
+        _HomeChownCommand(path=KP_DIR, user=KP_USER, group=KP_USER),
+        KP_GEN,
+    ]
+
+
+async def test_ssh_keypair_noop_when_the_pair_exists():
+    host = SimulatedHost(
+        name="h",
+        home_directories={KP_USER: KP_HOME},
+        directory_stats=KP_DIR_OK,
+        ssh_key_pairs={KP_PUB: KP_FINGERPRINT},
+    )
+    ctx, commands = await materialize(host, op(server.ssh_keypair, user=KP_USER))
+    assert commands == []
+    assert not ctx.changed
+    assert ctx.reason == (
+        f"directory {KP_DIR} already exists; key pair {KP_PUB} already exists"
+    )
+
+
+async def test_ssh_keypair_force_regenerates_an_existing_pair():
+    # force is the one case where a present key still changes: the reason says
+    # regenerate and the descriptor carries the rm -f of both halves.
+    host = SimulatedHost(
+        name="h",
+        home_directories={KP_USER: KP_HOME},
+        directory_stats=KP_DIR_OK,
+        ssh_key_pairs={KP_PUB: KP_FINGERPRINT},
+    )
+    ctx, commands = await materialize(
+        host, op(server.ssh_keypair, user=KP_USER, force=True)
+    )
+    assert ctx.changed
+    assert ctx.reason == (
+        f"directory {KP_DIR} already exists; key pair {KP_PUB} exists, "
+        "will regenerate"
+    )
+    assert commands == [SshKeyPairGenerateCommand(
+        user=KP_USER,
+        private_path=KP_PRIV,
+        public_path=KP_PUB,
+        key_type="rsa",
+        size=4096,
+        force=True,
+    )]
+
+
+async def test_ssh_keypair_fixes_directory_owner_only():
+    # A root-owned ``.ssh`` (the state a plain ``sudo mkdir`` leaves behind) is
+    # chowned, and the missing pair is still generated in the same request.
+    host = SimulatedHost(
+        name="h",
+        home_directories={KP_USER: KP_HOME},
+        directory_stats={KP_DIR: {"user": "root", "group": "root", "mode": 700}},
+    )
+    ctx, commands = await materialize(host, op(server.ssh_keypair, user=KP_USER))
+    assert ctx.changed
+    assert ctx.reason == (
+        "owner root:root differs, will chown; "
+        f"{KP_PUB} missing, will generate"
+    )
+    assert commands == [_HomeChownCommand(path=KP_DIR, user=KP_USER, group=KP_USER), KP_GEN]
+
+
+async def test_ssh_keypair_ed25519_names_the_key_and_skips_the_size():
+    # The default private-key name embeds the type, and ed25519 has no length,
+    # so -b (and the requested size) disappears from the plan.
+    ed_priv = "/home/someuser/.ssh/id_ed25519"
+    host = SimulatedHost(
+        name="h",
+        home_directories={KP_USER: KP_HOME},
+        directory_stats=KP_DIR_OK,
+    )
+    ctx, commands = await materialize(
+        host, op(server.ssh_keypair, user=KP_USER, type="ed25519", size=2048)
+    )
+    assert ctx.changed
+    assert commands == [
+        SshKeyPairGenerateCommand(
+            user=KP_USER,
+            private_path=ed_priv,
+            public_path=f"{ed_priv}.pub",
+            key_type="ed25519",
+            size=2048,
+        )
+    ]
+    assert "-b" not in commands[0].shell()
+
+
+async def test_ssh_keypair_honours_an_explicit_path():
+    # An explicit *private* path bypasses the Home read entirely, so an
+    # unseeded home_directories seam (an unknown user) never even reaches the
+    # home-directory guard; the public half is the path plus .pub.
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host,
+        op(server.ssh_keypair, user=KP_USER, path="/srv/keys/deploy"),
+    )
+    assert ctx.changed
+    assert commands == [
+        _HomeMkdirCommand(path="/srv/keys"),
+        _KeysChmodCommand(path="/srv/keys", mode=700),
+        _HomeChownCommand(path="/srv/keys", user=KP_USER, group=KP_USER),
+        SshKeyPairGenerateCommand(
+            user=KP_USER,
+            private_path="/srv/keys/deploy",
+            public_path="/srv/keys/deploy.pub",
+            key_type="rsa",
+            size=4096,
+        ),
+    ]
+
+
+async def test_ssh_keypair_refuses_a_passphrase():
+    # The gpg.gen_key precedent: no secret may ride a plan, a command log or a
+    # /tmp file, so passphrase-protected generation is out of scope and the
+    # request fails while materializing -- before a single fact is read, so the
+    # host state the ensure block would touch stays untouched.
+    host = SimulatedHost(
+        name="h",
+        home_directories={KP_USER: KP_HOME},
+        directory_stats=KP_DIR_OK,
+    )
+    with pytest.raises(ValueError, match="out of scope") as excinfo:
+        await materialize(
+            host, op(server.ssh_keypair, user=KP_USER, passphrase=KP_PASSPHRASE)
+        )
+    # The message explains the refusal without quoting the secret, and nothing
+    # was planned or spooled.
+    assert KP_PASSPHRASE not in str(excinfo.value)
+    assert "/tmp" not in str(excinfo.value)
+    assert host.remote_files == {}
+    assert host.ssh_key_pairs == {}
+
+
+async def test_ssh_keypair_raises_on_unknown_user():
+    # The Home fact answers None for a user the host does not know: refuse it up
+    # front instead of planning a literal "None/.ssh" mkdir.
+    host = SimulatedHost(name="h")
+    with pytest.raises(OperationError, match="cannot resolve a home directory"):
+        await materialize(host, op(server.ssh_keypair, user=KP_USER))
+
+
+async def test_ssh_keypair_raises_on_wrong_typed_directory():
+    host = SimulatedHost(
+        name="h",
+        home_directories={KP_USER: KP_HOME},
+        directory_stats={KP_DIR: False},
+    )
+    with pytest.raises(OperationError, match="exists and is not a directory"):
+        await materialize(host, op(server.ssh_keypair, user=KP_USER))
+
+
+async def test_ssh_keypair_absorbs_unknown_kwargs():
+    # ``**kwargs`` mirrors the baseline's global-arguments slot; op() already
+    # strips name/sudo/su, the rest is ignored.
+    host = SimulatedHost(
+        name="h",
+        home_directories={KP_USER: KP_HOME},
+        directory_stats=KP_DIR_OK,
+        ssh_key_pairs={KP_PUB: KP_FINGERPRINT},
+    )
+    ctx, commands = await materialize(
+        host, op(server.ssh_keypair, user=KP_USER, future_flag=True)
+    )
+    assert commands == []
+    assert not ctx.changed
+
+
+async def test_generate_seam_writes_the_pair():
+    # The mutation keeps every store coherent so the next step's fresh fact
+    # cache reads the pair back: both halves land owned by the target user
+    # (ssh-keygen ran as them) and the fingerprint joins ssh_key_pairs under
+    # the public path.
+    host = SimulatedHost(name="h")
+    await send_command(
+        host,
+        SshKeyPairGenerateCommand(
+            user=KP_USER,
+            private_path=KP_PRIV,
+            public_path=KP_PUB,
+            key_type="rsa",
+            size=4096,
+        ),
+    )
+    assert host.ssh_key_pairs == {KP_PUB: KP_FINGERPRINT}
+    assert host.file_stats[KP_PRIV] == {
+        "user": KP_USER,
+        "group": KP_USER,
+        "mode": 600,
+        "size": len(b"-----BEGIN OPENSSH PRIVATE KEY-----\n"),
+    }
+    assert host.file_stats[KP_PUB]["mode"] == 644
+    assert host.remote_files[KP_PUB].startswith(b"rsa AAAADEMO")
+    # No spool is ever written, because there is no passphrase to spool.
+    assert not [path for path in host.remote_files if path.startswith("/tmp")]
+    # And the fact now reads the pair back, which is what makes a repeat run a
+    # no-op.
+    assert await SshKeyPair.process(host, KP_USER, path=KP_PUB) == KP_FINGERPRINT
+
+
+async def test_generate_seam_regenerates_in_place():
+    # force over an existing pair simply rewrites the rows (the real command
+    # rm -f's both halves first), so no stale seam survives the mutation.
+    host = SimulatedHost(
+        name="h",
+        directory_stats=KP_DIR_OK,
+        ssh_key_pairs={KP_PUB: "SHA256:stale"},
+    )
+    await send_command(host, KP_GEN)
+    assert host.ssh_key_pairs == {KP_PUB: KP_FINGERPRINT}
+    assert host.remote_files[KP_PRIV] == b"-----BEGIN OPENSSH PRIVATE KEY-----\n"
+
+
+def keypair_deploy(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: give someuser an SSH key pair (elevated)."""
+    yield op(
+        server.ssh_keypair,
+        name=f"Generate {KP_USER}'s key pair",
+        user=KP_USER,
+        sudo=True,
+    )
+
+
+def kp_seed_factory(entry: dict) -> Host:
+    """A SimulatedHost whose user has a home but no .ssh yet."""
+    host = SimulatedHost.from_inventory(entry)
+    host.home_directories = {KP_USER: KP_HOME}
+    return host
+
+
+async def test_ssh_keypair_end_to_end_creates_then_noops():
+    plans, report, hosts = await run(
+        INVENTORY, keypair_deploy, host_factory=kp_seed_factory
+    )
+    assert [p.changed for p in plans["web1"]] == [True]
+    (entry,) = report.log[0:1]
+    assert entry.changed
+    log = format_log(report)
+    assert "$ sudo mkdir -p /home/someuser/.ssh" in log
+    assert "$ sudo chmod 700 /home/someuser/.ssh" in log
+    assert f"sudo chown {KP_USER}:{KP_USER} /home/someuser/.ssh" in log
+    # One elevated ssh-keygen chain, run as the target user through su.
+    assert f"    $ sudo {KP_GEN.shell()}" in log
+    assert "ssh-keygen -q -t rsa -b 4096" in log
+    assert "su -s /bin/sh someuser" in log
+    for host in hosts:
+        assert host.ssh_key_pairs[KP_PUB] == KP_FINGERPRINT
+        assert host.directory_stats[KP_DIR]["mode"] == 700
+        assert host.file_stats[KP_PRIV]["user"] == KP_USER
+
+
+async def test_ssh_keypair_second_run_on_same_hosts_is_zero_commands():
+    # Reusing the mutated hosts (not a fresh factory) proves the generation left
+    # every seam coherent: the second run plans nothing and sends nothing.
+    hosts_by_name: dict[str, Host] = {}
+
+    def factory(entry: dict) -> Host:
+        host = kp_seed_factory(entry)
+        hosts_by_name[entry["host"]] = host
+        return host
+
+    await run(INVENTORY, keypair_deploy, host_factory=factory)
+    plans2, report2, _hosts2 = await run(
+        INVENTORY,
+        keypair_deploy,
+        host_factory=lambda entry: hosts_by_name[entry["host"]],
+    )
+    assert [p.changed for p in plans2["web1"]] == [False]
+    assert [e.changed for e in report2.log] == [False, False]
+    assert all(not e.commands for e in report2.log)
+
+
+async def test_ssh_keypair_repeat_request_is_noop_in_apply():
+    def twice(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.ssh_keypair,
+            name="Generate first",
+            user=KP_USER,
+            sudo=True,
+        )
+        yield op(
+            server.ssh_keypair,
+            name="Generate again",
+            user=KP_USER,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h", home_directories={KP_USER: KP_HOME})
+    runtimes, plans = await run_prepare([host], twice)
+    # Prepare shares one cache across the two requests and never sends, so both
+    # identical requests plan a change...
+    assert [p.changed for p in plans["h"]] == [True, True]
+    report = await run_apply(runtimes, plans=plans)
+    # ...while the per-step cache recreation makes the second a no-op.
+    assert [e.changed for e in report.log] == [True, False]
+    assert host.ssh_key_pairs[KP_PUB] == KP_FINGERPRINT
+
+
+async def test_ssh_keypair_passphrase_aborts_the_run_before_anything_is_sent():
+    def protected(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            server.ssh_keypair,
+            name="Generate a protected key pair",
+            user=KP_USER,
+            passphrase=KP_PASSPHRASE,
+            sudo=True,
+        )
+
+    hosts: list[Host] = []
+
+    def factory(entry: dict) -> Host:
+        host = kp_seed_factory(entry)
+        hosts.append(host)
+        return host
+
+    # The prepare phase aborts, so no directory is created and no key is
+    # generated anywhere -- and the secret never reaches the raised message.
+    with pytest.raises(ValueError, match="out of scope") as excinfo:
+        await run(INVENTORY, protected, host_factory=factory)
+    assert KP_PASSPHRASE not in str(excinfo.value)
+    assert hosts
+    for host in hosts:
+        assert host.ssh_key_pairs == {}
+        assert host.remote_files == {}
+        assert KP_DIR not in host.directory_stats
+
+
+async def test_ssh_keypair_dry_run_sends_nothing():
+    _plans, report, hosts = await run(
+        INVENTORY, keypair_deploy, host_factory=kp_seed_factory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert host.ssh_key_pairs == {}
+        assert host.remote_files == {}
+        assert KP_DIR not in host.directory_stats
+        assert KP_PUB not in host.file_stats
 
 
 # --- server.etc_hosts --------------------------------------------------------
