@@ -146,6 +146,41 @@ def test_restart_handler_without_sleep_omits_the_keyword():
     assert "sleep" not in request.kwargs
 
 
+def test_restart_handler_forwards_daemon_reload():
+    # Issue #50: a unit-file-bearing role's handler needs no hand-built
+    # deploy -- the factory forwards the gated daemon-reload flag.
+    (request,) = _requests(
+        restart_handler({"web1"}, "firewall", daemon_reload=True), Host(name="web1")
+    )
+
+    assert request.kwargs["restarted"] is True
+    assert request.kwargs["daemon_reload"] is True
+    # The bool keeps the request hashable, so the dedupe key still works.
+    hash(request)
+
+
+def test_reload_handler_forwards_daemon_reload():
+    (request,) = _requests(
+        reload_handler({"web1"}, "nginx", daemon_reload=True), Host(name="web1")
+    )
+
+    assert request.kwargs["reloaded"] is True
+    assert request.kwargs["daemon_reload"] is True
+
+
+def test_handlers_without_daemon_reload_omit_the_keyword():
+    # A handler built without ``daemon_reload`` yields exactly the request
+    # arguments it yielded before the parameter existed, so existing plans
+    # (and their hashes) are unchanged.
+    for deploy in (
+        restart_handler({"web1"}, "nginx"),
+        reload_handler({"web1"}, "nginx"),
+        service_handler({"web1"}, "nginx"),
+    ):
+        (request,) = _requests(deploy, Host(name="web1"))
+        assert "daemon_reload" not in request.kwargs
+
+
 def test_restart_handler_yields_one_request_per_service():
     deploy = restart_handler({"web1"}, ("nginx", "php-fpm"))
     requests = _requests(deploy, Host(name="web1"))
@@ -354,6 +389,45 @@ async def test_restart_handler_sleep_splits_the_logged_commands():
     assert "$ sudo sleep 5" in log
     assert "$ sudo systemctl start nginx.service" in log
     assert "$ sudo systemctl restart nginx.service" not in log
+
+
+async def test_daemon_reload_handler_reloads_then_converges():
+    # Issue #50 end to end: while the unit is reload-pending (what a
+    # ``files.install`` of its unit file leaves behind), the factory-built
+    # handler logs ``daemon-reload`` then ``restart``; the reload consumes the
+    # pending state, so the next run of the same handler deploy logs no
+    # reload at all -- no hand-built deploy involved.
+    seeded: dict[str, Host] = {}
+
+    def persistent_factory(entry: dict) -> Host:
+        host = seeded.get(entry["host"])
+        if host is None:
+            host = SimulatedHost.from_inventory(entry)
+            host.services = {"firewall.service": "active"}
+            host.systemd_reload_pending = {"firewall.service"}
+            seeded[entry["host"]] = host
+        return host
+
+    restart = restart_handler({"web1", "web2"}, "firewall", daemon_reload=True)
+
+    _plans, report, _hosts = await run(
+        INVENTORY, restart, host_factory=persistent_factory
+    )
+    assert report is not None
+    log = format_log(report)
+    assert log.count("$ sudo systemctl daemon-reload") == 2
+    assert log.count("$ sudo systemctl restart firewall.service") == 2
+
+    _plans, second, _hosts = await run(
+        INVENTORY, restart, host_factory=persistent_factory
+    )
+    assert second is not None
+    second_log = format_log(second)
+    # The gated reload converged; the stateless restart verb still fires.
+    assert "daemon-reload" not in second_log
+    assert second_log.count("$ sudo systemctl restart firewall.service") == 2
+    for host in seeded.values():
+        assert host.systemd_reload_pending == set()
 
 
 async def test_handler_dry_run_is_an_honest_preview():

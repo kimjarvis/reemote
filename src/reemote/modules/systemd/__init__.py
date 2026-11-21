@@ -4,7 +4,8 @@
 """The ``systemd`` module namespace.
 
 Re-exports everything from ``systemd.py`` so the facts (the per-unit
-``systemd.SystemdServiceState``/``systemd.SystemdServiceEnabled`` probes, the
+``systemd.SystemdServiceState``/``systemd.SystemdServiceEnabled``/
+``systemd.SystemdNeedDaemonReload`` probes, the
 fleet-wide ``systemd.SystemdStatus``/``systemd.SystemdEnabled`` ports, and the
 originals ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``,
 ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState`` and
@@ -28,6 +29,7 @@ from .systemd import (
     SystemdFileInstallCommand,
     SystemdFileRemoveCommand,
     SystemdFileUploadCommand,
+    SystemdNeedDaemonReload,
     SystemdServiceEnabled,
     SystemdServiceState,
     SystemdStatus,
@@ -61,6 +63,7 @@ __all__ = [
     "SystemdFileInstallCommand",
     "SystemdFileRemoveCommand",
     "SystemdFileUploadCommand",
+    "SystemdNeedDaemonReload",
     "SystemdServiceEnabled",
     "SystemdServiceState",
     "SystemdStatus",

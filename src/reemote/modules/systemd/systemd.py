@@ -12,9 +12,11 @@
 # both sides key on.
 #
 # Fact side: ``SystemdServiceState`` (a unit's raw ``ActiveState`` string, or
-# None when systemd answers nothing) and ``SystemdServiceEnabled`` (whether a
-# unit's ``UnitFileState`` counts as enabled) are the per-unit probes the
-# ``service`` operation reads for idempotence. ``SystemdStatus`` and
+# None when systemd answers nothing), ``SystemdServiceEnabled`` (whether a
+# unit's ``UnitFileState`` counts as enabled) and
+# ``SystemdNeedDaemonReload`` (whether the unit's cached fragment is stale,
+# ``NeedDaemonReload=yes``) are the per-unit probes the ``service`` and
+# ``daemon_reload`` operations read for idempotence. ``SystemdStatus`` and
 # ``SystemdEnabled`` are the two fleet-wide facts (the unit -> active
 # bool and unit -> enabled bool parsed from ``systemctl show --all``).
 # Seven reemote originals widen the visibility: ``SystemdUnitProperties``
@@ -31,8 +33,10 @@
 # Operation side: ``service`` manages a unit through
 # the ``SystemctlCommand`` descriptor, reading
 # ``SystemdServiceState``/``SystemdServiceEnabled`` for idempotence, and
-# ``daemon_reload`` runs a stateless reload. Six reemote originals
-# widen the control surface: ``mask``/``reset_failed``/``preset`` (systemctl
+# ``daemon_reload`` reloads the daemon -- stateless with no unit (the
+# baseline's contract), gated on ``SystemdNeedDaemonReload`` for one. Six
+# reemote originals widen the control surface: ``mask``/``reset_failed``/
+# ``preset`` (systemctl
 # verbs through ``SystemctlCommand``) and ``dropin``/``tmpfiles``/``sysusers``
 # (root-owned ``/etc`` config writes through the spool-transfer +
 # elevated-install ``SystemdFileUploadCommand``/``SystemdFileInstallCommand``/
@@ -279,6 +283,78 @@ class SystemdServiceEnabled:
         # stdout maps to False.
         stdout = await host.run_shell(cls.command(service, user_mode, machine, user_name))
         return stdout.strip() in cls.ENABLED_STATES
+
+
+class SystemdNeedDaemonReload:
+    """Whether systemd's cached fragment for a unit is stale (``NeedDaemonReload``).
+
+    **Commands:**
+
+    ```bash
+    systemctl show -p NeedDaemonReload --value <unit>
+    ```
+
+    **Returns:**
+
+    ```python
+    bool
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/systemd/systemd_daemon_reload.py``.
+    """
+
+    # systemd caches each unit's parsed fragment; editing the unit file on
+    # disk (a ``files.install`` of a ``/etc/systemd/system`` path, a package
+    # upgrade) leaves the cache stale until ``daemon-reload`` runs, and
+    # ``NeedDaemonReload`` is the one property that answers ``yes`` while it
+    # does -- ``no`` (or nothing, for a unit systemd cannot load) is the
+    # converged answer. The ``daemon_reload`` operation with a ``unit`` and
+    # ``service(daemon_reload=True)`` read this fact to make the reload
+    # state-gated. A bare name is normalized with ``unit_name``.
+    #
+    # SimulatedHost seam: ``systemd_reload_pending`` holds the full unit names
+    # whose on-disk file was written since the last simulated
+    # ``daemon-reload``; membership answers. The scope flags are ignored by
+    # the single system-scope store -- a documented approximation; the real
+    # transport renders them faithfully.
+
+    @classmethod
+    def command(
+        cls,
+        unit: str,
+        user_mode: bool = False,
+        machine: str | None = None,
+        user_name: str | None = None,
+    ) -> str:
+        """The ``systemctl show`` command for a unit's ``NeedDaemonReload`` flag."""
+        base = _systemctl_cmd(user_mode, machine, user_name)
+        return f"{base} show -p NeedDaemonReload --value {shlex.quote(unit_name(unit))}"
+
+    @classmethod
+    async def process(
+        cls,
+        host: Host,
+        unit: str,
+        user_mode: bool = False,
+        machine: str | None = None,
+        user_name: str | None = None,
+    ) -> bool:
+        pending = getattr(host, "systemd_reload_pending", None)
+        if pending is not None:
+            # SimulatedHost seam: membership in the pending-unit set.
+            return unit_name(unit) in pending
+        # Real transport: `systemctl show` over asyncssh; the property
+        # prints ``yes``/``no`` with ``--value``, and anything else (an
+        # empty answer for an unloadable unit) is not pending.
+        stdout = await host.run_shell(cls.command(unit, user_mode, machine, user_name))
+        return stdout.strip() == "yes"
 
 
 class SystemdStatus:
@@ -1238,7 +1314,9 @@ async def service(
         enabled (bool | None, optional): Whether the unit should be enabled
             on boot; ``None`` leaves the boot setting alone. Defaults to None.
         daemon_reload (bool, optional): Reload the systemd daemon to read
-            updated unit files before anything else. Defaults to False.
+            updated unit files before anything else, only while the unit
+            reports ``NeedDaemonReload`` -- idempotent, so a converged run
+            yields no reload. Defaults to False.
         reset_failed (bool, optional): Clear a ``failed`` state with
             ``reset-failed`` before starting/restarting. Defaults to False.
         soft_reload (bool, optional): When ``reloaded`` is set, use
@@ -1349,8 +1427,10 @@ async def service(
     # the dedicated operations cover the rest -- so that keyword is absorbed
     # by ``**kwargs`` with no effect.
     #
-    # ``daemon_reload`` and ``restarted``/``reloaded`` are stateless (always
-    # yield when set, like any non-idempotent operation);
+    # ``daemon_reload`` is gated on the ``SystemdNeedDaemonReload`` read (the
+    # reload is yielded only while the unit's cached fragment is stale),
+    # while ``restarted``/``reloaded`` are stateless (always yield when set,
+    # like any non-idempotent operation);
     # ``running`` and ``enabled`` compare against the
     # ``SystemdServiceState``/``SystemdServiceEnabled`` facts and yield only
     # when the unit differs from the request. A unit counts as running only
@@ -1363,7 +1443,12 @@ async def service(
     reasons: list[str] = []
     scope = {"user_mode": user_mode, "machine": machine, "user_name": user_name}
 
-    if daemon_reload:
+    # State-gated (issue #50): systemd invalidates its cached fragment on
+    # ``daemon-reload``, so a converged run answers ``no`` and the reload
+    # -- the whole point of which is a real on-disk unit-file change -- is
+    # skipped. This is what lets a handler request stay
+    # ``daemon_reload=True, restarted=True`` without breaking convergence.
+    if daemon_reload and await ctx.facts.get(SystemdNeedDaemonReload, unit, **scope):
         ctx.changed = True
         reasons.append("daemon-reload")
         yield SystemctlCommand(action="daemon-reload", **scope)
@@ -1435,6 +1520,7 @@ async def daemon_reload(
     user_mode: bool = False,
     machine: str | None = None,
     user_name: str | None = None,
+    unit: str | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Reload the systemd daemon to read unit file changes.
@@ -1447,10 +1533,16 @@ async def daemon_reload(
             (``--machine=<machine>``). Defaults to None.
         user_name (str | None, optional): Connect to a specific user's
             systemd session. Defaults to None.
+        unit (str | None, optional): Make the reload state-gated -- yield
+            only while this unit reports ``NeedDaemonReload`` (its cached
+            fragment is stale). ``None`` (the default) keeps the baseline's
+            unconditional, stateless reload. A bare name gets ``.service``
+            appended, any other systemd suffix is kept.
         **kwargs: Additional keyword arguments.
 
     Yields:
-        Command: A single ``systemctl daemon-reload`` command.
+        Command: A single ``systemctl daemon-reload`` command -- always with
+            no ``unit``, only while it is reload-pending with one.
 
     **Raises:**
 
@@ -1463,7 +1555,19 @@ async def daemon_reload(
         from reemote import op, systemd
 
         # Pick up changed unit files  ->  systemctl daemon-reload
+        # (stateless: no fact is read, every run plans the reload -- use this
+        #  form when something other than a managed unit file changed)
         yield op(systemd.daemon_reload, name="Reload systemd daemon", sudo=True)
+
+        # The state-gated form of a unit whose file a files.install just wrote
+        # ->  systemctl daemon-reload, but only while NeedDaemonReload=yes
+        # (a converged run yields nothing and reports no change)
+        yield op(
+            systemd.daemon_reload,
+            name="Reload if firewall.unit is stale",
+            unit="firewall",
+            sudo=True,
+        )
 
         # The per-user manager needs no escalation  ->  systemctl --user daemon-reload
         yield op(
@@ -1476,17 +1580,28 @@ async def daemon_reload(
         Examples can be found in ``examples/modules/systemd/systemd_daemon_reload.py``.
     """
 
-    # Stateless and non-idempotent, it reads no fact and always yields one
-    # ``daemon-reload`` command. Needs root for a
+    # Two contracts, split by ``unit``. With none the operation stays
+    # stateless and non-idempotent -- the baseline's behavior, kept for
+    # callers who want the unconditional reload (a deliberate statelessness
+    # like ``iptables.zero``, documented as such): it reads no fact and always
+    # yields one ``daemon-reload`` command. With a unit it becomes
+    # state-gated the way ``mask`` and ``reset_failed`` are: read
+    # ``SystemdNeedDaemonReload`` and yield only while the unit's cached
+    # fragment is stale, so the idempotent companion of a unit-file
+    # ``files.install`` converges to no change. Needs root for a
     # system manager: flag the request ``sudo=True``.
-    ctx.changed = True
-    ctx.reason = "daemon-reload"
-    yield SystemctlCommand(
-        action="daemon-reload",
-        user_mode=user_mode,
-        machine=machine,
-        user_name=user_name,
-    )
+    scope = {"user_mode": user_mode, "machine": machine, "user_name": user_name}
+    if unit is not None:
+        unit = unit_name(unit)
+        if not await ctx.facts.get(SystemdNeedDaemonReload, unit, **scope):
+            ctx.reason = f"{unit} not reload-pending, nothing to do"
+            return
+        ctx.changed = True
+        ctx.reason = f"{unit} reload-pending, will daemon-reload"
+    else:
+        ctx.changed = True
+        ctx.reason = "daemon-reload"
+    yield SystemctlCommand(action="daemon-reload", **scope)
 
 
 # --- systemd.mask / systemd.reset_failed -------------------------------------
@@ -2261,6 +2376,7 @@ __all__ = [
     "SystemdFileInstallCommand",
     "SystemdFileRemoveCommand",
     "SystemdFileUploadCommand",
+    "SystemdNeedDaemonReload",
     "SystemdServiceEnabled",
     "SystemdServiceState",
     "SystemdStatus",

@@ -109,6 +109,7 @@ def service_handler(
     *,
     action: str = "restarted",
     sleep: int | None = None,
+    daemon_reload: bool = False,
     name: str | None = None,
     sudo: Privilege | bool = True,
     when: WhenPredicate | tuple[WhenPredicate, ...] | None = None,
@@ -156,6 +157,12 @@ def service_handler(
             byte-identical to one built without this argument. Like the
             operation, it is only honored on the restart path: with
             ``action="reloaded"`` or ``"running"`` it is forwarded and ignored.
+        daemon_reload (bool): Forward ``daemon_reload=True`` to each
+            ``systemd.service`` request, so a unit-file-bearing role's handler
+            reloads the daemon before restarting -- state-gated (issue #50),
+            the reload is issued only while the unit reports
+            ``NeedDaemonReload``. ``False`` (the default) omits the keyword
+            entirely, so the plan is byte-identical to one built without it.
         name (str | None): A label template for each request's plan/log ``name``,
             formatted with ``service=``. When ``None`` (the default) it is built
             from ``action`` -- e.g. ``"Restart nginx (handler)"``,
@@ -188,9 +195,14 @@ def service_handler(
     notified = frozenset(hosts)
     units = (services,) if isinstance(services, str) else tuple(services)
     label = name if name is not None else f"{verb} {{service}} (handler)"
-    # Forwarded only when set, so a handler built without ``sleep`` yields the
-    # very request arguments it yielded before this parameter existed.
-    extra: dict[str, Any] = {} if sleep is None else {"sleep": sleep}
+    # Forwarded only when set, so a handler built without ``sleep`` or
+    # ``daemon_reload`` yields the very request arguments it yielded before
+    # these parameters existed.
+    extra: dict[str, Any] = {}
+    if sleep is not None:
+        extra["sleep"] = sleep
+    if daemon_reload:
+        extra["daemon_reload"] = True
 
     def handler(host: Host) -> Generator[OperationRequest]:
         if host.name not in notified:
@@ -214,6 +226,7 @@ def restart_handler(
     services: str | Iterable[str],
     *,
     sleep: int | None = None,
+    daemon_reload: bool = False,
     name: str | None = None,
     sudo: Privilege | bool = True,
     when: WhenPredicate | tuple[WhenPredicate, ...] | None = None,
@@ -227,9 +240,9 @@ def restart_handler(
     over a freshly-installed, stopped unit starts it, and a running unit is
     restarted -- matching the ``notify: restart <svc>`` idiom. See
     :func:`service_handler` for the full contract (the frozen-set branch,
-    determinism, the converged no-op); ``sleep``, ``name``, ``sudo`` and ``when``
-    are forwarded verbatim, and ``name`` defaults to ``"Restart {service}
-    (handler)"``.
+    determinism, the converged no-op); ``sleep``, ``daemon_reload``, ``name``,
+    ``sudo`` and ``when`` are forwarded verbatim, and ``name`` defaults to
+    ``"Restart {service} (handler)"``.
 
     Args:
         hosts (Iterable[str]): The host names to visit -- typically the
@@ -238,6 +251,8 @@ def restart_handler(
         sleep (int | None): Seconds to pause between the stop and the start of
             each restart (Ansible's ``sleep:``); ``None`` keeps the single
             ``systemctl restart``.
+        daemon_reload (bool): Reload the daemon (state-gated) before each
+            restart -- for handlers notified by a unit-file write.
         name (str | None): A label template formatted with ``service=``; ``None``
             builds ``"Restart {service} (handler)"``.
         sudo (Privilege | bool): The escalation flag forwarded to each request.
@@ -253,6 +268,7 @@ def restart_handler(
         services,
         action="restarted",
         sleep=sleep,
+        daemon_reload=daemon_reload,
         name=name,
         sudo=sudo,
         when=when,
@@ -263,6 +279,7 @@ def reload_handler(
     hosts: Iterable[str],
     services: str | Iterable[str],
     *,
+    daemon_reload: bool = False,
     name: str | None = None,
     sudo: Privilege | bool = True,
     when: WhenPredicate | tuple[WhenPredicate, ...] | None = None,
@@ -276,14 +293,16 @@ def reload_handler(
     ``notify: reload <svc>`` idiom -- the reload-on-config-change half of a role
     that also restarts on other changes, so a config/vhost write can queue a
     reload while a package or default-vhost change queues a restart. See
-    :func:`service_handler` for the full contract; ``name``, ``sudo`` and
-    ``when`` are forwarded verbatim, and ``name`` defaults to ``"Reload
-    {service} (handler)"``.
+    :func:`service_handler` for the full contract; ``daemon_reload``, ``name``,
+    ``sudo`` and ``when`` are forwarded verbatim, and ``name`` defaults to
+    ``"Reload {service} (handler)"``.
 
     Args:
         hosts (Iterable[str]): The host names to visit -- typically the
             frozenset ``changed_hosts`` returned.
         services (str | Iterable[str]): One service name, or several.
+        daemon_reload (bool): Reload the daemon (state-gated) before each
+            reload -- for handlers notified by a unit-file write.
         name (str | None): A label template formatted with ``service=``; ``None``
             builds ``"Reload {service} (handler)"``.
         sudo (Privilege | bool): The escalation flag forwarded to each request.
@@ -295,7 +314,13 @@ def reload_handler(
         pure over the frozen ``hosts`` set.
     """
     return service_handler(
-        hosts, services, action="reloaded", name=name, sudo=sudo, when=when
+        hosts,
+        services,
+        action="reloaded",
+        daemon_reload=daemon_reload,
+        name=name,
+        sudo=sudo,
+        when=when,
     )
 
 

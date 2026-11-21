@@ -86,7 +86,7 @@ a real asyncssh transport is missing:
   / ``selinux_logins`` / ``selinux_users`` / ``selinux_modules``
   / ``selinux_permissive_domains``
   / ``smbios_info`` / ``snap_package_info`` / ``sysctls`` / ``systemd_dependencies`` / ``systemd_failed_units``
-  / ``systemd_system_state`` / ``systemd_timers`` / ``systemd_unit_files``
+  / ``systemd_reload_pending`` / ``systemd_system_state`` / ``systemd_timers`` / ``systemd_unit_files``
   / ``systemd_unit_properties`` / ``systemd_version`` / ``os_timezone`` / ``os_user`` / ``os_users``
   / ``ufw_applications`` / ``ufw_rules`` / ``ufw_status``
   / ``uptime_seconds`` / ``virtualenv_python_versions`` / ``command_paths``:
@@ -99,7 +99,7 @@ a real asyncssh transport is missing:
   ``DnfRepoList``,
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``, ``RpmGpgKeys``,
-  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``SystemdStatus``, ``SystemdEnabled``, ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState``, ``SystemdDependencies``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``ApkRepositoriesFile``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpdateStamp``, ``AptUpgradable``, ``Arch``,
+  ``SystemdServiceState``, ``SystemdServiceEnabled``, ``SystemdNeedDaemonReload``, ``SystemdStatus``, ``SystemdEnabled``, ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState``, ``SystemdDependencies``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``ApkRepositoriesFile``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpdateStamp``, ``AptUpgradable``, ``Arch``,
   ``AuthorizedKeys``, ``AuthorizedKeysFile``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Crontab`` (reads the whole-table ``crontab_text`` seam), ``Date``, ``DebPackage``,
   ``DefaultIpv4Address``, ``DiskStats``, ``DmiInfo``, ``Env``, ``EtcHosts`` (parses the shared
   ``remote_files`` seam at the hosts-file path), ``FirewalldStatus``, ``FirewalldDefaultZone``,
@@ -554,6 +554,7 @@ from reemote.modules.sysctl.sysctl import (
     _parse_conf,
 )
 from reemote.modules.systemd.systemd import (
+    _UNIT_SUFFIXES,
     SystemctlCommand,
     SystemdFailedUnit,
     SystemdFileInstallCommand,
@@ -1978,9 +1979,14 @@ class SimulatedHost(Host):
     # simulated effect.
     sysctls: dict[str, Any] = field(default_factory=dict)
     # Simulated systemd visibility -- the read-side seams for the seven
-    # reemote-original facts (the two the baseline ports project the ``services``/
-    # ``enabled_services`` stores above). A test seeds each directly; the
-    # facts issue no write command, so no fact-only arm maintains them. The
+    # reemote-original facts (the two the baseline ports project the
+    # ``services``/``enabled_services`` stores above, plus the
+    # ``systemd_reload_pending`` store backing
+    # ``SystemdNeedDaemonReload``). A test seeds the fact-only ones
+    # directly; those facts issue no write command, so no
+    # ``execute_command`` arm maintains them (``systemd_reload_pending`` is
+    # the exception: the file installs and the ``daemon-reload`` arm
+    # maintain it -- see below). The
     # ``mask``/``preset`` operations (which change a unit's boot state) do
     # mutate ``systemd_unit_files`` -- see their execute_command arms. The
     # scope flags (user_mode/machine/user_name) are ignored: one system-scope
@@ -2013,6 +2019,15 @@ class SimulatedHost(Host):
     # operation reads it for idempotence), keeping it in sync with
     # ``systemd_unit_files``.
     systemd_unit_properties: dict[str, dict[str, str]] = field(default_factory=dict)
+    # The units whose on-disk file changed since the last simulated
+    # ``daemon-reload`` (full unit names), backing ``SystemdNeedDaemonReload``
+    # and the state-gated ``daemon_reload``/``service(daemon_reload=True)``
+    # reads. The simulation models systemd's stale cached fragment: a unit
+    # file or drop-in installed under a ``/systemd/system/`` path joins the
+    # set (``install_file``/``install_systemd_conf_file``), a simulated
+    # ``systemctl daemon-reload`` clears it. Defaults to the empty set --
+    # nothing pending, the converged answer.
+    systemd_reload_pending: set[str] = field(default_factory=set)
     # The ``systemctl --version`` banner (a partial/empty dict normalizes to
     # version None), backing ``SystemdVersion``. Defaults to {} -- a simulated
     # host whose systemctl could not be read.
@@ -2398,7 +2413,9 @@ class SimulatedHost(Host):
             case MountCommand(path=path, device=device, fs_type=fs_type, options=options):
                 self.mount_filesystem(path, device, fs_type, options)
             case SystemctlCommand(action="daemon-reload"):
-                pass  # the simulation tracks no unit files to reload
+                # The reload invalidates every cached fragment: the pending
+                # state ``SystemdNeedDaemonReload`` answers clears wholesale.
+                self.systemd_reload_pending.clear()
             case SystemctlCommand(
                 action="start" | "restart" | "reload" | "reload-or-try-restart",
                 unit=unit,
@@ -4394,6 +4411,7 @@ class SimulatedHost(Host):
             "mode": 644,
             "size": len(data),
         }
+        self.mark_systemd_unit_reload_pending(dest)
 
     def remove_systemd_conf_file(self, path: str) -> None:
         """Record a simulated systemd config removal (``present=False``).
@@ -4534,6 +4552,26 @@ class SimulatedHost(Host):
         for unit in list(self.systemd_unit_files):
             self.preset_systemd_unit(unit)
 
+    def mark_systemd_unit_reload_pending(self, path: str) -> None:
+        """Record that a unit's on-disk file changed: the unit is reload-pending.
+
+        systemd caches each unit's parsed fragment, and a file installed
+        under a ``/systemd/system/`` load path (``/etc``, ``/run``,
+        ``/usr/lib`` or ``/lib``) leaves that cache stale -- the state
+        ``SystemdNeedDaemonReload`` answers and the simulated
+        ``systemctl daemon-reload`` clears. A top-level unit file
+        (``<unit>.service``) marks its own unit; a drop-in
+        (``<unit>.d/<name>.conf``) marks the unit owning the directory. Any
+        other path marks nothing.
+        """
+        if "/systemd/system/" not in path:
+            return
+        pure = PurePosixPath(path)
+        if pure.name.endswith(_UNIT_SUFFIXES):
+            self.systemd_reload_pending.add(pure.name)
+        elif pure.parent.name.endswith(".d"):
+            self.systemd_reload_pending.add(pure.parent.name[:-2])
+
     def put_file(self, src, dest: str) -> None:
         """Record a simulated scp upload: store the IO-like source's content.
 
@@ -4600,6 +4638,10 @@ class SimulatedHost(Host):
             "mode": mode,
             "size": len(data),
         }
+        # A unit file installed by ``files.install`` (the templated-unit
+        # pattern of role migrations) makes the unit reload-pending, the
+        # state ``SystemdNeedDaemonReload`` gates the idempotent reload on.
+        self.mark_systemd_unit_reload_pending(dest)
 
     def login_can_read(self, path: str) -> bool:
         """Whether the login user can read the file at ``path`` (POSIX bits).

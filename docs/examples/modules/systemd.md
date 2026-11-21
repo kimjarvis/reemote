@@ -57,9 +57,14 @@ determinism guard holds even though the unit name differs per host.
 ## Reloading the daemon
 
 The daemon-reload operation: `systemd.daemon_reload` ports the baseline's stateless
-`systemctl daemon-reload`. It reads no fact and always yields, so every planned
-reload shows as a change — the step that makes systemd re-read unit files
-after an edit.
+`systemctl daemon-reload` and keeps that contract in the no-unit form — it
+reads no fact and always yields, so every planned reload shows as a change.
+With a `unit` the operation becomes state-gated: it reads
+[`SystemdNeedDaemonReload`][reemote.modules.systemd.systemd.SystemdNeedDaemonReload]
+and yields the reload only while that unit's cached fragment is stale — the
+idempotent companion of a `files.install` of a unit file, so a converged
+second pass reports no change. The script runs both forms side by side to
+show the contrast in the plan.
 
 ::: systemd_daemon_reload
     options:

@@ -10,12 +10,14 @@ here from `server`, which re-exports them for backward compatibility (its
 the relocated `SystemdServiceState`.
 
 Beyond the two the baseline ports (`SystemdStatus`/`SystemdEnabled` facts and the
-`service`/`daemon_reload` operations), the namespace adds seven original facts
+`service`/`daemon_reload` operations), the namespace adds eight original facts
 and six original operations. Every `systemctl`-based fact and operation
 accepts the scope flags `user_mode`/`machine`/`user_name` to target the
 per-user manager, a named machine, or a specific user's session. Operations
 are idempotent through facts: they read the current state and yield a command
-descriptor only when it differs from the request.
+descriptor only when it differs from the request — `daemon_reload` with a
+`unit` included, gated on the `NeedDaemonReload` property read (the no-unit
+form stays the baseline's stateless reload).
 
 The three file-based operations (`dropin`/`tmpfiles`/`sysusers`) are
 **system-scope only** — they write root-owned `/etc/...` paths through an
@@ -35,6 +37,7 @@ never forwarded to the operation.
         - SystemdEnabled
         - SystemdFailedUnit
         - SystemdFailedUnits
+        - SystemdNeedDaemonReload
         - SystemdServiceEnabled
         - SystemdServiceState
         - SystemdStatus

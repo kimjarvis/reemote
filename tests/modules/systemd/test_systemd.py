@@ -4,8 +4,9 @@
 """Tests for the systemd module: facts, descriptors and operations.
 
 Covers ``reemote.modules.systemd.systemd``: the ``unit_name`` normalization
-helper; the per-unit ``SystemdServiceState``/``SystemdServiceEnabled`` probes
-and the ``service``/``daemon_reload`` operations (idempotence against the
+helper; the per-unit ``SystemdServiceState``/``SystemdServiceEnabled``/
+``SystemdNeedDaemonReload`` probes and the ``service``/``daemon_reload``
+operations (idempotence against the
 seams, seam mutation, the baseline operation-fixture parity, the Ansible
 ``sleep`` restart split and the backward-compatible ``server.service``
 alias); the fleet-wide
@@ -53,6 +54,7 @@ from reemote.modules.systemd.systemd import (
     SystemdFileInstallCommand,
     SystemdFileRemoveCommand,
     SystemdFileUploadCommand,
+    SystemdNeedDaemonReload,
     SystemdServiceEnabled,
     SystemdServiceState,
     SystemdStatus,
@@ -136,6 +138,21 @@ async def test_systemd_service_enabled_reads_the_simulated_seam():
     host = SimulatedHost(name="h", enabled_services={"httpd.service"})
     assert await SystemdServiceEnabled.process(host, "httpd")
     assert not await SystemdServiceEnabled.process(host, "nginx")
+
+
+async def test_systemd_need_daemon_reload_parses_the_property():
+    host = CannedShellHost("yes\n")
+    assert await SystemdNeedDaemonReload.process(host, "httpd")
+    assert host.shells == ["systemctl show -p NeedDaemonReload --value httpd.service"]
+    assert not await SystemdNeedDaemonReload.process(CannedShellHost("no\n"), "httpd")
+    # An empty answer (a unit systemd cannot load) is not pending.
+    assert not await SystemdNeedDaemonReload.process(CannedShellHost(""), "httpd")
+
+
+async def test_systemd_need_daemon_reload_reads_the_simulated_seam():
+    host = SimulatedHost(name="h", systemd_reload_pending={"httpd.service"})
+    assert await SystemdNeedDaemonReload.process(host, "httpd")
+    assert not await SystemdNeedDaemonReload.process(host, "nginx")
 
 
 # --- service -----------------------------------------------------------------
@@ -235,9 +252,15 @@ async def test_service_enabled_none_leaves_boot_setting_alone():
     assert "enabled" not in ctx.reason
 
 
-async def test_service_daemon_reload_always_yields_first():
+async def test_service_daemon_reload_yields_first_when_the_unit_is_pending():
+    # The state-gated reload (issue #50): a pending unit -- what a
+    # ``files.install`` of the unit file leaves behind -- yields the reload
+    # before anything else.
     host = SimulatedHost(
-        name="h", services={"httpd.service": "inactive"}, enabled_services=set()
+        name="h",
+        services={"httpd.service": "inactive"},
+        enabled_services=set(),
+        systemd_reload_pending={"httpd.service"},
     )
     ctx, commands = await materialize(
         host,
@@ -248,6 +271,45 @@ async def test_service_daemon_reload_always_yields_first():
         SystemctlCommand(action="daemon-reload"),
         SystemctlCommand(action="start", unit="httpd.service"),
         SystemctlCommand(action="enable", unit="httpd.service"),
+    ]
+
+
+async def test_service_daemon_reload_skips_a_converged_unit():
+    # The next pass with the unit unchanged: NeedDaemonReload=no, so the same
+    # request plans nothing -- the convergence the stateless flag destroyed.
+    host = SimulatedHost(
+        name="h",
+        services={"httpd.service": "active"},
+        enabled_services={"httpd.service"},
+    )
+    ctx, commands = await materialize(
+        host,
+        op(systemd.service, service="httpd", enabled=True, daemon_reload=True),
+    )
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_service_daemon_reload_then_restart_pending_unit():
+    # The handler request shape of issue #50: daemon-reload, then restart.
+    host = SimulatedHost(
+        name="h",
+        services={"firewall.service": "active"},
+        systemd_reload_pending={"firewall.service"},
+    )
+    ctx, commands = await materialize(
+        host,
+        op(
+            systemd.service,
+            service="firewall",
+            daemon_reload=True,
+            restarted=True,
+        ),
+    )
+    assert ctx.changed
+    assert commands == [
+        SystemctlCommand(action="daemon-reload"),
+        SystemctlCommand(action="restart", unit="firewall.service"),
     ]
 
 
@@ -360,6 +422,13 @@ async def test_service_matches_baseline_operation_fixtures(
         name="h",
         services={unit_name(service): state},
         enabled_services=set(enabled_units),
+        # The gated ``daemon_reload`` flag (issue #50) reads
+        # ``SystemdNeedDaemonReload``; seed the pending seam so the baseline
+        # fixtures' ``daemon-reload`` rows answer "yes", as they do after a
+        # real unit-file write.
+        systemd_reload_pending=(
+            {unit_name(service)} if kwargs.get("daemon_reload") else set()
+        ),
     )
     ctx, commands = await materialize(host, op(systemd.service, service=service, **kwargs))
     assert ctx.changed is changed
@@ -600,10 +669,37 @@ def test_daemon_reload_command_rendering():
 async def test_daemon_reload_always_yields_with_scope(kwargs: dict, expected: str):
     host = SimulatedHost(name="h")
     ctx, commands = await materialize(host, op(systemd.daemon_reload, **kwargs))
-    # Stateless and non-idempotent: changed even with no unit state at all.
+    # The no-unit form stays stateless and non-idempotent (issue #50 keeps
+    # the baseline contract for callers who want the unconditional reload).
     assert ctx.changed
     assert ctx.reason == "daemon-reload"
     assert [command_shell(cmd) for cmd in commands] == [expected]
+
+
+async def test_daemon_reload_gated_with_a_unit_yields_while_pending():
+    host = SimulatedHost(name="h", systemd_reload_pending={"firewall.service"})
+    ctx, commands = await materialize(host, op(systemd.daemon_reload, unit="firewall"))
+    assert ctx.changed
+    assert ctx.reason == "firewall.service reload-pending, will daemon-reload"
+    assert commands == [SystemctlCommand(action="daemon-reload")]
+
+
+async def test_daemon_reload_gated_with_a_unit_converges_to_no_change():
+    # The next pass with the unit file unchanged: nothing pending, so the
+    # same request plans no command and reports no change.
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(host, op(systemd.daemon_reload, unit="firewall"))
+    assert not ctx.changed
+    assert ctx.reason == "firewall.service not reload-pending, nothing to do"
+    assert commands == []
+
+
+async def test_daemon_reload_gated_forwards_the_scope():
+    host = SimulatedHost(name="h", systemd_reload_pending={"httpd.service"})
+    _ctx, commands = await materialize(
+        host, op(systemd.daemon_reload, unit="httpd", user_mode=True)
+    )
+    assert commands == [SystemctlCommand(action="daemon-reload", user_mode=True)]
 
 
 # --- seam mutation for the extended actions ----------------------------------
@@ -636,6 +732,32 @@ async def test_extended_actions_mutate_the_simulated_host():
     )
     assert host.enabled_services == set()
     assert host.services == {"httpd.service": "inactive"}
+
+
+async def test_unit_file_writes_mark_pending_and_daemon_reload_clears():
+    # The simulation seam behind the idempotent reload (issue #50): a unit
+    # file installed by ``files.install`` or a drop-in install marks its
+    # unit reload-pending; the simulated ``daemon-reload`` clears the state.
+    host = SimulatedHost(name="h", remote_files={"/tmp/spool": b"[Unit]\n"})
+    host.install_file("/tmp/spool", "/etc/systemd/system/firewall.service", 644)
+    assert host.systemd_reload_pending == {"firewall.service"}
+
+    host.remote_files["/tmp/spool2"] = b"[Service]\n"
+    await send_command(
+        host,
+        SystemdFileInstallCommand(
+            spool="/tmp/spool2", dest="/etc/systemd/system/httpd.service.d/override.conf"
+        ),
+    )
+    assert host.systemd_reload_pending == {"firewall.service", "httpd.service"}
+
+    # A non-unit path marks nothing.
+    host.remote_files["/tmp/spool3"] = b"ignored\n"
+    host.install_file("/tmp/spool3", "/etc/motd", 644)
+    assert host.systemd_reload_pending == {"firewall.service", "httpd.service"}
+
+    await send_command(host, SystemctlCommand(action="daemon-reload"))
+    assert host.systemd_reload_pending == set()
 
 
 # --- service end to end ------------------------------------------------------
