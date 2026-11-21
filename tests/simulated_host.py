@@ -48,7 +48,7 @@ a real asyncssh transport is missing:
   / ``git_tags`` / ``git_tracking_branches`` / ``gpg_key``
   / ``gpg_key_details`` / ``gpg_keyrings``
   / ``gpg_keys`` / ``gpg_secret_keys`` / ``gpg_trust`` / ``gpg_verify``
-  / ``os_groups`` / ``has_gui``
+  / ``os_group_details`` / ``os_groups`` / ``has_gui``
   / ``home_directories`` / ``os_hostname`` / ``ip6tables_chains``
   / ``ip6tables_ordered_rules`` / ``ip6tables_persistence`` / ``ip6tables_rules``
   / ``ip6tables_tables`` / ``ip6tables_version`` / ``ipsets``
@@ -114,7 +114,9 @@ a real asyncssh transport is missing:
   ``GitTrackingBranch``, ``GpgKey``, ``GpgKeyDetails``, ``GpgKeyrings``,
   ``GpgKeys``, ``GpgSecretKeys``, ``GpgTrust``, ``GpgVerify`` (the gpg-local
   ``_KeyringFileExists`` probe reads the shared ``existing_files`` seam),
-  ``Groups``,
+  ``GroupDetails`` (which reads ``os_groups`` for the names and the parallel
+  ``os_group_details`` seam for the gid/members, defaulting a name missing
+  there to an unknown gid), ``Groups``,
   ``HasGui``, ``Home``, ``Hostname``, ``Ip6tablesChains``,
   ``Ip6tablesRules``, ``Ip6tablesRulesOrdered``, ``Ip6tablesTables``,
   ``Ip6tablesVersion``, ``IpSets``, ``IptablesChains``, ``IptablesRules``,
@@ -514,6 +516,8 @@ from reemote.modules.server.server import (
     FstabUploadCommand,
     GroupAddCommand,
     GroupDelCommand,
+    GroupEntry,
+    GroupModCommand,
     HttpEndpoint,
     HttpEndpointInfo,
     KillCommand,
@@ -1425,6 +1429,18 @@ class SimulatedHost(Host):
     # order preserved) and ``remove_group`` drops it, so a repeat operation
     # is a no-op once the fresh per-step fact cache sees the change.
     os_groups: list[str] = field(default_factory=list)
+    # Group details (name -> the ``GroupEntry`` record ``GroupDetails``
+    # returns: gid and members), backing ``GroupDetails``. A second, parallel
+    # store to ``os_groups`` rather than a replacement: ``Groups``' own
+    # name-only membership semantics stay untouched, and a name missing here
+    # (a test that seeded only ``os_groups`` before the gid dimension
+    # existed) reads back as an unknown gid rather than an error, so it never
+    # looks like drift. ``server.group`` mutates it alongside ``os_groups``:
+    # ``add_group`` records the requested gid (or ``None``, an unknown gid,
+    # when the request carries none, exactly like a real ``groupadd`` whose
+    # auto-chosen id the simulation cannot predict), ``remove_group`` drops
+    # the entry and ``modify_group`` rewrites its gid.
+    os_group_details: dict[str, GroupEntry] = field(default_factory=dict)
     # Whether a known desktop-session binary is installed, backing
     # ``HasGui``. Defaults to False -- a simulated server is headless, like
     # The baseline's gui_absent fixture (``ls /usr/bin/*session`` lists nothing).
@@ -2386,10 +2402,12 @@ class SimulatedHost(Host):
                 self.pull_worktree(worktree, from_remote_branch)
             case StringCommand():
                 pass  # no simulated effect for raw shell strings
-            case GroupAddCommand(group=name):
-                self.add_group(name)
+            case GroupAddCommand():
+                self.add_group(cmd)
             case GroupDelCommand(group=name):
                 self.remove_group(name)
+            case GroupModCommand():
+                self.modify_group(cmd)
             case UserAddCommand():
                 self.add_user(cmd)
             case UserModCommand():
@@ -3964,22 +3982,48 @@ class SimulatedHost(Host):
         self.existing_files.discard(src)
         self.file_stats.pop(src, None)
 
-    def add_group(self, name: str) -> None:
+    def add_group(self, cmd: GroupAddCommand) -> None:
         """Record a simulated ``groupadd``: append the name to ``os_groups``.
 
         The ``Groups`` fact reads ``os_groups`` in file order, so a new group
         lands at the end and an already-present name is left alone (the real
         ``groupadd`` would exit non-zero; the operation's fact check never
-        yields the command in that case). ``system``/``gid`` carry no
-        simulated state: the fact reports names only.
+        yields the command in that case). ``system`` carries no simulated
+        state. The requested ``gid``, when there is one, is recorded in the
+        parallel ``os_group_details`` store so ``GroupDetails`` reads back
+        exactly what was asked for; a request with no ``gid`` records
+        ``None`` -- an unknown id, since the simulation cannot predict what
+        id the real ``groupadd`` would auto-choose -- which the reconciliation
+        half of ``server.group`` treats as "nothing to compare, leave it
+        alone", never as drift.
         """
-        if name not in self.os_groups:
-            self.os_groups.append(name)
+        if cmd.group not in self.os_groups:
+            self.os_groups.append(cmd.group)
+        self.os_group_details[cmd.group] = {"gid": cmd.gid, "members": ()}
 
     def remove_group(self, name: str) -> None:
-        """Record a simulated ``groupdel``: drop the name from ``os_groups``."""
+        """Record a simulated ``groupdel``: drop the name from both group
+        stores, so a removed group stops showing up in ``Groups`` and
+        ``GroupDetails`` alike.
+        """
         if name in self.os_groups:
             self.os_groups.remove(name)
+        self.os_group_details.pop(name, None)
+
+    def modify_group(self, cmd: GroupModCommand) -> None:
+        """Record a simulated ``groupmod -g``: rewrite the name's gid in
+        ``os_group_details``.
+
+        The name is already in ``os_groups`` (the operation only reaches this
+        command for a group it found present), so a missing entry is created
+        rather than skipped, keeping the two stores consistent by
+        construction. Members are untouched -- ``groupmod -g`` renumbers the
+        group, it does not re-write its membership -- so an existing entry
+        keeps its own tuple and a fresh one starts empty.
+        """
+        entry = self.os_group_details.get(cmd.group)
+        members = entry["members"] if entry else ()
+        self.os_group_details[cmd.group] = {"gid": int(cmd.gid), "members": members}
 
     def add_user(self, cmd: UserAddCommand) -> None:
         """Record a simulated ``useradd``/``pw useradd``: add an ``os_users`` row.

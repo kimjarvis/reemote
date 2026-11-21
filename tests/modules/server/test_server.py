@@ -22,7 +22,10 @@ real-transport path, the ``none``-swap device keying and parsing edge
 cases, and the shared ``remote_files`` ``SimulatedHost`` seam), the
 ``Groups`` fact (the baseline's own
 fixture over the real-transport path, ``/etc/group`` parsing edge cases, and
-the ``SimulatedHost`` seam), the ``HasGui`` fact (the baseline's own fixtures over
+the ``SimulatedHost`` seam), the ``GroupDetails`` fact (a miniature
+``/etc/group`` over the real-transport path, gid/members parsing edge cases,
+and the ``os_groups``/``os_group_details`` ``SimulatedHost`` seams), the
+``HasGui`` fact (the baseline's own fixtures over
 the real-transport path, session-binary parsing edge cases, and the
 ``SimulatedHost`` seam), the ``Home`` fact (the baseline's own fixtures over the
 real-transport path, unexpanded-tilde handling, tilde-username validation,
@@ -69,9 +72,11 @@ own mixed fixture over the real-transport path, passwd/lastlog parsing edge
 cases, and the ``SimulatedHost`` seam), the ``Which`` fact (the baseline's own
 fixtures over the real-transport path, name quoting and parsing edge cases,
 and the ``SimulatedHost`` seam), the ``group`` operation's option set and its
-``GroupAddCommand``/``GroupDelCommand`` descriptors (the baseline's own Linux
-operation fixtures replayed over the ``SimulatedHost`` seams, idempotence and
-the end-to-end lockstep run), the ``user`` operation
+``GroupAddCommand``/``GroupDelCommand``/``GroupModCommand`` descriptors (the
+baseline's own Linux
+operation fixtures replayed over the ``SimulatedHost`` seams, idempotence,
+the Ansible-parity ``gid`` reconciliation the ``GroupDetails`` fact drives,
+and the end-to-end lockstep run), the ``user`` operation
 and its ``UserAddCommand``/``UserModCommand``/``UserDelCommand`` descriptors
 with the private ``_HomeMkdirCommand``/``_HomeChownCommand`` pair (the baseline's
 own Linux operation fixtures replayed over the ``SimulatedHost`` seams minus the
@@ -177,6 +182,9 @@ from reemote.modules.server.server import (
     FstabUploadCommand,
     GroupAddCommand,
     GroupDelCommand,
+    GroupDetails,
+    GroupEntry,
+    GroupModCommand,
     Groups,
     HasGui,
     Home,
@@ -667,6 +675,115 @@ async def test_groups_gather_fact_across_hosts():
     assert await gather_fact(hosts, Groups) == {
         "web1": ["wheel", "kjarvis"],
         "web2": ["kjarvis"],
+    }
+
+
+# --- GroupDetails ----------------------------------------------------------------
+
+
+async def test_group_details_parses_gid_and_members():
+    # Each colon-bearing /etc/group row becomes a name -> GroupEntry record:
+    # the numeric third column and the comma-split fourth, in file order.
+    host = CannedShellHost(
+        """developers:x:10000:alice,bob
+nogroup:x:65534:
+wheel:x:10:root,daemon,
+"""
+    )
+    expected: dict[str, GroupEntry] = {
+        "developers": {"gid": 10000, "members": ("alice", "bob")},
+        "nogroup": {"gid": 65534, "members": ()},
+        # A trailing comma is an empty member, not a member named "" --
+        # it is dropped, exactly like a wholly empty column.
+        "wheel": {"gid": 10, "members": ("root", "daemon")},
+    }
+    assert await GroupDetails.process(host) == expected
+    assert host.shells == ["cat /etc/group"]
+
+
+def test_group_details_parse_skips_lines_without_a_colon():
+    assert GroupDetails.parse(["", "no-colon-here", "wheel:x:10:"]) == {
+        "wheel": {"gid": 10, "members": ()}
+    }
+    assert GroupDetails.parse([]) == {}
+
+
+def test_group_details_parse_keeps_a_non_numeric_gid_as_none():
+    # A malformed third column is kept as a row with an unknown gid rather
+    # than failing the whole parse (the ``Fstab`` dump/passno precedent).
+    assert GroupDetails.parse(["weird:x:not-a-number:alice"]) == {
+        "weird": {"gid": None, "members": ("alice",)}
+    }
+
+
+def test_group_details_parse_short_rows_default_the_missing_columns():
+    # A row with fewer than four fields is still a group -- with an unknown
+    # gid and no members -- rather than an index error.
+    assert GroupDetails.parse(["root:x"]) == {"root": {"gid": None, "members": ()}}
+    assert GroupDetails.parse(["root:x:0"]) == {"root": {"gid": 0, "members": ()}}
+
+
+def test_group_details_parse_later_row_wins_a_repeated_name():
+    assert GroupDetails.parse(["wheel:x:10:", "wheel:x:11:"]) == {
+        "wheel": {"gid": 11, "members": ()}
+    }
+
+
+async def test_group_details_is_empty_on_empty_output():
+    assert await GroupDetails.process(CannedShellHost("")) == {}
+
+
+async def test_group_details_reads_the_simulated_seams():
+    host = SimulatedHost(
+        name="h",
+        os_groups=["wheel", "developers"],
+        os_group_details={"developers": {"gid": 10000, "members": ("alice",)}},
+    )
+    # ``os_groups`` keys the result (file order); ``os_group_details`` fills
+    # in what it carries, and a name it does not carry reads as unknown --
+    # exactly like a test that seeded only ``os_groups`` before the gid
+    # dimension existed.
+    assert await GroupDetails.process(host) == {
+        "wheel": {"gid": None, "members": ()},
+        "developers": {"gid": 10000, "members": ("alice",)},
+    }
+
+
+async def test_group_details_seam_defaults_to_unknown_when_only_groups_seeded():
+    # The additive design: seeding only ``os_groups`` (every existing test's
+    # style) keeps ``Groups`` working unchanged, and ``GroupDetails`` simply
+    # reports no known gid for those names.
+    host = SimulatedHost(name="h", os_groups=["wheel"])
+    assert await GroupDetails.process(host) == {"wheel": {"gid": None, "members": ()}}
+    assert await GroupDetails.process(SimulatedHost(name="h")) == {}
+
+
+async def test_group_details_seam_returns_copies():
+    host = SimulatedHost(
+        name="h",
+        os_groups=["developers"],
+        os_group_details={"developers": {"gid": 10000, "members": ("alice",)}},
+    )
+    details = await GroupDetails.process(host)
+    details["developers"]["gid"] = 999
+    details["developers"]["members"] = ()
+    assert host.os_group_details == {
+        "developers": {"gid": 10000, "members": ("alice",)}
+    }
+
+
+async def test_group_details_gather_fact_across_hosts():
+    hosts = [
+        SimulatedHost(
+            name="web1",
+            os_groups=["developers"],
+            os_group_details={"developers": {"gid": 10000, "members": ()}},
+        ),
+        SimulatedHost(name="web2", os_groups=["wheel"]),
+    ]
+    assert await gather_fact(hosts, GroupDetails) == {
+        "web1": {"developers": {"gid": 10000, "members": ()}},
+        "web2": {"wheel": {"gid": None, "members": ()}},
     }
 
 
@@ -3179,6 +3296,23 @@ def test_group_del_command_shell_rendering():
     )
 
 
+def test_group_mod_command_shell_rendering():
+    assert GroupModCommand(group="developers", gid=10000).shell() == (
+        "groupmod -g 10000 developers"
+    )
+    # ``gid`` renders the same way whether it arrives as an int or a string.
+    assert GroupModCommand(group="developers", gid="10000").shell() == (
+        "groupmod -g 10000 developers"
+    )
+    assert (
+        GroupModCommand(group="my group; whoami", gid=10000).shell()
+        == "groupmod -g 10000 'my group; whoami'"
+    )
+    assert command_shell(GroupModCommand(group="developers", gid=10000), sudo=True) == (
+        "sudo groupmod -g 10000 developers"
+    )
+
+
 @pytest.mark.parametrize(
     ("group", "groups", "kwargs", "expected"),
     [
@@ -3250,12 +3384,65 @@ async def test_group_gid_accepts_a_string_and_zero_is_skipped():
     assert commands[0].shell() == "groupadd docker"
 
 
-async def test_group_existing_group_is_never_modified():
-    # system/gid only apply at creation; a present group plans no command
-    # even when the request's gid or system flag differs (baseline parity).
+async def test_group_existing_group_with_unknown_gid_is_never_modified():
+    # ``system`` still only applies at creation. ``gid`` reconciles only when
+    # the ``GroupDetails`` fact reports a *known*, different current id --
+    # here the seam carries no details row for the group, so its gid reads
+    # as unknown (``None``) and the request plans no command rather than
+    # guessing, exactly like baseline parity for a caller predating the gid
+    # dimension.
     host = SimulatedHost(name="h", os_groups=["docker"])
     ctx, commands = await materialize(
         host, op(server.group, group="docker", system=True, gid=1500)
+    )
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_group_reconciles_a_drifted_gid():
+    # Ansible ``group`` parity (issue #62): a present group whose fact-read
+    # gid differs from the request gets a ``groupmod -g``, and a change.
+    host = SimulatedHost(
+        name="h",
+        os_groups=["developers"],
+        os_group_details={"developers": {"gid": 999, "members": ()}},
+    )
+    ctx, commands = await materialize(
+        host, op(server.group, group="developers", gid=10000)
+    )
+    assert ctx.changed
+    assert ctx.reason == (
+        "group developers gid 999 differs from requested 10000, will modify"
+    )
+    assert commands == [GroupModCommand(group="developers", gid=10000)]
+    assert commands[0].shell() == "groupmod -g 10000 developers"
+
+
+async def test_group_no_change_when_gid_already_matches():
+    host = SimulatedHost(
+        name="h",
+        os_groups=["developers"],
+        os_group_details={"developers": {"gid": 10000, "members": ("alice",)}},
+    )
+    ctx, commands = await materialize(
+        host, op(server.group, group="developers", gid=10000)
+    )
+    assert not ctx.changed
+    assert ctx.reason == "group developers already present with gid 10000"
+    assert commands == []
+
+
+async def test_group_gid_reconciliation_skips_a_non_numeric_request():
+    # A request whose gid cannot be read as an int is skipped rather than
+    # crashing the plan, leaving the (unknown-comparison) no-op path -- the
+    # render-only behaviour ``GroupAddCommand`` already has for that edge.
+    host = SimulatedHost(
+        name="h",
+        os_groups=["developers"],
+        os_group_details={"developers": {"gid": 999, "members": ()}},
+    )
+    ctx, commands = await materialize(
+        host, op(server.group, group="developers", gid="not-a-number")
     )
     assert not ctx.changed
     assert commands == []
@@ -3273,12 +3460,23 @@ async def test_group_commands_mutate_the_simulated_host():
     host = SimulatedHost(name="h", os_groups=["wheel"])
     await send_command(host, GroupAddCommand(group="docker"))
     assert host.os_groups == ["wheel", "docker"]
+    # An add carrying a gid records it in the parallel details seam; an add
+    # carrying none records an unknown gid rather than guessing one.
+    assert host.os_group_details["docker"] == {"gid": None, "members": ()}
+    await send_command(host, GroupAddCommand(group="lusers", gid=1500))
+    assert host.os_group_details["lusers"] == {"gid": 1500, "members": ()}
     # A repeat add leaves the list alone (the operation's fact check would
     # not yield it, but the seam stays safe regardless).
     await send_command(host, GroupAddCommand(group="docker"))
-    assert host.os_groups == ["wheel", "docker"]
+    assert host.os_groups == ["wheel", "docker", "lusers"]
+    # A mod rewrites just the gid, leaving members and the name list alone.
+    await send_command(host, GroupModCommand(group="lusers", gid=1600))
+    assert host.os_group_details["lusers"] == {"gid": 1600, "members": ()}
+    assert host.os_groups == ["wheel", "docker", "lusers"]
+    # A del drops the name from both seams.
     await send_command(host, GroupDelCommand(group="docker"))
-    assert host.os_groups == ["wheel"]
+    assert host.os_groups == ["wheel", "lusers"]
+    assert "docker" not in host.os_group_details
 
 
 def ensure_groups(host: Host) -> Generator[OperationRequest]:
@@ -3340,7 +3538,7 @@ async def test_group_second_prepare_plans_no_change():
     assert [p.changed for p in plans["h"]] == [False, False]
     assert [p.reason for p in plans["h"]] == [
         "group docker already present",
-        "group lusers already present",
+        "group lusers already present with gid 1500",
     ]
 
 

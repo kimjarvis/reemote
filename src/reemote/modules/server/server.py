@@ -14,7 +14,9 @@
 # line), ``FipsEnabled``
 # (whether the kernel is running in FIPS mode, from
 # ``/proc/sys/crypto/fips_enabled``), ``Groups`` (the
-# group names listed in ``/etc/group``), ``HasGui`` (whether a known
+# group names listed in ``/etc/group``), ``GroupDetails`` (the same file
+# keyed by name with each group's ``gid`` and members, backing
+# ``server.group``'s gid reconciliation), ``HasGui`` (whether a known
 # desktop-session binary is installed), ``Home`` (a user's home directory, resolved by shell
 # tilde expansion), ``Hostname`` (the server's hostname from ``uname -n``),
 # ``Kernel`` (the kernel name from ``uname -s``), ``KernelModules`` (the
@@ -41,7 +43,8 @@
 # phase-unaware: each ``process`` coroutine just gathers the raw value.
 #
 # Operation side (design doc section 6): ``server.group`` plus the
-# ``GroupAddCommand``/``GroupDelCommand`` descriptors it yields,
+# ``GroupAddCommand``/``GroupDelCommand``/``GroupModCommand`` descriptors it
+# yields,
 # ``server.hostname`` plus the ``SetHostnameCommand`` descriptor it yields,
 # ``server.etc_hosts`` plus the ``EtcHostsUploadCommand``/
 # ``EtcHostsInstallCommand`` spool-and-install pair it yields,
@@ -875,6 +878,123 @@ class Fstab:
             return cls.parse(data.decode("utf-8").splitlines())
         # Real transport: `cat /etc/fstab` over asyncssh.
         stdout = await host.run_shell(cls.command(path))
+        return cls.parse(stdout.splitlines())
+
+
+class GroupEntry(TypedDict):
+    """
+    Attributes:
+        gid: The group's numeric id (the third ``/etc/group`` column) as an
+            int, or ``None`` when the column spells it non-numerically (a
+            malformed row the parser keeps rather than fails).
+        members: The fourth column split on commas, in file order, with any
+            empty member dropped (an empty column is a group with no
+            members, not a member named by the empty string).
+    """
+
+    # The single record ``GroupDetails`` returns for one group, the
+    # ``FstabEntry``/``PortInfo`` shape: ``members`` is a tuple so the record
+    # stays hashable and value-equal across the two deploy phases, and a
+    # non-numeric gid reads as ``None`` rather than crashing the parse.
+    gid: int | None
+    members: tuple[str, ...]
+
+
+class GroupDetails:
+    """``/etc/group`` parsed as a mapping of group name to group details.
+
+    **Commands:**
+
+    ```bash
+    cat /etc/group
+    ```
+
+    **Returns:**
+
+    ```python
+    dict[str, GroupEntry]
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_group_details.py``.
+    """
+
+    # An original reemote fact giving Ansible's ``group`` module its
+    # reconciliation half (issue #62; the baseline's own ``server.Groups``
+    # fact, which reemote mirrors as ``Groups``, reports only names). Each
+    # colon-bearing line of ``/etc/group`` becomes a ``GroupEntry`` keyed by
+    # its group name, for example::
+    #
+    #     {
+    #         "developers": {"gid": 10000, "members": ("alice", "bob")},
+    #         "nogroup": {"gid": 65534, "members": ()},
+    #     }
+    #
+    # Lines without a colon (blank lines, stray output) are skipped, the
+    # file's order is preserved -- no dedup, no sorting, like ``Groups`` --
+    # and a repeated name keeps the later line, like ``Fstab``. The second
+    # (password) column is never read; it is an ``x`` placeholder on modern
+    # hosts and carries no information here. The third column is the group's
+    # numeric id, parsed as an int when it spells one and as ``None`` when it
+    # does not, rather than failing the whole parse. The fourth column is the
+    # comma-separated member list, kept as a tuple so the record stays
+    # hashable, and an empty column reads as ``()`` rather than a one-member
+    # list holding ``""``. The file is world-readable, so the plain
+    # unprivileged ``cat`` of the ``Groups`` shape suffices; empty output (the
+    # command failed or the file is empty) reads as ``{}``.
+
+    #: Shell reading the group table: the same ``cat /etc/group`` the
+    #: ``Groups`` fact runs, parsed further here.
+    COMMAND = "cat /etc/group"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> dict[str, GroupEntry]:
+        """Parse ``/etc/group`` rows into the name -> ``GroupEntry`` mapping.
+
+        Lines without a colon are dropped, the second (password) column is
+        skipped, a non-numeric third column reads as ``None``, and the
+        comma-separated fourth column becomes a tuple with any empty member
+        dropped. Pure and testable.
+        """
+        entries: dict[str, GroupEntry] = {}
+        for line in output:
+            if ":" not in line:
+                continue
+            fields = line.split(":")
+            raw_gid = fields[2] if len(fields) > 2 else ""
+            raw_members = fields[3] if len(fields) > 3 else ""
+            entry: GroupEntry = {
+                "gid": int(raw_gid) if raw_gid.isdigit() else None,
+                "members": tuple(member for member in raw_members.split(",") if member),
+            }
+            entries[fields[0]] = entry
+        return entries
+
+    @classmethod
+    async def process(cls, host: Host) -> dict[str, GroupEntry]:
+        groups = getattr(host, "os_groups", None)
+        if groups is not None:
+            # SimulatedHost seam: the two stores keep one truth. ``os_groups``
+            # holds the names (file order) that the ``Groups`` fact reports;
+            # ``os_group_details`` holds the gid/members a test or a simulated
+            # ``groupadd``/``groupmod``/``usermod`` recorded for each name. A
+            # name the details store does not carry reads as an unknown gid
+            # (``None``) with no members, exactly like a test that seeded only
+            # ``os_groups`` before the gid dimension existed. Return copies so
+            # callers never mutate the simulated state.
+            details = getattr(host, "os_group_details", None) or {}
+            return {
+                name: dict(details.get(name) or {"gid": None, "members": ()})
+                for name in groups
+            }
+        # Real transport: cat /etc/group over asyncssh.
+        stdout = await host.run_shell(cls.COMMAND)
         return cls.parse(stdout.splitlines())
 
 
@@ -3226,6 +3346,22 @@ class GroupDelCommand(Command):
         return f"groupdel {shlex.quote(self.group)}"
 
 
+@dataclass(frozen=True)
+class GroupModCommand(Command):
+    """One ``groupmod -g`` invocation.
+
+    ``gid`` renders ``-g``; the group name is ``shlex``-quoted.
+    """
+
+    group: str
+    gid: int | str
+
+    def shell(self) -> str:
+        return (
+            f"groupmod -g {shlex.quote(str(self.gid))} {shlex.quote(self.group)}"
+        )
+
+
 async def group(
     ctx: OpContext,
     group: str,
@@ -3234,7 +3370,7 @@ async def group(
     gid: int | str | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Add/remove a system group.
+    """Add/remove/reconcile a system group.
 
     Args:
         ctx (OpContext): Execution context for the operation.
@@ -3245,11 +3381,15 @@ async def group(
             (``groupadd -r``). Defaults to False.
         gid (int | str | None, optional): Use a specific group id number; a
             falsy gid (``None`` or ``0``) is skipped, exactly like the baseline's
-            ``if gid:`` check. Defaults to None.
+            ``if gid:`` check. On an already-present group a requested gid is
+            reconciled (``groupmod -g``) when the ``GroupDetails`` fact reports
+            a different one; a group whose current gid is unknown (a fact read
+            predating the gid dimension, or a malformed ``/etc/group`` row)
+            is left alone rather than guessed at. Defaults to None.
         **kwargs: Additional keyword arguments.
 
     Yields:
-        Command: Generated group add/remove commands.
+        Command: Generated group add/remove/modify commands.
 
     **Raises:**
 
@@ -3279,6 +3419,15 @@ async def group(
             sudo=True,
         )
 
+        # Reconcile a drifted gid on an existing group (groupmod -g)
+        yield op(
+            server.group,
+            name="Pin the developers gid",
+            group="developers",
+            gid=10000,
+            sudo=True,
+        )
+
         # Remove a group
         yield op(
             server.group,
@@ -3292,14 +3441,27 @@ async def group(
         Examples can be found in ``examples/modules/server/server_group.py``.
     """
 
-    # Mirrors the baseline's ``server.group``. Idempotent: the group name is
-    # compared against the ``Groups`` fact and a ``groupadd``/``groupdel``
-    # descriptor is yielded only when the group differs from the request.
-    # ``system`` and ``gid`` only apply at creation: an existing group is never
-    # modified, so a gid or system change on a present group plans no command,
-    # like the baseline. The commands need root: flag the request ``sudo=True``.
-    # ``**kwargs`` absorbs the baseline's global arguments (``op()`` already
-    # strips ``name``/``sudo``/``su``).
+    # Mirrors the baseline's ``server.group``, extended with Ansible's
+    # ``group`` module ``gid`` reconciliation (issue #62; the baseline's
+    # ``server.group`` only ever passes ``gid`` to ``groupadd``, never
+    # repairs a drifted one). Idempotent: the group name is compared against
+    # the ``Groups`` fact and a ``groupadd``/``groupdel`` descriptor is
+    # yielded only when the group differs from the request. ``system`` still
+    # only applies at creation -- a present group is never turned into (or
+    # out of) a system account. ``gid`` now reconciles too: when the group is
+    # already present and the ``GroupDetails`` fact reports a *different*
+    # numeric id than requested, a ``GroupModCommand`` (``groupmod -g``) is
+    # planned; an unknown current gid (the fact has no numeric column, or
+    # the entry is missing) is left alone rather than repaired on a guess,
+    # so a converged host -- and a group whose request carries no ``gid``
+    # at all -- stays a no-op, exactly like the baseline's own
+    # creation-only behaviour for callers that never pass the option.
+    # Repairing a gid does not ``chown`` files still owned by the old
+    # numeric id -- the same limitation Ansible's ``group`` module has; the
+    # ownership half, if needed, is a separate pass over the filesystem.
+    # The commands need root: flag the request ``sudo=True``. ``**kwargs``
+    # absorbs the baseline's global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
     groups = await ctx.facts.get(Groups)
     is_present = group in groups
 
@@ -3311,6 +3473,32 @@ async def group(
         ctx.changed = True
         ctx.reason = f"group {group} absent, will create"
         yield GroupAddCommand(group=group, system=system, gid=gid)
+    elif present and is_present and gid:
+        # Ansible-parity gid reconciliation: compare the requested id against
+        # the present group's own id, as reported by the ``GroupDetails``
+        # fact. An unknown current gid (``None``, never a real number in
+        # ``/etc/group``) or a match leaves the group alone. A non-numeric
+        # requested ``gid`` (a str spelling a caller never meant as an id)
+        # is skipped rather than crashing the plan, keeping the render-only
+        # behaviour of ``GroupAddCommand`` for that edge case too.
+        try:
+            requested_gid = int(gid)
+        except (TypeError, ValueError):
+            requested_gid = None
+        details = await ctx.facts.get(GroupDetails)
+        current_gid = details.get(group, {}).get("gid")
+        if (
+            requested_gid is not None
+            and current_gid is not None
+            and current_gid != requested_gid
+        ):
+            ctx.changed = True
+            ctx.reason = (
+                f"group {group} gid {current_gid} differs from requested {gid}, will modify"
+            )
+            yield GroupModCommand(group=group, gid=gid)
+        else:
+            ctx.reason = f"group {group} already present with gid {current_gid}"
     else:
         ctx.reason = f"group {group} already {'present' if present else 'absent'}"
 
@@ -6433,6 +6621,9 @@ __all__ = [
     "FstabUploadCommand",
     "GroupAddCommand",
     "GroupDelCommand",
+    "GroupDetails",
+    "GroupEntry",
+    "GroupModCommand",
     "Groups",
     "HasGui",
     "Home",

@@ -9,6 +9,7 @@ The read-only fact-gathering examples (`server_arch.py`, reading `Arch`,
 `server_authorized_keys.py`, reading `AuthorizedKeys` for the login user,
 `server_date.py`, reading `Date`,
 `server_env.py`, reading `Env` for `PATH` and `HOME`,
+`server_group_details.py`, reading `GroupDetails`,
 `server_groups.py`, reading `Groups`,
 `server_has_gui.py`, reading `HasGui`, `server_home.py`, reading `Home`
 for the login user and for `root`, `server_hostname.py`, reading
@@ -52,12 +53,20 @@ which guards on `is_ubuntu` because it is Debian-family only.
 ## Ensuring system groups
 
 `server.group` in action: the deploy creates the `docker` group (the baseline's
-documented example) and a `lusers` system group with a fixed gid, both under
-`sudo`. The operation is idempotent — it compares each name against the
-`Groups` fact and yields a `GroupAddCommand` only where the group is absent,
-so a second run plans no change. `system=True` renders `groupadd -r` and
-`gid=1500` renders `--gid 1500`. Removing a group is the mirror image:
-`present=False` yields a `GroupDelCommand` only when the group is present.
+documented example), a `lusers` system group with a fixed gid, and pins the
+`developers` group to a specific gid, all under `sudo`. The operation is
+idempotent — it compares each name against the `Groups` fact and yields a
+`GroupAddCommand` only where the group is absent, so a second run plans no
+change. `system=True` renders `groupadd -r` and `gid=1500` renders
+`--gid 1500`; `system` only applies at creation, but `gid` reconciles too
+(issue #62) — for a group that is already present, the `GroupDetails` fact
+supplies its current numeric id, and a different, known one is repaired with
+a `GroupModCommand` (`groupmod -g`) rather than left drifted. An unknown
+current gid (a malformed `/etc/group` row) is left alone rather than guessed
+at, and repairing a gid never `chown`s files still owned by the old numeric
+id — the same limitation Ansible's `group` module has. Removing a group is
+the mirror image: `present=False` yields a `GroupDelCommand` only when the
+group is present.
 
 ::: server_group
     options:

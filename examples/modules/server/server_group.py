@@ -1,21 +1,30 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: ensure the docker and lusers system groups exist on real CentOS hosts.
+"""Example: pin the docker and lusers group ids on real CentOS hosts.
 
 This is a *usage* example, not part of the library. It shows reemote's
 ``server.group`` operation, baseline ``server.group`` parity for adding
-and removing system groups: the deploy creates the ``docker`` group
-(the baseline's documented example) and a ``lusers`` system group with a fixed
-gid, both under ``sudo`` because ``groupadd`` needs root.
+and removing system groups extended with the Ansible ``group`` module's
+``gid`` reconciliation (issue #62): the deploy creates the ``docker``
+group (the baseline's documented example), a ``lusers`` system group with
+a fixed gid, and pins the ``developers`` group to a specific gid, all
+under ``sudo`` because ``groupadd``/``groupmod`` need root.
 
 The operation is idempotent: it reads the ``Groups`` fact (the group names
-in ``/etc/group``) and yields a ``groupadd`` only where the group is absent,
-so a host that already has ``docker`` plans no change and a second run is a
-no-op everywhere. ``system=True`` renders ``groupadd -r`` and ``gid=1500``
-renders ``--gid 1500``; both options only apply at creation -- an existing
-group is never modified. Removing a group is the mirror image:
-``present=False`` yields ``groupdel`` only when the group is present.
+in ``/etc/group``) and yields a ``groupadd`` only where the group is
+absent, so a host that already has ``docker`` plans no change and a second
+run is a no-op everywhere. ``system=True`` renders ``groupadd -r`` and
+``gid=1500`` renders ``--gid 1500``; ``system`` only applies at creation,
+but ``gid`` now reconciles too -- when the group is already present, the
+``GroupDetails`` fact supplies its current numeric id, and a different,
+known one is repaired with a ``groupmod -g`` rather than left drifted. An
+unknown current gid (a malformed ``/etc/group`` row) is left alone rather
+than guessed at, so the reconciliation never plans a change it cannot
+justify; note that repairing a gid does not ``chown`` files still owned by
+the old numeric id, the same limitation Ansible's ``group`` module has.
+Removing a group is the mirror image: ``present=False`` yields
+``groupdel`` only when the group is present.
 
 Every failure mode of the run -- an unreachable host, a rejected elevation,
 or a ``groupadd`` that exits non-zero (a gid already taken, for instance) --
@@ -103,11 +112,13 @@ def is_centos(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Create the docker group, then the lusers system group with a fixed gid.
+    """Create the docker group, the lusers system group, then pin developers' gid.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases; whether each group already exists is decided inside the
-    operation against the freshly gathered ``Groups`` fact, per phase.
+    operation against the freshly gathered ``Groups`` fact, and whether a
+    present group's gid has drifted is decided against ``GroupDetails``,
+    per phase.
     """
     yield op(
         server.group,
@@ -122,6 +133,14 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         group="lusers",
         system=True,
         gid=1500,
+        sudo=True,
+        when=is_centos,
+    )
+    yield op(
+        server.group,
+        name="Pin developers group gid",
+        group="developers",
+        gid=10000,
         sudo=True,
         when=is_centos,
     )
@@ -141,7 +160,9 @@ async def main() -> None:
         print(format_plan(plans))
 
         # Real run: prepare, then apply in lockstep across hosts. Step 1
-        # creates docker where absent; step 2 creates lusers where absent.
+        # creates docker where absent; step 2 creates lusers where absent;
+        # step 3 reconciles developers' gid to 10000 only where the group is
+        # present and its current gid differs, and plans no change otherwise.
         plans, report, _hosts = await run(inventory, deploy)
         print("\n== Run log (apply phase) ==")
         assert report is not None

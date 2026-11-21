@@ -48,6 +48,8 @@ back as an error `Result` (exit 127), never an exception. See the
         - FipsEnabled
         - Fstab
         - FstabEntry
+        - GroupDetails
+        - GroupEntry
         - Groups
         - HasGui
         - Home
@@ -96,7 +98,7 @@ back as an error `Result` (exit 127), never an exception. See the
 `reemote.modules.server.server` combines the server facts and the server
 operations in a single source, so the read side (`Arch`, `AuthorizedKeys`,
 `AuthorizedKeysFile`,
-`Date`, `Env`, `EtcHosts`, `FipsEnabled`, `Fstab`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
+`Date`, `Env`, `EtcHosts`, `FipsEnabled`, `Fstab`, `GroupDetails`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
 `KernelVersion`, `Last`, `LinuxDistribution`, `LinuxGui`, `LinuxName`,
 `Locales`, `LsbRelease`, `Mounts`, `Port`, `Processes`, `PythonVersion`,
 `Timezone`, `Uptime`, `User`, `Users`, `Which`)
@@ -192,7 +194,17 @@ from `AuthorizedKeysFile`, never from rebuilding these parsed entries.
 returns the first `:`-separated field of every colon-bearing line — the
 group names in file order, with no dedup or sorting — mirroring the baseline's
 `server.Groups`; lines without a colon are skipped and empty output reads
-as `[]`. `HasGui` takes no arguments: it runs `ls /usr/bin/*session || true`
+as `[]`. `GroupDetails` takes no arguments: it runs the same
+`cat /etc/group` and parses each colon-bearing line further, into a mapping
+of group name to a `GroupEntry` — the numeric `gid` (the third column, an
+int or `None` when the column spells it non-numerically, never a failed
+parse) and the `members` tuple (the fourth comma-separated column, in file
+order, with any empty member dropped). The file's order is preserved and a
+repeated name keeps the later row, like `Groups` and `Fstab`; empty output
+reads as `{}`. An original reemote fact giving Ansible's `group` module its
+`gid`-reconciliation half (see `server.group` below) — `Groups`' name-only
+answer is not enough to tell whether a present group already has the
+requested id. `HasGui` takes no arguments: it runs `ls /usr/bin/*session || true`
 and returns `True` when any listed path is a known desktop-session binary
 (GNOME, MATE, LXDE, KDE Plasma, XFCE 4), mirroring the baseline's `server.HasGui`;
 empty output reads as `False`. The baseline implements it as a short fact over
@@ -483,9 +495,19 @@ transfer never elevates (see the
 a `GroupAddCommand` (`groupadd`) or `GroupDelCommand` (`groupdel`) only when
 the group differs from the request. `system` renders `groupadd -r` and `gid`
 renders `--gid`; a falsy gid (`None` or `0`) is skipped, exactly like the
-baseline's `if gid:` check. Both options only apply at creation — an
-existing group is never modified, so a gid or system change on a present
-group plans no command. The commands need root, so flag the request
+baseline's `if gid:` check. `system` only applies at creation — a present
+group is never turned into (or out of) a system account. `gid` now
+reconciles too, the Ansible `group` module's behaviour the baseline lacks
+(issue #62): when the group is already present and the `GroupDetails` fact
+reports a *different*, known numeric id than requested, a `GroupModCommand`
+(`groupmod -g`) is planned and the operation reports changed. An unknown
+current gid — the entry has no numeric column, or the request's own `gid`
+is not a number — is left alone rather than repaired on a guess, so a
+converged host, and a request that carries no `gid` at all, stays a no-op
+exactly like the baseline's creation-only behaviour. Repairing a gid does
+not `chown` files still owned by the old numeric id — the same limitation
+Ansible's `group` module has; that ownership pass, if needed, is separate
+work over the filesystem. The commands need root, so flag the request
 `sudo=True`.
 
 `server.hostname` mirrors the baseline's `server.hostname` for the hostname
