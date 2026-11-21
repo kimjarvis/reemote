@@ -17,7 +17,10 @@ per-user manager, a named machine, or a specific user's session. Operations
 are idempotent through facts: they read the current state and yield a command
 descriptor only when it differs from the request — `daemon_reload` with a
 `unit` included, gated on the `NeedDaemonReload` property read (the no-unit
-form stays the baseline's stateless reload).
+form stays the baseline's stateless reload). In `service`, each of the two
+managed axes has an opt-out sentinel: `enabled=None` leaves the boot setting
+alone and `running=None` (Ansible's `state: omit`) leaves the active state
+alone, so one request can reconcile exactly the half the operator declared.
 
 The three file-based operations (`dropin`/`tmpfiles`/`sysusers`) are
 **system-scope only** — they write root-owned `/etc/...` paths through an

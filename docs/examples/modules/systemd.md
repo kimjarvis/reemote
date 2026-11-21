@@ -42,8 +42,11 @@ independent axes — `running` against the
 [`SystemdServiceState`][reemote.modules.systemd.systemd.SystemdServiceState]
 fact and `enabled` against
 [`SystemdServiceEnabled`][reemote.modules.systemd.systemd.SystemdServiceEnabled]
-— yielding a command only where the unit differs from the request. The script
-also shows the reemote extensions: `reloaded=True` with `soft_reload=True`
+— yielding a command only where the unit differs from the request. Either axis
+can be opted out of with `None`: the final request is `running=None` —
+Ansible's `state: omit` — which manages only the boot setting and leaves the
+unit's running state exactly as it is. The script also shows the reemote
+extensions: `reloaded=True` with `soft_reload=True`
 issues `systemctl reload-or-try-restart`, gated on the unit actually running.
 The managed unit is chosen per OS family by `web_server_unit` — `httpd` on the
 RHEL-family `centos` hosts, `apache2` on the Debian-family `ubuntu` host — a

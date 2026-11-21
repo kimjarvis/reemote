@@ -8,7 +8,8 @@ helper; the per-unit ``SystemdServiceState``/``SystemdServiceEnabled``/
 ``SystemdNeedDaemonReload`` probes and the ``service``/``daemon_reload``
 operations (idempotence against the
 seams, seam mutation, the baseline operation-fixture parity, the Ansible
-``sleep`` restart split and the backward-compatible ``server.service``
+``sleep`` restart split, the ``running``/``enabled`` opt-out sentinels and the
+backward-compatible ``server.service``
 alias); the fleet-wide
 ``SystemdStatus``/``SystemdEnabled`` ports (the baseline fact-fixture parity over
 canned shell output, plus the seam projections); and the seven reemote
@@ -250,6 +251,73 @@ async def test_service_enabled_none_leaves_boot_setting_alone():
     ctx, commands = await materialize(host, op(systemd.service, service="httpd"))
     assert commands == []
     assert "enabled" not in ctx.reason
+
+
+async def test_service_running_none_leaves_active_state_alone():
+    # The issue #63 sentinel (Ansible's ``state: omit``): ``running=None``
+    # never yields a start or stop, whatever the unit's state.
+    for state in ("active", "inactive", "activating", "failed"):
+        host = SimulatedHost(name="h", services={"httpd.service": state})
+        ctx, commands = await materialize(
+            host, op(systemd.service, service="httpd", running=None)
+        )
+        assert not ctx.changed
+        assert commands == []
+        assert ctx.reason == "httpd.service active state left alone"
+
+
+async def test_service_running_none_with_enabled_yields_only_disable():
+    # The acceptance shape: ``state: omit`` + ``enabled:`` maps to exactly one
+    # request yielding at most the boot command, never a start/stop.
+    host = SimulatedHost(
+        name="h",
+        services={"httpd.service": "active"},
+        enabled_services={"httpd.service"},
+    )
+    ctx, commands = await materialize(
+        host, op(systemd.service, service="httpd", running=None, enabled=False)
+    )
+    assert ctx.changed
+    assert commands == [SystemctlCommand(action="disable", unit="httpd.service")]
+    assert ctx.reason == (
+        "httpd.service active state left alone; httpd.service enabled, will disable"
+    )
+
+
+async def test_service_left_alone_reason_differs_from_converged_states():
+    # The no-op reason distinguishes "left alone" from the fixed
+    # "already running/stopped" wordings.
+    active = SimulatedHost(name="h", services={"httpd.service": "active"})
+    ctx, _commands = await materialize(active, op(systemd.service, service="httpd"))
+    assert ctx.reason == "httpd.service already running"
+    inactive = SimulatedHost(name="h", services={"httpd.service": "inactive"})
+    ctx, _commands = await materialize(
+        inactive, op(systemd.service, service="httpd", running=False)
+    )
+    assert ctx.reason == "httpd.service already stopped"
+    ctx, _commands = await materialize(
+        active, op(systemd.service, service="httpd", running=None)
+    )
+    assert ctx.reason == "httpd.service active state left alone"
+
+
+async def test_service_running_none_still_gates_restart_on_real_state():
+    # The sentinel only suppresses the start/stop direction; restarted stays
+    # gated on the real state -- an active unit is restarted, an inactive one
+    # is neither started nor restarted.
+    running = SimulatedHost(name="h", services={"httpd.service": "active"})
+    ctx, commands = await materialize(
+        running, op(systemd.service, service="httpd", running=None, restarted=True)
+    )
+    assert ctx.changed
+    assert commands == [SystemctlCommand(action="restart", unit="httpd.service")]
+
+    stopped = SimulatedHost(name="h", services={"httpd.service": "inactive"})
+    ctx, commands = await materialize(
+        stopped, op(systemd.service, service="httpd", running=None, restarted=True)
+    )
+    assert not ctx.changed
+    assert commands == []
 
 
 async def test_service_daemon_reload_yields_first_when_the_unit_is_pending():
@@ -843,6 +911,43 @@ async def test_service_dry_run_sends_nothing():
     assert report is None
     for host in hosts:
         assert host.services == {"httpd.service": "inactive"}
+        assert host.enabled_services == set()
+
+
+async def test_service_running_none_e2e_plans_and_applies_no_start_or_stop():
+    # The issue #63 acceptance in both phases: a ``running=None`` request
+    # plans and applies at most the disable -- the unit keeps running.
+    def manage_boot_only(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            systemd.service,
+            name="Take httpd off boot",
+            service="httpd",
+            running=None,
+            enabled=False,
+            sudo=True,
+        )
+
+    def factory(entry: dict) -> Host:
+        host = SimulatedHost.from_inventory(entry)
+        host.services = {"httpd.service": "active"}
+        host.enabled_services = {"httpd.service"}
+        return host
+
+    plans, report, hosts = await run(
+        INVENTORY, manage_boot_only, host_factory=factory
+    )
+    for entries in plans.values():
+        for entry in entries:
+            assert entry.changed
+            assert [cmd.action for cmd in entry.commands] == ["disable"]
+    assert report is not None
+    log = format_log(report)
+    assert log.count("$ sudo systemctl disable httpd.service") == 2
+    assert "systemctl start" not in log
+    assert "systemctl stop" not in log
+    for host in hosts:
+        # The boot setting was disabled; the running state was left alone.
+        assert host.services == {"httpd.service": "active"}
         assert host.enabled_services == set()
 
 

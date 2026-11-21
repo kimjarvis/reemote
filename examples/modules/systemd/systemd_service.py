@@ -34,7 +34,10 @@ RHEL-family hosts ship as ``httpd`` and Debian-family hosts ship as ``apache2``
 yields ``systemctl start`` only when it differs; ``enabled=True`` compares the
 ``SystemdServiceEnabled`` fact and yields ``systemctl enable`` only when the
 unit is not already enabled on boot. The first request sets both, converging
-runtime *and* boot state in one operation.
+runtime *and* boot state in one operation. Either axis can be opted out of with
+``None``: the fourth request is ``running=None``, Ansible's ``state: omit`` --
+the boot setting alone is managed and the unit's running state is left exactly
+as it is.
 
 The script yields the *same* start-and-enable request twice to show
 idempotence across the two phases: the prepare phase plans both as changes
@@ -148,7 +151,7 @@ def web_server_unit(host: Host) -> str:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Start and enable the Apache unit -- twice, to show idempotence -- then soft-reload it.
+    """Start and enable the Apache unit -- twice, to show idempotence -- then soft-reload and re-assert boot state.
 
     The only branch reads static ``host.group`` (via ``web_server_unit``), so
     the request sequence is identical in the prepare and apply phases (a
@@ -181,6 +184,15 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         service=service,
         reloaded=True,
         soft_reload=True,
+        sudo=True,
+        when=is_systemd,
+    )
+    yield op(
+        systemd.service,
+        name="Re-assert httpd boot state only",
+        service=service,
+        running=None,
+        enabled=True,
         sudo=True,
         when=is_systemd,
     )

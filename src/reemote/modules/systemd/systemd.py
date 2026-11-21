@@ -1284,7 +1284,7 @@ class SystemctlCommand(Command):
 async def service(
     ctx: OpContext,
     service: str,
-    running: bool = True,
+    running: bool | None = True,
     restarted: bool = False,
     reloaded: bool = False,
     enabled: bool | None = None,
@@ -1305,8 +1305,9 @@ async def service(
         service (str): Name of the unit (``httpd`` or ``httpd.service``; a
             bare name gets ``.service`` appended, any other systemd suffix
             such as ``.timer`` is kept).
-        running (bool, optional): Whether the unit should be running.
-            Defaults to True.
+        running (bool | None, optional): Whether the unit should be running
+            (``True``), stopped (``False``), or left exactly as it is
+            (``None``) -- Ansible's ``state: omit``. Defaults to True.
         restarted (bool, optional): Whether to restart the unit (only if it
             is already running). Defaults to False.
         reloaded (bool, optional): Whether to reload the unit (only if it is
@@ -1377,6 +1378,18 @@ async def service(
             sudo=True,
         )
 
+        # Manage only the boot setting and leave the running state exactly as
+        # it is (Ansible's ``state: omit`` + ``enabled:``)
+        # ->  systemctl disable snmpd.service, only if it is enabled
+        yield op(
+            systemd.service,
+            name="Take snmpd off boot, leave it running",
+            service="snmpd",
+            running=None,
+            enabled=False,
+            sudo=True,
+        )
+
         # Re-read unit files and restart a running unit with a pause: sleep splits
         # the restart into stop / sleep / start instead of one restart command
         # ->  systemctl daemon-reload; systemctl stop myapp.service; sleep 5; systemctl start myapp.service
@@ -1433,10 +1446,15 @@ async def service(
     # like any non-idempotent operation);
     # ``running`` and ``enabled`` compare against the
     # ``SystemdServiceState``/``SystemdServiceEnabled`` facts and yield only
-    # when the unit differs from the request. A unit counts as running only
-    # when its ``ActiveState`` is ``active``, so a ``start`` is issued for an
-    # ``activating`` unit too. The scope flags are forwarded to both the fact
-    # reads and every descriptor. The commands need root: flag the request
+    # when the unit differs from the request; ``running=None`` skips the
+    # start/stop branch entirely (issue #63, the mirror of ``enabled=None``
+    # and of ``openrc.service``'s sentinel), so the state fact is still read
+    # -- ``reset_failed``/``restarted``/``reloaded`` gate on it -- but no
+    # start or stop is issued and the reason records the unit as left alone.
+    # A unit counts as running only when its ``ActiveState`` is ``active``, so
+    # a ``start`` is issued for an ``activating`` unit too. The scope flags are
+    # forwarded to both the fact reads and every descriptor. The commands need
+    # root: flag the request
     # ``sudo=True`` (a ``--user`` manager runs as the login user, so user-mode
     # requests usually need no escalation).
     unit = unit_name(service)
@@ -1463,16 +1481,22 @@ async def service(
         reasons.append(f"{unit} failed, will reset-failed")
         yield SystemctlCommand(action="reset-failed", unit=unit, **scope)
 
-    if running and not is_running:
-        ctx.changed = True
-        reasons.append(f"{unit} not running ({state}), will start")
-        yield SystemctlCommand(action="start", unit=unit, **scope)
-    elif not running and is_running:
-        ctx.changed = True
-        reasons.append(f"{unit} running, will stop")
-        yield SystemctlCommand(action="stop", unit=unit, **scope)
+    if running is False:
+        if is_running:
+            ctx.changed = True
+            reasons.append(f"{unit} running, will stop")
+            yield SystemctlCommand(action="stop", unit=unit, **scope)
+        else:
+            reasons.append(f"{unit} already stopped")
+    elif running is True:
+        if not is_running:
+            ctx.changed = True
+            reasons.append(f"{unit} not running ({state}), will start")
+            yield SystemctlCommand(action="start", unit=unit, **scope)
+        else:
+            reasons.append(f"{unit} already running")
     else:
-        reasons.append(f"{unit} already {'running' if running else 'stopped'}")
+        reasons.append(f"{unit} active state left alone")
 
     # Only restart/reload a unit that is already running (a stopped one was
     # just started above, or is meant to stay stopped).
