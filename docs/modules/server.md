@@ -626,7 +626,9 @@ the zone.
 
 `server.user` mirrors the baseline's `server.user` for `user`, `present`, `home`,
 `shell`, `group`, `groups`, `append`, `ensure_home`, `create_home`, `system`,
-`uid`, `comment`, `unique` and `password`: the requested state is compared
+`uid`, `comment`, `unique` and `password`, and adds the Ansible `user` module's
+removal-cleanup options `remove_home` (`remove`) and `force` (`force`): the
+requested state is compared
 against the `Users` fact and a descriptor is yielded only where they differ —
 a `UserDelCommand` when `present=False` finds the user, a `UserAddCommand`
 when the user is absent, and a `UserModCommand` carrying just the differing
@@ -645,9 +647,15 @@ appending never removes one. Pass `groups` as a tuple rather than a list:
 `op()` requests must stay hashable, so a list raises
 [`UnhashableArgumentError`][reemote.core.UnhashableArgumentError].
 `password` is the *encrypted* hash and rides `useradd -p`/`usermod -p`.
-Removal is the one direction with no extras: `present=False` removes the user
-and nothing else, since neither `userdel` nor the baseline's branch touches
-the home directory or any files.
+Removal (`present=False`) is the one direction with its own extras: by default
+a bare `userdel` removes the account and nothing else — neither the baseline's
+branch nor the default touches the home directory or any files. `remove_home=True`
+renders `userdel -r`, which also deletes the user's home directory and mail
+spool, and `force=True` renders `userdel -f`, which forces removal even while
+the user is logged in; both combine into one `userdel -rf <user>` descriptor
+(the flags in `userdel(8)` order). They are honoured only when the `Users` fact
+still lists the user, so a converged host plans nothing and the flags never turn
+an absent account into a spurious change.
 
 `ensure_home` (on by default) is the baseline's delegation to `files.directory`,
 inlined: the server-local `_HomeDirectory` and `_HomeIsLink` probes decide

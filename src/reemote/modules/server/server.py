@@ -3897,19 +3897,33 @@ class UserDelCommand(Command):
 
     The name is ``shlex``-quoted (the baseline's ``QuoteString``), so a username
     carrying shell metacharacters is removed literally rather than
-    executed.
+    executed. ``remove_home`` renders ``-r`` (delete the home directory and
+    mail spool) and ``force`` renders ``-f`` (force removal even while the
+    user is logged in); the flags combine into one short-option cluster in
+    ``userdel(8)`` order (``-rf``). Both default ``False``, and with neither
+    set the rendering is a byte-identical bare ``userdel <user>``.
     """
 
     user: str
+    remove_home: bool = False
+    force: bool = False
 
     def shell(self) -> str:
-        return f"userdel {shlex.quote(self.user)}"
+        flags = "".join(
+            letter
+            for letter, enabled in (("r", self.remove_home), ("f", self.force))
+            if enabled
+        )
+        options = f" -{flags}" if flags else ""
+        return f"userdel{options} {shlex.quote(self.user)}"
 
 
 async def user(
     ctx: OpContext,
     user: str,
     present: bool = True,
+    remove_home: bool = False,
+    force: bool = False,
     home: str | None = None,
     shell: str | None = None,
     group: str | None = None,
@@ -3931,6 +3945,15 @@ async def user(
         user (str): Name of the user to ensure.
         present (bool, optional): Whether the user should exist.
             Defaults to True.
+        remove_home (bool, optional): On removal (``present=False``), delete
+            the user's home directory and mail spool too (``userdel -r``, the
+            Ansible ``remove`` option). Ignored when the user is kept. Only
+            honoured when there is actually a user to remove, so a converged
+            host plans nothing. Defaults to False.
+        force (bool, optional): On removal (``present=False``), force the
+            removal even while the user is logged in or owned files cannot be
+            found (``userdel -f``, the Ansible ``force`` option). Ignored when
+            the user is kept. Defaults to False.
         home (str | None, optional): The user's home directory; defaults
             to ``/home/<user>`` for a new user, or the recorded home for a
             present one. Defaults to None.
@@ -4005,6 +4028,18 @@ async def user(
             present=False,
             sudo=True,
         )
+
+        # Remove a user, its home directory and mail spool too (userdel -r),
+        # forcing past a logged-in session (userdel -f) -- one descriptor
+        yield op(
+            server.user,
+            name="Remove legacy user with its home",
+            user="legacy",
+            present=False,
+            remove_home=True,
+            force=True,
+            sudo=True,
+        )
         ```
 
         Examples can be found in ``examples/modules/server/server_op_user.py``.
@@ -4050,13 +4085,16 @@ async def user(
 
     reasons: list[str] = []
 
-    # User not wanted?: remove an existing one, then stop -- the baseline's
-    # deletion branch never touches the home directory or keys.
+    # User not wanted?: remove an existing one, then stop. ``remove_home``
+    # (``userdel -r``) and ``force`` (``userdel -f``) render onto the one
+    # deletion descriptor -- both are honoured only when there is actually a
+    # user to remove, so a converged host still plans nothing; the baseline's
+    # bare deletion never touches the home directory or keys.
     if not present:
         if existing_user:
             ctx.changed = True
             reasons.append(f"user {user} present, will remove")
-            yield UserDelCommand(user=user)
+            yield UserDelCommand(user=user, remove_home=remove_home, force=force)
         else:
             reasons.append(f"user {user} already absent")
         ctx.reason = "; ".join(reasons)

@@ -17,7 +17,8 @@ The operation is idempotent: it reads the ``Users`` fact (every
 shadow hash) and yields a command only where the account differs from the
 request -- ``useradd`` for an
 absent user, a ``usermod`` carrying just the differing fields for a
-present one, ``userdel`` for ``present=False``. A second run therefore
+present one, ``userdel`` for ``present=False`` (the legacy account asks
+``remove_home``/``force``, so it renders ``userdel -rf``). A second run therefore
 plans no change. Two details are worth seeing in the plan:
 
 * the ``ensure_home`` branch (on by default) is the baseline's delegation to
@@ -62,8 +63,9 @@ them and prints one line each instead of a traceback.
 
 Note that this script mutates the shared demo inventory: the ``deploy``
 account and its home directory stay on the hosts (and the ``apps``/
-``staff`` groups with them), while ``legacy`` is removed wherever it
-existed. Re-running it is a no-op.
+``staff`` groups with them), while ``legacy`` is removed -- with its home
+directory and mail spool, since the removal asks ``remove_home=True`` --
+wherever it existed. Re-running it is a no-op.
 
 Every request carries ``when=is_centos``, the declarative eligibility
 guard: the predicate reads only **static** inventory data --
@@ -190,14 +192,18 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         sudo=True,
         when=is_centos,
     )
-    # The mirror image: ``userdel`` only where the account exists, and no
-    # home directory is touched -- neither ``userdel`` nor the baseline's branch
-    # removes files.
+    # The mirror image: ``userdel`` only where the account exists. ``force``
+    # (``userdel -f``) refuses a removal that a logged-in session would block,
+    # and ``remove_home`` (``userdel -r``) also deletes the home directory and
+    # mail spool -- one ``userdel -rf legacy`` descriptor, planned only while
+    # the account is still listed, so a re-run is a no-op.
     yield op(
         server.user,
         name="Remove the legacy account",
         user="legacy",
         present=False,
+        remove_home=True,
+        force=True,
         sudo=True,
         when=is_centos,
     )

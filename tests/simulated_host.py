@@ -2435,8 +2435,8 @@ class SimulatedHost(Host):
                 self.add_user(cmd)
             case UserModCommand():
                 self.modify_user(cmd)
-            case UserDelCommand(user=name):
-                self.remove_user(name)
+            case UserDelCommand(user=name, remove_home=remove_home):
+                self.remove_user(name, remove_home=remove_home)
             case SetHostnameCommand(hostname=name):
                 self.set_hostname(name)
             case SetTimezoneCommand(timezone=timezone):
@@ -4108,14 +4108,56 @@ class SimulatedHost(Host):
             else:
                 info["groups"] = list(cmd.groups)
 
-    def remove_user(self, name: str) -> None:
+    def remove_user(self, name: str, remove_home: bool = False) -> None:
         """Record a simulated ``userdel``/``pw userdel``: drop the ``os_users`` row.
 
-        The home directory is deliberately left in place -- plain ``userdel``
-        removes no files (only ``userdel -r`` does, which the baseline and this
-        operation never emit). An absent user is tolerated.
+        Plain ``userdel`` removes no files, so the home directory is left in
+        place unless ``remove_home`` (``userdel -r``) is set. When it is, the
+        home path -- resolved from the row's recorded ``home`` exactly as the
+        operation resolves it, defaulting to ``/home/<name>`` -- is purged
+        along with everything under it (the mail spool
+        ``/var/spool/mail/<name>`` included), so ``File``/``FileContents`` and
+        the typed facts stop answering for those paths -- the #18
+        removal-purge rule. ``force`` (``userdel -f``) carries no simulated
+        state: the model tracks no login sessions or unfindable owned files
+        the way the real command does, so the account drops either way. An
+        absent user is tolerated.
         """
+        info = self.os_users.get(name)
         self.os_users.pop(name, None)
+        if remove_home and info is not None:
+            home = info.get("home") or f"/home/{name}"
+            self.remove_tree(home)
+            self._purge_subtree(home)
+            self.remove_tree(f"/var/spool/mail/{name}")
+
+    def _purge_subtree(self, root: str) -> None:
+        """Drop every store entry strictly beneath ``root`` (a ``rm -rf`` of it).
+
+        ``remove_tree`` clears only the exact path, but the stores are flat
+        and a real ``userdel -r`` unlinks the whole home recursively, so the
+        descendants (``<home>/.ssh/authorized_keys`` and friends) are cleared
+        here too. Keys under the root share the ``root + "/"`` prefix because
+        every store is keyed by literal path.
+        """
+        prefix = root.rstrip("/") + "/"
+        for key in [k for k in self.remote_files if k.startswith(prefix)]:
+            del self.remote_files[key]
+        for key in [k for k in self.existing_files if k.startswith(prefix)]:
+            self.existing_files.discard(key)
+        for store in (
+            self.file_stats,
+            self.directory_stats,
+            self.link_stats,
+            self.links,
+        ):
+            for key in [k for k in store if k.startswith(prefix)]:
+                del store[key]
+        self.same_files = {
+            pair for pair in self.same_files if not any(
+                name.startswith(prefix) for name in pair
+            )
+        }
 
     def install_authorized_keys_file(self, spool: str, dest: str) -> None:
         """Record a simulated ``user_authorized_keys`` install of the spooled text.

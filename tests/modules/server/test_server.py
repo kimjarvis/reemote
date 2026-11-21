@@ -171,6 +171,7 @@ from reemote.drivers import (
 )
 from reemote.hosts import CommandError, CommandNotFoundError, Host
 from reemote.modules import server
+from reemote.modules.files.files import File, FileContents
 from reemote.modules.server.server import (
     Arch,
     AuthorizedKeys,
@@ -3661,6 +3662,24 @@ def test_user_del_command_shell_rendering():
     assert command_shell(UserDelCommand(user="someuser"), sudo=True) == (
         "sudo userdel someuser"
     )
+    # remove_home renders -r, force renders -f; both combine into one
+    # short-option cluster in userdel(8) order (-rf, never -fr).
+    assert UserDelCommand(user="someuser", remove_home=True).shell() == (
+        "userdel -r someuser"
+    )
+    assert UserDelCommand(user="someuser", force=True).shell() == (
+        "userdel -f someuser"
+    )
+    assert UserDelCommand(user="someuser", remove_home=True, force=True).shell() == (
+        "userdel -rf someuser"
+    )
+    assert command_shell(
+        UserDelCommand(user="someuser", remove_home=True, force=True), sudo=True
+    ) == "sudo userdel -rf someuser"
+    # A metacharacter username still lands quoted after the flags.
+    assert UserDelCommand(user="evil; rm", remove_home=True).shell() == (
+        "userdel -r 'evil; rm'"
+    )
 
 
 def test_home_descriptor_shell_rendering():
@@ -3839,6 +3858,125 @@ async def test_user_no_change_when_already_absent():
     assert not ctx.changed
     assert ctx.reason == "user deploy already absent"
     assert commands == []
+
+
+async def test_user_removes_a_present_user_with_home_and_force():
+    # remove_home/force render onto the one deletion descriptor (userdel -rf),
+    # and the reason string is unchanged -- both are honoured only because the
+    # Users fact still lists the user.
+    host = SimulatedHost(name="h", os_users={"legacy": {"home": "/home/legacy"}})
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.user,
+            user="legacy",
+            present=False,
+            remove_home=True,
+            force=True,
+        ),
+    )
+    assert ctx.changed
+    assert ctx.reason == "user legacy present, will remove"
+    assert commands == [
+        UserDelCommand(user="legacy", remove_home=True, force=True)
+    ]
+    assert commands[0].shell() == "userdel -rf legacy"
+
+
+async def test_user_remove_home_flags_are_noops_when_already_absent():
+    # A converged host plans nothing even with the deletion flags set -- the
+    # flags never turn an absent user into a spurious change.
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.user,
+            user="legacy",
+            present=False,
+            remove_home=True,
+            force=True,
+        ),
+    )
+    assert not ctx.changed
+    assert ctx.reason == "user legacy already absent"
+    assert commands == []
+
+
+async def test_userdel_r_purges_the_simulated_home_subtree():
+    # userdel -r (remove_home=True) clears the whole home and the mail spool
+    # from the filesystem seams -- the #18 removal-purge rule, so File and
+    # FileContents stop answering for the removed paths.
+    home = "/home/legacy"
+    host = SimulatedHost(
+        name="h",
+        os_users={"legacy": {"home": home}},
+        directory_stats={home: {"user": "legacy", "group": "legacy", "mode": 755}},
+        file_stats={
+            f"{home}/.ssh/authorized_keys": {"mode": 600},
+            "/var/spool/mail/legacy": {"mode": 644},
+        },
+        remote_files={f"{home}/.ssh/authorized_keys": b"ssh-rsa AAAA key\n"},
+        existing_files={home, f"{home}/.ssh/authorized_keys", "/var/spool/mail/legacy"},
+    )
+    host.remove_user("legacy", remove_home=True)
+    assert "legacy" not in host.os_users
+    assert home not in host.directory_stats
+    assert f"{home}/.ssh/authorized_keys" not in host.remote_files
+    assert f"{home}/.ssh/authorized_keys" not in host.file_stats
+    assert "/var/spool/mail/legacy" not in host.file_stats
+    assert home not in host.existing_files
+    # The facts stop answering for the purged paths.
+    assert await FileContents.process(host, f"{home}/.ssh/authorized_keys") is None
+    assert await File.process(host, home) is None
+
+
+async def test_userdel_plain_leaves_the_home_in_place():
+    # Without remove_home the account row drops but the home directory stays
+    # (baseline parity -- plain userdel removes no files).
+    home = "/home/legacy"
+    host = SimulatedHost(
+        name="h",
+        os_users={"legacy": {"home": home}},
+        directory_stats={home: {"user": "legacy", "group": "legacy", "mode": 755}},
+        remote_files={f"{home}/note": b"keep me\n"},
+    )
+    host.remove_user("legacy")
+    assert "legacy" not in host.os_users
+    assert home in host.directory_stats
+    assert host.remote_files[f"{home}/note"] == b"keep me\n"
+
+
+def remove_home_deploy(host: Host) -> Generator[OperationRequest]:
+    yield op(
+        server.user,
+        name="Remove legacy with home",
+        user="legacy",
+        present=False,
+        remove_home=True,
+        sudo=True,
+    )
+
+
+async def test_userdel_r_applies_then_idempotent():
+    host = SimulatedHost(
+        name="h",
+        os_users={"legacy": {"home": "/home/legacy"}},
+        directory_stats={"/home/legacy": {"user": "legacy", "mode": 755}},
+        remote_files={"/home/legacy/.bashrc": b"export FOO=1\n"},
+        os_groups=["web"],
+    )
+    runtimes, plans = await run_prepare([host], remove_home_deploy)
+    assert [p.changed for p in plans["h"]] == [True]
+    report = await run_apply(runtimes, plans=plans)
+    assert [e.changed for e in report.log] == [True]
+    assert "$ sudo userdel -r legacy" in format_log(report)
+    assert "legacy" not in host.os_users
+    assert "/home/legacy" not in host.directory_stats
+    assert "/home/legacy/.bashrc" not in host.remote_files
+    # The apply purged the seam, so a fresh prepare sees the user gone and
+    # plans no change -- idempotent across runs.
+    runtimes, plans = await run_prepare([host], remove_home_deploy)
+    assert [p.changed for p in plans["h"]] == [False]
 
 
 async def test_user_home_already_owned_needs_no_command():
