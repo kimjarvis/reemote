@@ -643,7 +643,16 @@ plans a spurious change, and a creation with no primary `group` reuses an
 existing group of the user's name when there is one (the baseline's "tell
 `useradd` to use it" fix). `groups` is compared as a set, and with
 `append=True` only the memberships the user lacks are written (`-a -G`) —
-appending never removes one. Pass `groups` as a tuple rather than a list:
+appending never removes one. The explicit empty values are declarable
+states, not "unset": `groups=()` reconciles a present user to *no*
+secondary groups (`usermod -G ''`, the Ansible `groups: ""` state) and
+`comment=""` clears a non-empty GECOS field (`usermod -c ''`, the Ansible
+`comment: ""` state), each a no-op once the fact already reads empty, while
+`None` (the default for both) leaves the field alone; with `append=True` an
+empty `groups` is always a no-op, since appending nothing must not clear.
+On a creation the empty values coincide with the defaults — `useradd`
+without `-G`/`-c` creates no secondary memberships and no comment. Pass
+`groups` as a tuple rather than a list:
 `op()` requests must stay hashable, so a list raises
 [`UnhashableArgumentError`][reemote.core.UnhashableArgumentError].
 `password` is the *encrypted* hash and rides `useradd -p`/`usermod -p`.

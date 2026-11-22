@@ -4089,8 +4089,13 @@ class SimulatedHost(Host):
 
         Only the fields the operation deemed different are written (the
         descriptor carries nothing else), so a repeat update reads back equal
-        and is a no-op. A ``groups`` write replaces the membership, or unions
-        it in when ``append`` set (``usermod -a -G``); the FreeBSD password
+        and is a no-op. ``groups``/``comment`` distinguish unset (``None``,
+        left alone) from set-but-empty: an explicit empty tuple replaces the
+        membership with ``[]`` (``usermod -G ''``) and an empty comment
+        clears the field back to ``None`` (``usermod -c ''``, the empty
+        passwd field the ``Users`` fact reads as ``None``). A non-empty
+        ``groups`` write replaces the membership, or unions it in when
+        ``append`` set (``usermod -a -G``); the FreeBSD password
         form (the ``echo '<hash>' | pw usermod -n <user> -H 0`` pipe) writes
         the hash through the same path. An absent user changes nothing -- the
         real command would exit non-zero and fail the apply step.
@@ -4104,12 +4109,12 @@ class SimulatedHost(Host):
             info["shell"] = cmd.shell_path
         if cmd.group:
             info["group"] = cmd.group
-        if cmd.comment:
-            info["comment"] = cmd.comment
+        if cmd.comment is not None:
+            info["comment"] = cmd.comment or None
         if cmd.password:
             info["password"] = cmd.password
-        if cmd.groups:
-            if cmd.append:
+        if cmd.groups is not None:
+            if cmd.append and cmd.groups:
                 current = list(info.get("groups") or [])
                 info["groups"] = current + [g for g in cmd.groups if g not in current]
             else:

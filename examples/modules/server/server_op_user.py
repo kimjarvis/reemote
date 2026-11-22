@@ -7,7 +7,9 @@ This is a *usage* example, not part of the library. It shows reemote's
 ``server.user`` operation, baseline ``server.user`` parity for user
 accounts: the deploy creates a ``deploy`` service account with a login
 shell and a GECOS comment, puts it in the ``apps`` group, then *appends*
-the ``staff`` group to it, and finally removes a ``legacy`` account that
+the ``staff`` group to it, normalizes an ``audit`` account to *no*
+secondary groups and *no* GECOS comment (the explicit empty values
+``groups=()``/``comment=""``), and finally removes a ``legacy`` account that
 is no longer wanted -- all under ``sudo``, because ``useradd``,
 ``usermod``, ``userdel`` and the home-directory ``mkdir``/``chown`` pair
 all need root.
@@ -37,7 +39,12 @@ plans no change. Two details are worth seeing in the plan:
 hashable for ``compose(dedupe=True)``, so a list would be rejected with
 ``UnhashableArgumentError``. The two secondary groups are created first
 by ``server.group`` requests, which the lockstep barrier completes before
-the account is touched. The baseline's ``public_keys``/``delete_keys`` options
+the account is touched. The audit step shows the empty-value states: an
+explicit ``groups=()`` reconciles the account to no secondary memberships
+(``usermod -G ''``, the Ansible ``groups: ""`` normalization) and
+``comment=""`` clears the GECOS field (``usermod -c ''``), each planned
+only while the ``Users`` fact still shows something to clear -- ``None``,
+the default, would leave both alone. The baseline's ``public_keys``/``delete_keys`` options
 are deliberately dropped -- that branch rides ``files.line`` appends and
 an elevated ``files.put``, neither of which reemote has -- so the script
 manages no ``authorized_keys`` file; the baseline's plan-time ``Which`` guards
@@ -63,7 +70,8 @@ them and prints one line each instead of a traceback.
 
 Note that this script mutates the shared demo inventory: the ``deploy``
 account and its home directory stay on the hosts (and the ``apps``/
-``staff`` groups with them), while ``legacy`` is removed -- with its home
+``staff`` groups with them), the ``audit`` account stays too -- with no
+secondary groups and no GECOS comment -- while ``legacy`` is removed -- with its home
 directory and mail spool, since the removal asks ``remove_home=True`` --
 wherever it existed. Re-running it is a no-op.
 
@@ -120,7 +128,7 @@ def is_redhat(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Create the deploy account, append a group to it, remove the legacy one.
+    """Create the deploy account, append a group, normalize audit, remove legacy.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases; whether each account already exists -- and which of its
@@ -166,6 +174,21 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         user="deploy",
         groups=("staff",),
         append=True,
+        sudo=True,
+        when=is_redhat,
+    )
+    # Explicit empty values are declarable states, not "leave alone" (that
+    # is None, the default): groups=() reconciles the audit account to no
+    # secondary memberships (usermod -G '') and comment="" clears its GECOS
+    # field (usermod -c ''), each planned only while the Users fact still
+    # shows something to clear. An absent audit account is created plain:
+    # useradd without -G/-c already matches the empty state.
+    yield op(
+        server.user,
+        name="Normalize the audit account",
+        user="audit",
+        groups=(),
+        comment="",
         sudo=True,
         when=is_redhat,
     )

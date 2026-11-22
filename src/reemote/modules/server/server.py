@@ -3859,13 +3859,20 @@ class UserModCommand(Command):
     fact, in the baseline's argument order: ``-d`` home, ``-s`` shell, ``-g``
     primary group, ``-a -G``/``-G`` secondary groups, ``-c`` comment, and
     ``-p`` password. The user name trails the flags.
+
+    ``groups`` and ``comment`` distinguish "unset" from "set but empty":
+    ``groups=None`` renders no group argument (membership left alone) while
+    an explicit empty tuple renders ``-G ''`` -- removal from every secondary
+    group, the Ansible ``groups: ""`` state; ``comment=None`` renders no
+    ``-c`` while ``comment=""`` renders ``-c ''``, clearing the GECOS field.
+    An empty ``groups`` never rides ``-a`` (appending nothing must not clear).
     """
 
     user: str
     home: str | None = None
     shell_path: str | None = None
     group: str | None = None
-    groups: tuple[str, ...] = ()
+    groups: tuple[str, ...] | None = None
     append: bool = False
     comment: str | None = None
     password: str | None = None
@@ -3878,13 +3885,13 @@ class UserModCommand(Command):
             args.extend(["-s", shlex.quote(self.shell_path)])
         if self.group:
             args.extend(["-g", shlex.quote(self.group)])
-        if self.groups:
+        if self.groups is not None:
             joined = ",".join(shlex.quote(g) for g in self.groups)
-            if self.append:
+            if self.append and self.groups:
                 args.extend(["-a", "-G", joined])
             else:
-                args.extend(["-G", joined])
-        if self.comment:
+                args.extend(["-G", joined or "''"])
+        if self.comment is not None:
             args.extend(["-c", shlex.quote(self.comment)])
         if self.password:
             args.extend(["-p", shlex.quote(self.password)])
@@ -3962,9 +3969,14 @@ async def user(
         group (str | None, optional): The user's primary group. Defaults
             to None.
         groups (tuple[str, ...] | None, optional): The user's secondary
-            groups. A tuple, never a list: ``OperationRequest`` hashes every
-            argument for ``compose(dedupe=True)``, so a list would be
-            rejected with ``UnhashableArgumentError``. Defaults to None.
+            groups. ``None`` (the default) leaves an existing user's
+            membership alone; an explicit empty tuple ``()`` reconciles it
+            to *no* secondary groups (``usermod -G ''``, the Ansible
+            ``groups: ""`` state), a no-op with ``append=True`` since
+            appending never removes. A tuple, never a list:
+            ``OperationRequest`` hashes every argument for
+            ``compose(dedupe=True)``, so a list would be rejected with
+            ``UnhashableArgumentError``. Defaults to None.
         append (bool, optional): Whether to add the user to ``groups``
             without losing membership of other groups. Defaults to False.
         ensure_home (bool, optional): Whether to ensure the ``home``
@@ -3977,8 +3989,10 @@ async def user(
         uid (int | None, optional): Use a specific user id number; a
             falsy uid (``None`` or ``0``) is skipped, exactly like
             the baseline's ``if uid:`` check. Defaults to None.
-        comment (str | None, optional): The user's GECOS comment.
-            Defaults to None.
+        comment (str | None, optional): The user's GECOS comment. ``None``
+            (the default) leaves an existing comment alone; an explicit
+            empty string ``""`` clears it (``usermod -c ''``, the Ansible
+            ``comment: ""`` state). Defaults to None.
         unique (bool, optional): Whether to prevent creating a user with
             a duplicate UID (``False`` renders ``-o``). Defaults to True.
         password (str | None, optional): The *encrypted* password hash to
@@ -4017,6 +4031,17 @@ async def user(
             user="deploy",
             groups=("www-data",),
             append=True,
+            sudo=True,
+        )
+
+        # Reconcile to no secondary groups and clear the GECOS comment: the
+        # explicit empty values are states, not "leave alone" (that is None)
+        yield op(
+            server.user,
+            name="Strip deploy of secondary groups and comment",
+            user="deploy",
+            groups=(),
+            comment="",
             sudo=True,
         )
 
@@ -4073,10 +4098,14 @@ async def user(
     # convention every other reemote operation follows. ``**kwargs``
     # absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
+    # ``groups``/``comment`` distinguish "unset" (``None``, leave alone) from
+    # "set but empty" (``()``/``""``, reconcile to none -- the Ansible
+    # ``groups: ""``/``comment: ""`` states), so the gates below compare by
+    # identity, never truthiness.
     users = await ctx.facts.get(Users)
     existing_groups = await ctx.facts.get(Groups)
     existing_user = users.get(user)
-    requested_groups = tuple(groups) if groups else ()
+    requested_groups = tuple(groups) if groups is not None else None
 
     if home is None:
         home = f"/home/{user}"
@@ -4112,7 +4141,7 @@ async def user(
             home=home,
             shell_path=shell,
             group=group,
-            groups=requested_groups,
+            groups=requested_groups if requested_groups is not None else (),
             system=system,
             uid=uid,
             comment=comment,
@@ -4130,27 +4159,37 @@ async def user(
         mod_group = (
             group if group and group != existing_user.get("group") else None
         )
+        # The fact reads an empty passwd comment field as None; normalize it
+        # to "" so a cleared GECOS converges instead of re-clearing every run.
         mod_comment = (
-            comment if comment and comment != existing_user.get("comment") else None
+            comment
+            if comment is not None
+            and comment != (existing_user.get("comment") or "")
+            else None
         )
         password_changed = bool(
             password and password != existing_user.get("password")
         )
         mod_password = password if password_changed else None
         current_groups = list(existing_user.get("groups") or [])
-        mod_groups: tuple[str, ...] = ()
+        mod_groups: tuple[str, ...] | None = None
         groups_change = False
-        if requested_groups:
+        if requested_groups is not None:
             if append:
-                # Only membership the user lacks; append never removes.
+                # Only membership the user lacks; append never removes, so
+                # an empty request is always already a subset (a no-op).
                 if not set(requested_groups).issubset(current_groups):
                     groups_change = True
-                    mod_groups = tuple(requested_groups)
+                    mod_groups = requested_groups
             elif set(current_groups) != set(requested_groups):
                 groups_change = True
-                mod_groups = tuple(requested_groups)
+                mod_groups = requested_groups
         other_changes = bool(
-            mod_home or mod_shell or mod_group or groups_change or mod_comment
+            mod_home
+            or mod_shell
+            or mod_group
+            or groups_change
+            or mod_comment is not None
         )
         if not (other_changes or password_changed):
             reasons.append(f"user {user} already as requested")

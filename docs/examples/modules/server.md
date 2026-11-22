@@ -198,7 +198,8 @@ read-only `server_timezone.py` fact example.
 
 `server.user` in action: the deploy creates a `deploy` service account with a
 login shell and a GECOS comment in the `apps` group, appends the `staff`
-group to it, then removes a `legacy` account — all under `sudo`, because
+group to it, normalizes an `audit` account to no secondary groups and no
+GECOS comment, then removes a `legacy` account — all under `sudo`, because
 `useradd`, `usermod`, `userdel` and the home-directory pair need root. The
 two groups come from `server.group` requests first, since the lockstep barrier
 finishes those steps before any host touches an account. The operation is
@@ -206,7 +207,12 @@ idempotent — it compares the request against the `Users` fact and yields
 `useradd` for an absent account, a `usermod` carrying only the differing
 fields for a present one, and `userdel` for `present=False`, so a second run
 plans no change. `groups` is a tuple because `op()` arguments must stay
-hashable, and `append=True` adds memberships without removing any. The default
+hashable, and `append=True` adds memberships without removing any. The
+audit step shows the explicit empty-value states: `groups=()` reconciles
+the account to no secondary memberships (`usermod -G ''`, the Ansible
+`groups: ""` normalization) and `comment=""` clears the GECOS field
+(`usermod -c ''`), each planned only while the fact still shows something
+to clear — `None`, the default, leaves both alone. The default
 `ensure_home` is the baseline's `files.directory` delegation, inlined: with
 `create_home=False` (the default) `useradd` builds nothing from the skeleton,
 so the plan shows the `mkdir -p /home/deploy` plus `chown deploy:deploy
@@ -220,7 +226,9 @@ managed through the separate `server.user_authorized_keys` operation), as
 are its plan-time
 `Which` guards, so a missing `useradd` surfaces at apply as
 `CommandNotFoundError`. The script mutates the shared demo inventory for
-real: the account, its home directory and the two groups stay on the hosts.
+real: the account, its home directory and the two groups stay on the hosts,
+and the `audit` account stays too — with no secondary groups and no GECOS
+comment.
 The script is named `server_op_user.py` to keep it distinct from the
 read-only `server_user.py` fact example.
 

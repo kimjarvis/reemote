@@ -3651,6 +3651,21 @@ def test_user_mod_command_shell_rendering():
         UserModCommand(user="someuser", password="$pw$").shell()
         == "usermod -p '$pw$' someuser"
     )
+    # Explicit empty values are states, not "leave alone": () clears every
+    # secondary membership (-G '', never -a -- appending nothing must not
+    # clear) and "" clears the GECOS field (-c ''); None renders neither.
+    assert UserModCommand(user="someuser", groups=()).shell() == "usermod -G '' someuser"
+    assert (
+        UserModCommand(user="someuser", groups=(), append=True).shell()
+        == "usermod -G '' someuser"
+    )
+    assert (
+        UserModCommand(user="someuser", comment="").shell() == "usermod -c '' someuser"
+    )
+    assert (
+        UserModCommand(user="someuser", groups=None, comment=None).shell()
+        == "usermod someuser"
+    )
     assert command_shell(UserModCommand(user="someuser"), sudo=True) == (
         "sudo usermod someuser"
     )
@@ -4047,7 +4062,171 @@ async def test_user_update_carries_only_the_differing_fields():
     assert ctx.changed
     assert ctx.reason == "user deploy differs, will update"
     # Only the home differs: shell/group/comment already match the fact.
-    assert commands == [UserModCommand(user="deploy", home="/srv/deploy", groups=())]
+    assert commands == [UserModCommand(user="deploy", home="/srv/deploy")]
+
+
+async def test_user_empty_groups_clears_secondary_membership():
+    # The Ansible groups: "" state: an explicit () reconciles to no secondary
+    # groups, where the truthiness gate used to silently leave them alone.
+    host = SimulatedHost(
+        name="h",
+        os_users={"deploy": {"home": "/home/deploy", "groups": ["wheel"]}},
+    )
+    ctx, commands = await materialize(
+        host, op(server.user, user="deploy", groups=(), ensure_home=False)
+    )
+    assert ctx.changed
+    assert ctx.reason == "user deploy differs, will update"
+    assert commands == [UserModCommand(user="deploy", groups=())]
+    assert commands[0].shell() == "usermod -G '' deploy"
+
+
+async def test_user_empty_groups_already_empty_is_noop():
+    host = SimulatedHost(
+        name="h",
+        os_users={"deploy": {"home": "/home/deploy", "groups": []}},
+    )
+    ctx, commands = await materialize(
+        host, op(server.user, user="deploy", groups=(), ensure_home=False)
+    )
+    assert not ctx.changed
+    assert ctx.reason == "user deploy already as requested"
+    assert commands == []
+
+
+async def test_user_groups_none_leaves_membership_alone():
+    # None (also the default) keeps the leave-alone semantics: a member of
+    # wheel plans no group change.
+    host = SimulatedHost(
+        name="h",
+        os_users={"deploy": {"home": "/home/deploy", "groups": ["wheel"]}},
+    )
+    ctx, commands = await materialize(
+        host, op(server.user, user="deploy", groups=None, ensure_home=False)
+    )
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_user_empty_groups_with_append_is_noop():
+    # append never removes, so an empty request is always already a subset.
+    host = SimulatedHost(
+        name="h",
+        os_users={"deploy": {"home": "/home/deploy", "groups": ["wheel"]}},
+    )
+    ctx, commands = await materialize(
+        host,
+        op(server.user, user="deploy", groups=(), append=True, ensure_home=False),
+    )
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_user_empty_comment_clears_gecos():
+    # The Ansible comment: "" state: "" clears a non-empty GECOS field.
+    host = SimulatedHost(
+        name="h",
+        os_users={"deploy": {"home": "/home/deploy", "comment": "Deploy User"}},
+    )
+    ctx, commands = await materialize(
+        host, op(server.user, user="deploy", comment="", ensure_home=False)
+    )
+    assert ctx.changed
+    assert ctx.reason == "user deploy differs, will update"
+    assert commands == [UserModCommand(user="deploy", comment="")]
+    assert commands[0].shell() == "usermod -c '' deploy"
+
+
+async def test_user_empty_comment_on_empty_gecos_is_noop():
+    # The Users fact reads an empty passwd comment field as None; "" must
+    # converge against it, not re-clear on every run.
+    host = SimulatedHost(
+        name="h",
+        os_users={"deploy": {"home": "/home/deploy", "comment": None}},
+    )
+    ctx, commands = await materialize(
+        host, op(server.user, user="deploy", comment="", ensure_home=False)
+    )
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_user_none_comment_leaves_gecos_alone():
+    host = SimulatedHost(
+        name="h",
+        os_users={"deploy": {"home": "/home/deploy", "comment": "Deploy User"}},
+    )
+    ctx, commands = await materialize(
+        host, op(server.user, user="deploy", comment=None, ensure_home=False)
+    )
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_user_empty_values_creation_renders_plain_useradd():
+    # On the creation branch the empty values coincide with the defaults:
+    # useradd without -G/-c creates no secondary memberships and no GECOS.
+    host = SimulatedHost(name="h")
+    _ctx, commands = await materialize(
+        host,
+        op(server.user, user="deploy", groups=(), comment="", ensure_home=False),
+    )
+    assert commands == [
+        UserAddCommand(user="deploy", home="/home/deploy", comment="")
+    ]
+    assert commands[0].shell() == "useradd -d /home/deploy -M deploy"
+
+
+def clear_deploy_memberships(host: Host) -> Generator[OperationRequest]:
+    """The users-role normalization: no secondary groups, no GECOS comment."""
+    yield op(
+        server.user,
+        name="Normalize the deploy account",
+        user="deploy",
+        groups=(),
+        comment="",
+        ensure_home=False,
+        sudo=True,
+    )
+
+
+async def test_user_empty_values_apply_then_idempotent():
+    host = SimulatedHost(
+        name="h",
+        os_users={
+            "deploy": {
+                "home": "/home/deploy",
+                "groups": ["wheel", "web"],
+                "comment": "Deploy User",
+            }
+        },
+    )
+    runtimes, plans = await run_prepare([host], clear_deploy_memberships)
+    assert [p.changed for p in plans["h"]] == [True]
+    report = await run_apply(runtimes, plans=plans)
+    assert [e.changed for e in report.log] == [True]
+    assert "$ sudo usermod -G '' -c '' deploy" in format_log(report)
+    assert host.os_users["deploy"]["groups"] == []
+    assert host.os_users["deploy"]["comment"] is None
+    # The apply cleared both fields, so a fresh prepare sees the account
+    # already as requested and plans no change -- idempotent across runs.
+    runtimes, plans = await run_prepare([host], clear_deploy_memberships)
+    assert [p.changed for p in plans["h"]] == [False]
+
+
+async def test_user_mod_empty_values_mutate_the_simulated_host():
+    host = SimulatedHost(
+        name="h",
+        os_users={"deploy": {"groups": ["wheel"], "comment": "Deploy User"}},
+    )
+    await send_command(host, UserModCommand(user="deploy", groups=(), comment=""))
+    assert host.os_users["deploy"]["groups"] == []
+    assert host.os_users["deploy"]["comment"] is None
+    # None carries no write: an unrelated field update leaves both alone.
+    await send_command(host, UserModCommand(user="deploy", shell_path="/bin/sh"))
+    assert host.os_users["deploy"]["shell"] == "/bin/sh"
+    assert host.os_users["deploy"]["groups"] == []
+    assert host.os_users["deploy"]["comment"] is None
 
 
 async def test_user_uid_zero_is_skipped():
