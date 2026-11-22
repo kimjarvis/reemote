@@ -46,6 +46,7 @@ plugins:
             - examples/modules/files
             - examples/modules/firewalld
             - examples/modules/flatpak
+            - examples/modules/gem
             - examples/modules/git
             - examples/modules/gpg
             - examples/modules/hardware
@@ -124,6 +125,7 @@ nav:
           - files: modules/files.md
           - firewalld: modules/firewalld.md
           - flatpak: modules/flatpak.md
+          - gem: modules/gem.md
           - git: modules/git.md
           - gpg: modules/gpg.md
           - hardware: modules/hardware.md
@@ -156,6 +158,7 @@ nav:
           - files: examples/modules/files.md
           - firewalld: examples/modules/firewalld.md
           - flatpak: examples/modules/flatpak.md
+          - gem: examples/modules/gem.md
           - git: examples/modules/git.md
           - gpg: examples/modules/gpg.md
           - hardware: examples/modules/hardware.md

@@ -41,7 +41,7 @@ a real asyncssh transport is missing:
   / ``firewalld_permanent_ipsets`` / ``firewalld_permanent_policies``
   / ``firewalld_permanent_zones`` / ``firewalld_policies``
   / ``firewalld_services`` / ``firewalld_status`` / ``firewalld_zones``
-  / ``fips_enabled`` / ``flatpak_package_info`` / ``git_branches``
+  / ``fips_enabled`` / ``flatpak_package_info`` / ``gem_packages`` / ``git_branches``
   / ``git_configs`` / ``git_head_detached`` / ``git_local_commits``
   / ``git_remote_commits`` / ``git_remote_urls`` / ``git_repos``
   / ``git_ssh_authenticated`` / ``git_statuses`` / ``git_submodules``
@@ -108,6 +108,7 @@ a real asyncssh transport is missing:
   ``FirewalldPolicies`` (the firewalld-local ``_FirewalldLockdown`` and
   ``_FirewalldPanicMode`` probes read the ``firewalld_lockdown`` and
   ``firewalld_panic_mode`` seams), ``FipsEnabled``, ``FlatpakPackage``, ``FlatpakPackages``,
+  ``GemPackages``,
   ``GitBranch``, ``GitConfig``,
   ``GitHeadDetached``, ``GitIsRepo``, ``GitLocalCommit``,
   ``GitRemoteBranchCommit``, ``GitRemoteUrl``, ``GitSshKeyConfigured``,
@@ -304,6 +305,13 @@ from reemote.modules.flatpak.flatpak import (
     FlatpakInstallCommand,
     FlatpakPackageInfo,
     FlatpakRemoveCommand,
+)
+from reemote.modules.gem.gem import (
+    GemInstallCommand,
+    GemRemoveCommand,
+    GemUpdateCommand,
+    _gem_split_spec,
+    _scope_key,
 )
 from reemote.modules.git.git import (
     GitCheckoutCommand,
@@ -1201,6 +1209,26 @@ class SimulatedHost(Host):
     # ``flatpak install``/``uninstall``) maintain one store for both facts and
     # they can never disagree.
     flatpak_package_info: dict[str, FlatpakPackageInfo] = field(default_factory=dict)
+    # Installed gems -- the state store the fact reads, kept as one mapping of
+    # gem scope (named by the library's own ``_scope_key``: ``"system"``,
+    # ``"user-install"`` or ``"gem_home=<path>"``/``"gem_path=<path>"``) to
+    # that scope's name -> installed-version-list mapping, which
+    # ``GemPackages.process`` projects into the sorted ``GemPackageInfo``
+    # entries it returns for the scope a request addresses (the
+    # ``npm_packages`` per-scope store precedent, widened to a version *list*
+    # per name because gem genuinely keeps every installed version side by
+    # side -- exactly what pyinfra's ``dict[str, list[str]]`` models). Names
+    # are stored verbatim -- RubyGems names are case-sensitive and
+    # ``GemPackages.parse`` performs no normalization -- and an unpinned
+    # install with no registry metadata to resolve a version from records the
+    # ``[""]`` placeholder (npm's/pip's precedent). Defaults to {} -- a
+    # simulated machine with no gems installed anywhere, so the fact answers
+    # ``[]`` for every scope. A test seeds it directly;
+    # ``install_gem_packages``/``remove_gem_packages`` (the simulated
+    # ``gem install``/``gem uninstall``) mutate the scope they address,
+    # leaving the others untouched, so a system, a user and a relocated store
+    # can never cross-contaminate.
+    gem_packages: dict[str, dict[str, list[str]]] = field(default_factory=dict)
     # Installed npm packages -- the state store the fact reads, kept as one
     # mapping of npm scope (named by the library's own ``_environment_key``:
     # ``"global"``, ``"global@<prefix>"`` or ``"directory=<path>"``) to that
@@ -2718,6 +2746,27 @@ class SimulatedHost(Host):
                 self.install_flatpak_packages(packages)
             case FlatpakRemoveCommand(packages=packages):
                 self.remove_flatpak_packages(packages)
+            case GemInstallCommand(
+                packages=packages,
+                user_install=user_install,
+                gem_home=gem_home,
+                gem_path=gem_path,
+            ):
+                self.install_gem_packages(
+                    packages, user_install, gem_home, gem_path
+                )
+            case GemUpdateCommand():
+                pass  # the simulation tracks no newer versions to update to
+            case GemRemoveCommand(
+                names=names,
+                version=version,
+                user_install=user_install,
+                gem_home=gem_home,
+                gem_path=gem_path,
+            ):
+                self.remove_gem_packages(
+                    names, version, user_install, gem_home, gem_path
+                )
             case PipInstallCommand(packages=packages):
                 self.install_pip_packages(packages)
             case PipUpgradeCommand():
@@ -7784,6 +7833,76 @@ class SimulatedHost(Host):
             if isinstance(dependencies, dict):
                 declared.extend(str(name) for name in dependencies)
         self.install_npm_packages(tuple(declared), posixpath.dirname(path), None)
+
+    def install_gem_packages(
+        self,
+        packages: tuple[str, ...],
+        user_install: bool,
+        gem_home: str | None,
+        gem_path: str | None,
+    ) -> None:
+        """Record a simulated ``gem install``: mark the gems installed.
+
+        ``gem.packages``' install mutation, in whichever scope the command
+        addressed (``_scope_key`` names it, exactly as the fact's seam reads
+        it, so a ``--user-install`` never lands in the system store and a
+        relocated ``GEM_HOME``/``GEM_PATH`` store stays separate). Each gem
+        token is split with the library's own ``_gem_split_spec``: a
+        ``<pkg>:<version>`` pin APPENDS that version to the name's list
+        (de-duplicated) -- gem keeps every installed version side by side, so
+        a re-install of a present version is a no-op while a new version joins
+        the others -- and an unpinned name carries no registry metadata to
+        resolve a version from, so an absent name gets the ``[""]``
+        placeholder (npm's/pip's precedent) while an installed name keeps its
+        recorded versions. Names are stored verbatim, as gem spells them.
+        """
+        store = self.gem_packages.setdefault(
+            _scope_key(user_install, gem_home, gem_path), {}
+        )
+        for package in packages:
+            name, version = _gem_split_spec(package)
+            versions = store.setdefault(name, [])
+            if version is None:
+                if not versions:
+                    versions.append("")
+            elif version not in versions:
+                versions.append(version)
+
+    def remove_gem_packages(
+        self,
+        names: tuple[str, ...],
+        version: str | None,
+        user_install: bool,
+        gem_home: str | None,
+        gem_path: str | None,
+    ) -> None:
+        """Record a simulated ``gem uninstall``: drop the gems.
+
+        The ``present=False`` direction of ``gem.packages``. The descriptor
+        carries bare ``names`` and, for a pinned removal, the whole-command
+        ``version`` flag (``gem uninstall`` has no ``name:version`` token, so
+        a pinned removal is its own command). A version-less removal models
+        gem's ``-a`` (all installed versions): the name's whole entry leaves
+        the addressed scope's store. A pinned removal drops only that version,
+        popping the name once no versions remain, so ``GemPackages`` no longer
+        reports it. An absent name or version, or a scope the simulation holds
+        no tree for, is tolerated (the real command would exit non-zero, but
+        the operation's fact check never yields that removal).
+        """
+        store = self.gem_packages.get(_scope_key(user_install, gem_home, gem_path))
+        if store is None:
+            return
+        for name in names:
+            if version is None:
+                store.pop(name, None)
+                continue
+            versions = store.get(name)
+            if versions is None:
+                continue
+            if version in versions:
+                versions.remove(version)
+            if not versions:
+                store.pop(name, None)
 
     def install_snap_packages(self, packages: tuple[str, ...], channel: str) -> None:
         """Record a simulated ``snap install``: mark the snaps installed.

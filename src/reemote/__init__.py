@@ -92,6 +92,7 @@ from .modules import (
     files,
     firewalld,
     flatpak,
+    gem,
     git,
     gpg,
     hardware,
@@ -284,6 +285,13 @@ from .modules.flatpak.flatpak import (
     FlatpakPackageInfo,
     FlatpakPackages,
     FlatpakRemoveCommand,
+)
+from .modules.gem.gem import (
+    GemInstallCommand,
+    GemPackageInfo,
+    GemPackages,
+    GemRemoveCommand,
+    GemUpdateCommand,
 )
 from .modules.git.git import (
     GitBranch,
@@ -890,6 +898,11 @@ __all__ = [
     "FstabEntry",
     "FstabInstallCommand",
     "FstabUploadCommand",
+    "GemInstallCommand",
+    "GemPackageInfo",
+    "GemPackages",
+    "GemRemoveCommand",
+    "GemUpdateCommand",
     "GetCommand",
     "GitBranch",
     "GitCheckoutCommand",
@@ -1312,6 +1325,7 @@ __all__ = [
     "format_plan",
     "gather_action",
     "gather_fact",
+    "gem",
     "git",
     "gpg",
     "hardware",

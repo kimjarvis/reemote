@@ -31,6 +31,10 @@ command descriptors it yields, ``modules/files/files.py`` holds
 ``FlatpakPackageInfo`` entry type) and the ``FlatpakPackages`` fact beside the
 ``packages`` operation and the ``FlatpakInstallCommand``/``FlatpakRemoveCommand``
 descriptors it yields,
+``modules/gem/gem.py`` holds the ``GemPackages`` fact (with its
+``GemPackageInfo`` entry type) beside the ``packages`` operation and the
+``GemInstallCommand``/``GemUpdateCommand``/``GemRemoveCommand``
+descriptors it yields,
 ``modules/git/git.py`` holds the ``GitBranch``, ``GitConfig``,
 ``GitHeadDetached``, ``GitIsRepo``, ``GitLocalCommit``,
 ``GitRemoteBranchCommit``, ``GitRemoteUrl``, ``GitSshKeyConfigured``,
@@ -121,9 +125,9 @@ descriptors it yields, and
 ``modules/server/server.py`` holds the ``wait_service`` operation (which
 polls the relocated ``systemd.SystemdServiceState`` fact). The subpackages
 are re-exported here, so a deploy can keep writing
-``from reemote.modules import apk, apt, dnf, files, firewalld, flatpak, git, gpg, hardware, iptables, lxd, mysql, npm, openrc, pip, postgresql, selinux, snap, sysctl, systemd, ufw, server``
+``from reemote.modules import apk, apt, dnf, files, firewalld, flatpak, gem, git, gpg, hardware, iptables, lxd, mysql, npm, openrc, pip, postgresql, selinux, snap, sysctl, systemd, ufw, server``
 and read ``apk.ApkInstalledPackages`` / ``apt.AptKeys`` / ``dnf.packages`` /
-``files.link`` / ``firewalld.FirewalldZones`` / ``git.GitBranch`` / ``gpg.GpgKeys`` / ``hardware.BlockDevices`` /
+``files.link`` / ``firewalld.FirewalldZones`` / ``gem.GemPackages`` / ``git.GitBranch`` / ``gpg.GpgKeys`` / ``hardware.BlockDevices`` /
 ``iptables.IptablesChains`` / ``lxd.LxdInstances`` / ``mysql.MysqlDatabases`` / ``npm.NpmPackages`` / ``openrc.OpenrcStatus`` / ``postgresql.PostgresqlRoles`` /
 ``selinux.Mode`` / ``sysctl.setting`` / ``systemd.service`` / ``ufw.UfwRules`` / ``server.wait_service``.
 """
@@ -136,6 +140,7 @@ from . import (
     files,
     firewalld,
     flatpak,
+    gem,
     git,
     gpg,
     hardware,
@@ -162,6 +167,7 @@ __all__ = [
     "files",
     "firewalld",
     "flatpak",
+    "gem",
     "git",
     "gpg",
     "hardware",

@@ -6,7 +6,7 @@ Runnable showcase scripts living in `examples/` — *usage* demonstrations
 through the public API only, never part of the library. The tree is split in
 three: `examples/modules/<namespace>/` holds one script per fact or operation
 of a library module (currently `apk`, `apt`, `dnf`, `files`, `firewalld`,
-`flatpak`, `git`, `gpg`, `hardware`, `iptables`, `lxd`, `mysql`, `npm`,
+`flatpak`, `gem`, `git`, `gpg`, `hardware`, `iptables`, `lxd`, `mysql`, `npm`,
 `openrc`, `pip`, `postgresql`, `selinux`,
 `server`, `snap`, `sysctl`, `systemd` and `ufw`), plus the cross-module `dnf_put_get`
 health-check scenario under `files/`,
@@ -30,6 +30,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 | `examples/modules/files/` | [Module examples: files](examples/modules/files.md) |
 | `examples/modules/firewalld/` | [Module examples: firewalld](examples/modules/firewalld.md) |
 | `examples/modules/flatpak/` | [Module examples: flatpak](examples/modules/flatpak.md) |
+| `examples/modules/gem/` | [Module examples: gem](examples/modules/gem.md) |
 | `examples/modules/git/` | [Module examples: git](examples/modules/git.md) |
 | `examples/modules/gpg/` | [Module examples: gpg](examples/modules/gpg.md) |
 | `examples/modules/hardware/` | [Module examples: hardware](examples/modules/hardware.md) |
@@ -69,7 +70,9 @@ sub-directory. Pick a page from the navigation, or start from this table:
     `ubuntu` host), the `pip` examples likewise on `is_ubuntu` (the
     venv the example itself provisions lives on that host), the `npm`
     examples likewise on `is_ubuntu` (their provisioning helper installs
-    Node.js and npm there first), and the `server_op_locale.py` example on the
+    Node.js and npm there first), the `gem` examples likewise on `is_ubuntu`
+    (their provisioning helper installs the `ruby-rubygems` deb there first),
+    and the `server_op_locale.py` example on the
     [server page](examples/modules/server.md) likewise on `is_ubuntu`
     because `/etc/locale.gen` + `locale-gen` are Debian-family only. The
     [`composition` demonstrations](examples/demonstrations/composition.md)
