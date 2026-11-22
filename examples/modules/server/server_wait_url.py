@@ -1,31 +1,38 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: start Jenkins on real hosts, then wait until its web app answers.
+"""Example: converge a web server on real hosts, then wait until it serves a page.
 
 This is a *usage* example, not part of the library. It shows the HTTP half of
 reemote's **waiting** design -- the primitive that replaces an Ansible ``uri``
 + ``until`` readiness task (issue #43). ``server.wait`` and
 ``server.wait_service`` only ask whether a *port* is listening or a *unit*
 reports ``active``; neither reads an HTTP response. A daemon can hold its port
-open long before it can serve requests, and Jenkins keeps answering ``"Please
-wait while"`` *while it upgrades, port already listening*. To gate on the
-application rather than the socket, ``server.wait_url`` polls a readiness check
-built on two new primitives:
+open long before it can serve requests -- a socket-activated unit owns the
+listen socket while its workers come up, and an application server such as
+Jenkins keeps answering ``"Please wait while"`` *while it upgrades, port already
+listening*. To gate on the application rather than the socket, ``server.wait_url``
+polls a readiness check built on two primitives:
 
 * the ``HttpEndpoint`` fact, which runs ``curl -s -w '\\n%{http_code}' <url>``
   **on the host** and returns the ``{status, body}`` record, so a ``localhost``
-  URL means the target's own loopback -- exactly the ``jenkins_hostname`` the
-  role checks; and
+  URL means the target's own loopback -- the daemon this deploy is waiting on,
+  which the controller has no route to; and
 * the ``EndpointReady`` predicate, which decides readiness from that record.
 
-The ``geerlingguy.jenkins`` task GETs ``http://localhost:8080/cli/``, accepts
-status ``200`` *or* ``403`` (the CLI answers ``403`` until you are signed in,
-which is fine for a readiness check) and repeats until the body no longer
-carries ``"Please wait while"``. That is precisely
-``EndpointReady(statuses=(200, 403), absent="Please wait while")`` -- one
-named in-deploy request, polled by the driver every ``interval`` seconds up to
-``timeout`` (raising ``WaitTimeoutError`` and aborting the run otherwise).
+The waited-for service is the web server the demo inventory already ships --
+``httpd`` on the RedHat hosts, ``nginx`` on the Ubuntu one -- so nothing has to
+be provisioned before the example can run. The readiness check asks for the page
+each one actually serves: ``EndpointReady(statuses=(200,), contains="Index of /")``
+on the autoindex-answering CentOS host, the same predicate with
+``contains="It works"`` on the Ubuntu default site. The ``geerlingguy.jenkins``
+task this primitive was built for is the same shape with other arguments: it GETs
+``http://localhost:8080/cli/``, accepts ``200`` *or* ``403`` (the CLI answers
+``403`` until you are signed in, which is fine for a readiness check) and repeats
+until the body no longer carries ``"Please wait while"`` -- i.e.
+``EndpointReady(statuses=(200, 403), absent="Please wait while")``. Either way it
+is one named in-deploy request, polled by the driver every ``interval`` seconds
+up to ``timeout`` (raising ``WaitTimeoutError`` and aborting the run otherwise).
 
 ``server.wait_url`` is the third specialised wait -- the HTTP counterpart to
 ``server.wait`` (a port) and ``server.wait_service`` (a unit): a thin
@@ -34,22 +41,33 @@ over the ``HttpEndpoint`` fact and an ``EndpointReady`` predicate it builds from
 its arguments. Like every wait it reads no facts and is always planned as a
 change -- whether the endpoint is *already* ready is discovered at apply time by
 the driver's poll loop, never at plan time, and a zero ``timeout`` still polls
-once so an already-ready endpoint always succeeds. ``systemd.service`` is the
-idempotent half: it starts and enables Jenkins only where the unit differs, so
-the second run plans no service change while the wait is planned again.
+once so an already-ready endpoint always succeeds. ``server.service`` is the
+idempotent half: it starts and enables the unit only where the state differs,
+so this run plans no service change on a converged host while the wait is
+planned again.
+
+Both requests carry ``when=is_systemd``, which reads only static inventory data
+(``host.family``): the OpenRC ``alpine`` host has no ``systemctl``, so it is
+skipped rather than failed, while the systemd hosts run the deploy for real.
 
 The request stays deterministic because ``wait_url`` rebuilds its
 ``EndpointReady`` predicate from its arguments in both phases, and a frozen
 dataclass compares by value -- so the descriptor is identical in prepare and
 apply (a freshly built lambda would not be). The accepted ``status`` codes are a
-tuple, never a list, because the request must stay hashable.
+tuple, never a list, because the request must stay hashable, and the unit name
+and body marker come from ``web_server_unit``/``ready_marker``, static
+``host.family`` branches of the kind the ``systemd`` examples make.
 
-The example assumes Jenkins is installed on the hosts (the apt base example
-installs it). Unlike the pytest suite -- which injects ``SimulatedHost``, seeds
-its ``http_endpoints`` seam and never touches the network -- this example uses
-the *default* factory (``Host.from_inventory``): each plain ``Host`` opens an
-asyncssh connection, reads the unit state for real, runs ``systemctl`` under
-sudo, and polls the endpoint with ``curl`` until Jenkins answers.
+Both web-server units are active and enabled on the demo hosts, so a plain run
+converges the service (planned as no change) and passes the wait on its first
+poll. Stop one by hand (``sudo systemctl stop httpd``) and the same deploy shows
+the pair working in sequence: the service request starts the unit, the wait
+polls the endpoint with ``curl`` until the page is served again. Unlike the
+pytest suite -- which injects ``SimulatedHost``, seeds its ``http_endpoints``
+seam and never touches the network -- this example uses the *default* factory
+(``Host.from_inventory``): each plain ``Host`` opens an asyncssh connection,
+reads the unit state for real, runs ``systemctl`` under sudo, and polls the
+endpoint until the web server answers.
 
 The path is resolved from ``__file__``, so the example works from any working
 directory; point ``INVENTORY_PATH`` at your own file (or edit ``inventory.json``)
@@ -88,9 +106,9 @@ from reemote import (
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
-# The CLI endpoint the role probes (host-local, so ``localhost`` is each
-# target's own loopback).
-JENKINS_URL = "http://localhost:8080/cli/"
+# The endpoint each host probes for itself (host-local, so ``localhost`` is the
+# target's own loopback, where its web server listens).
+WEB_URL = "http://localhost/"
 
 
 def load_inventory(path: Path) -> list[dict[str, Any]]:
@@ -107,34 +125,69 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
+def is_systemd(host: Host) -> bool:
+    """``when`` guard: the host runs systemd rather than OpenRC.
+
+    Reads only static inventory data (``host.family``) and stays a stable
+    module-level function, so both deploy phases reach the same decision -- the
+    OpenRC ``alpine`` host, which has no ``systemctl``, is skipped.
+    """
+    return host.family != "Alpine"
+
+
+def web_server_unit(host: Host) -> str:
+    """The installed web-server unit, by OS family (static data only).
+
+    ``httpd`` on the RHEL-family hosts, ``nginx`` on the Ubuntu one -- the two
+    units the demo inventory really runs. ``host.family`` is inventory data, so
+    the name is the same value in both deploy phases.
+    """
+    return "httpd" if host.family == "RedHat" else "nginx"
+
+
+def ready_marker(host: Host) -> str:
+    """A string the unit's own site serves only once it answers over HTTP.
+
+    The CentOS ``httpd`` has no index page and replies with its autoindex
+    listing (``"Index of /"``); the Ubuntu ``nginx`` serves the default site
+    (``"It works"``). Gating on the document rather than the listening socket is
+    the whole point of ``server.wait_url``.
+    """
+    return "Index of /" if host.family == "RedHat" else "It works"
+
+
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Start Jenkins, then wait for its web application to finish upgrading.
+    """Converge the web server, then wait for it to serve a page.
 
     Branch-free, so the request sequence is identical in the prepare and
-    apply phases. Only the service operation is elevated; the readiness poll
-    runs ``curl`` as the login user.
+    apply phases; ``web_server_unit``/``ready_marker`` read only static
+    inventory data. Only the service operation is elevated; the readiness poll
+    runs ``curl`` as the login user. Both are guarded with ``when=is_systemd``
+    so the guard expresses eligibility rather than an ``if`` that would diverge
+    between the phases.
     """
     yield op(
         server.service,
-        name="Start Jenkins",
-        service="jenkins",
+        name="Start the web server",
+        service=web_server_unit(host),
         running=True,
         enabled=True,
         sudo=True,
+        when=is_systemd,
     )
     # ``server.wait_url`` polls the ``HttpEndpoint`` fact through an
-    # ``EndpointReady`` predicate built from these arguments. The accepted
-    # states (200 or 403) and the upgrade-page marker mirror the role's ``uri``
-    # + ``until`` task exactly; ``status`` is a tuple, never a list, so the
-    # request stays hashable.
+    # ``EndpointReady`` predicate built from these arguments. The accepted status
+    # and the body marker say "the daemon answers over HTTP", not "the port is
+    # open"; ``status`` is a tuple, never a list, so the request stays hashable.
     yield op(
         server.wait_url,
-        name="Wait for Jenkins to finish upgrading",
-        url=JENKINS_URL,
-        status=(200, 403),
-        absent="Please wait while",
-        timeout=300.0,
-        interval=5.0,
+        name="Wait for the web server to answer over HTTP",
+        url=WEB_URL,
+        status=(200,),
+        contains=ready_marker(host),
+        timeout=60.0,
+        interval=2.0,
+        when=is_systemd,
     )
 
 
@@ -154,9 +207,10 @@ async def main() -> None:
         print(format_plan(plans))
 
         # Real run: prepare, then apply in lockstep across hosts. Step 1 starts
-        # Jenkins where needed; step 2 polls each host's endpoint with curl
-        # until the CLI answers 200/403 with no upgrade page (or raises
-        # WaitTimeoutError after 300s).
+        # and enables the unit where it differs; step 2 polls each host's
+        # endpoint with curl until its site answers 200 with the expected marker
+        # (or raises WaitTimeoutError after 60s). The OpenRC alpine host is
+        # skipped by the ``when`` guard in both steps.
         plans, report, _hosts = await run(inventory, deploy)
         print("\n== Run log (apply phase) ==")
         assert report is not None
@@ -192,7 +246,7 @@ async def main() -> None:
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     except WaitTimeoutError as exc:
-        # Jenkins never answered the CLI endpoint as requested within the
+        # The web server never answered the endpoint as requested within the
         # timeout. The message carries the host, the wait descriptor and the
         # last polled ``HttpEndpointInfo`` record -- the status and body that
         # kept failing the predicate -- which is everything worth printing.
