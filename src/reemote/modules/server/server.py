@@ -4814,10 +4814,6 @@ async def ssh_keypair(
 ) -> AsyncGenerator[Command]:
     """Generate an SSH key pair for a user, idempotently.
 
-    The Ansible ``user`` module's ``generate_ssh_key`` parity: the pair is
-    created only where its public half has no fingerprint yet, and the
-    generation runs as the target user so the files land owned correctly.
-
     Args:
         ctx (OpContext): Execution context for the operation.
         user (str): Name of the user the key pair belongs to.
@@ -4885,6 +4881,11 @@ async def ssh_keypair(
         Examples can be found in
         ``examples/modules/server/server_ssh_keypair.py``.
     """
+
+    # The Ansible ``user`` module's ``generate_ssh_key`` parity: the pair is
+    # created only where its public half has no fingerprint yet, and the
+    # generation runs as the target user so the files land owned correctly.
+
 
     # Mirrors the Ansible ``user`` module's ``generate_ssh_key``/
     # ``generate_ssh_key_file``/``ssh_key_type``/``ssh_key_bits``/
@@ -7009,18 +7010,6 @@ async def wait_url(
 ) -> AsyncGenerator[Command]:
     """Wait for an HTTP endpoint to become ready, polling it on the host.
 
-    The application-readiness half of the wait family, the HTTP counterpart to
-    ``server.wait`` (a port) and ``server.wait_service`` (a unit): it replaces
-    an Ansible ``uri`` + ``until`` readiness task (issue #43). It is a thin
-    composition of the generic :class:`WaitForFactCommand` over the
-    :class:`HttpEndpoint` fact and the :class:`EndpointReady` predicate, so a
-    single named request polls the URL with ``curl`` every ``interval`` seconds
-    until the status and body answer as requested or ``timeout`` expires
-    (raising ``WaitTimeoutError``). The check runs **host-locally**, so a
-    ``localhost`` URL means the target's own loopback -- the freshly started
-    daemon a role such as ``geerlingguy.jenkins`` gates on -- which the
-    controller could not reach.
-
     Args:
         ctx (OpContext): Execution context for the operation.
         url (str): The ``http``/``https`` endpoint to poll; a bad scheme or
@@ -7071,6 +7060,20 @@ async def wait_url(
 
         Examples can be found in ``examples/modules/server/server_wait_url.py``.
     """
+
+
+    # The application-readiness half of the wait family, the HTTP counterpart to
+    # ``server.wait`` (a port) and ``server.wait_service`` (a unit): it replaces
+    # an Ansible ``uri`` + ``until`` readiness task (issue #43). It is a thin
+    # composition of the generic :class:`WaitForFactCommand` over the
+    # :class:`HttpEndpoint` fact and the :class:`EndpointReady` predicate, so a
+    # single named request polls the URL with ``curl`` every ``interval`` seconds
+    # until the status and body answer as requested or ``timeout`` expires
+    # (raising ``WaitTimeoutError``). The check runs **host-locally**, so a
+    # ``localhost`` URL means the target's own loopback -- the freshly started
+    # daemon a role such as ``geerlingguy.jenkins`` gates on -- which the
+    # controller could not reach.
+
 
     # Like every wait this reads no facts and always yields: a plan-time fact
     # read would reflect pre-deployment state in the prepare phase and
