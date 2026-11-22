@@ -1107,7 +1107,8 @@ class SimulatedHost(Host):
     # a missing path. A test seeds it directly; the ``files.move`` seam
     # (``move_path``/``remove_tree``) relocates or drops a row, the
     # ``files.directory`` ``chmod_path``/``chown_path`` mutators rewrite a
-    # row's mode/owner, and the ``files.file`` ``create_file``/``remove_file``
+    # row's mode/owner (``chmod -R``/``chown -R`` also every row under the
+    # path), and the ``files.file`` ``create_file``/``remove_file``
     # mutators seed (mode 644, root-owned -- what a plain ``touch`` creates)
     # or drop the row, so the ``File`` fact stays consistent with the
     # ``FileExists`` probe's ``existing_files`` marker.
@@ -2326,6 +2327,8 @@ class SimulatedHost(Host):
                 self.clear_file_flags(path, flags)
             case ChattrCommand(path=path, flags=flags):
                 self.set_file_flags(path, flags)
+            case ChmodCommand(path=path, mode=mode, recursive=True):
+                self.chmod_path(path, mode, recursive=True)
             case ChmodCommand(path=path, mode=mode):
                 self.chmod_path(path, mode)
             case _KeysChmodCommand(path=path, mode=mode):
@@ -2333,6 +2336,10 @@ class SimulatedHost(Host):
                 # directory and the key file rides the same mutation as
                 # files.directory's chmod descriptor.
                 self.chmod_path(path, mode)
+            case ChownCommand(
+                path=path, user=user, group=group, recursive=True, dereference=dereference
+            ):
+                self.chown_path(path, user, group, dereference, recursive=True)
             case ChownCommand(path=path, user=user, group=group, dereference=dereference):
                 self.chown_path(path, user, group, dereference)
             case _HomeChownCommand(path=path, user=user, group=group):
@@ -4952,7 +4959,9 @@ class SimulatedHost(Host):
         an unseeded archive extracts nothing. Each member lands under
         ``dest``: a file member rides ``create_file`` (the ``existing_files``
         marker plus a root-owned ``644`` ``file_stats`` row -- the simulation
-        does not model the archive's stored modes), and a directory member
+        does not model the archive's stored modes -- a ``files.unarchive``
+        ``mode``/``user`` request converges them through the paired recursive
+        ``ChmodCommand``/``ChownCommand``), and a directory member
         (a trailing ``/``) rides ``make_directory`` *plus* the
         ``existing_files`` marker, because ``FileExists`` is ``test -e`` and
         sees directories too -- that marker is what makes a ``creates``
@@ -4969,21 +4978,31 @@ class SimulatedHost(Host):
             else:
                 self.create_file(path)
 
-    def chmod_path(self, path: str, mode: int | str) -> None:
-        """Record a simulated ``chmod``: replace the row's mode.
+    def chmod_path(
+        self, path: str, mode: int | str, recursive: bool = False
+    ) -> None:
+        """Record a simulated ``chmod``/``chmod -R``: replace the row's mode.
 
         ``files.directory``'s mode mutation writes the canonical spelling
         the operation normalised (an octal-digit int, or the symbolic
         string verbatim -- the simulation does not fold a symbolic mode
         into octal). ``chmod`` addresses files and directories alike, so
         both stats stores are visited; a ``False`` row (wrong type) or an
-        absent path is left alone, and ``recursive`` has no separate
-        effect because the stores are flat.
+        absent path is left alone. ``recursive=True`` (``chmod -R``, what
+        ``files.directory(recursive=True)`` and ``files.unarchive(mode=...)``
+        request for a whole tree) additionally rewrites every seeded path
+        under ``path``, in both stores -- which is how an extracted tree's
+        modes converge.
         """
+        prefix = f"{path.rstrip('/')}/"
         for store in (self.file_stats, self.directory_stats):
-            stats = store.get(path)
-            if isinstance(stats, dict):
-                stats["mode"] = mode
+            for candidate, stats in store.items():
+                if candidate != path and not (
+                    recursive and candidate.startswith(prefix)
+                ):
+                    continue
+                if isinstance(stats, dict):
+                    stats["mode"] = mode
 
     def chown_path(
         self,
@@ -4991,13 +5010,17 @@ class SimulatedHost(Host):
         user: str | None,
         group: str | None,
         dereference: bool = True,
+        recursive: bool = False,
     ) -> None:
         """Record a simulated ``chown``/``chgrp``: replace the row's owner.
 
         ``files.directory``'s owner mutation sets only the halves the
         request named (``chgrp`` touches the group, a user-only ``chown``
         the user), exactly as the real commands do. Like ``chmod_path``
-        both stats stores are visited and non-dict rows are left alone.
+        both stats stores are visited and non-dict rows are left alone, and
+        ``recursive=True`` (``chown -R``, what ``files.directory``'s
+        ``recursive`` and ``files.unarchive``'s ``user``/``group`` request)
+        covers every seeded path under ``path`` too.
         ``dereference=False`` (``chown -h``, what ``files.link`` requests for
         the link itself) edits the symlink's own ``link_stats`` row instead;
         only a dict row is a symlink -- a hard link's ``False`` row or an
@@ -5008,13 +5031,18 @@ class SimulatedHost(Host):
             stores: tuple[dict[str, dict[str, Any] | bool], ...] = (self.link_stats,)
         else:
             stores = (self.file_stats, self.directory_stats)
+        prefix = f"{path.rstrip('/')}/"
         for store in stores:
-            stats = store.get(path)
-            if isinstance(stats, dict):
-                if user:
-                    stats["user"] = user
-                if group:
-                    stats["group"] = group
+            for candidate, stats in store.items():
+                if candidate != path and not (
+                    recursive and candidate.startswith(prefix)
+                ):
+                    continue
+                if isinstance(stats, dict):
+                    if user:
+                        stats["user"] = user
+                    if group:
+                        stats["group"] = group
 
     def set_file_flags(self, path: str, flags: tuple[str, ...]) -> None:
         """Record a simulated ``chattr +flags``: add the letters to the path.

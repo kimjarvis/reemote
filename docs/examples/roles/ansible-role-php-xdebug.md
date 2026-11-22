@@ -262,7 +262,7 @@ shape change).
 | 3 | `set_fact: php_xdebug_config_filename` when undefined | `resolved_vars()` — the `__php_xdebug_config_filename` fallback | covered |
 | 4 | `yum: name='@development'` (RedHat) | scoped out (§8) | out of scope |
 | 5 | `apt: name=build-essential state=present` (Debian, **no** `update_cache`) | `apt.packages(packages=("build-essential",), present=True)` — no cache refresh (D7) | covered |
-| 6 | `unarchive: src=<url> dest=workspace creates=src_dir copy=false mode=0755` | `files.unarchive(src=url, dest=workspace, creates=src_dir)` — `mode` dropped (D2) | covered |
+| 6 | `unarchive: src=<url> dest=workspace creates=src_dir copy=false mode=0755` | `files.unarchive(src=url, dest=workspace, creates=src_dir)` — `mode` available but not passed (D2) | covered |
 | 7 | `command: {{ item }} chdir=src_dir creates=…/modules/xdebug.so` loop `[phpize, ./configure, make]` | `gather_action(Shell)` between deploys, `&&` chain; `creates` gate via `FileExists` snapshot (D3) | recipe |
 | 8 | `file: path=module_path state=directory root:root 0755` | `files.directory(mode="0755", user="root", group="root")` | covered |
 | 9 | `copy: src=built_so dest=installed_so remote_src=true mode=0644` `notify: restart webserver` | `files.copy(src, dest, overwrite=True, mode="0644", user="root", group="root")` — rename form (D9) | covered |
@@ -294,10 +294,14 @@ the dependency's handlers.
   `geerlingguy.php` dependency's `with_first_found` does. The dependency's
   `php_version`, `php_extension_conf_paths` and daemon names are resolved by
   `resolved_vars()`.
-- **D2 — `unarchive: mode=0755` dropped.** `files.unarchive` has no `mode`
-  parameter. The extracted *source tree's* modes are not converged to 0755;
-  this is inert — the build does not depend on them, and the installed module
-  gets 0644 through the copy.
+- **D2 — `unarchive: mode=0755` not passed.** `files.unarchive` has a `mode`
+  parameter since issue #58, but this role extracts into the *shared* `/root`
+  workspace and the mode lands as `chmod -R` on `dest` — which would re-mode
+  everything under `/root`, not only the members the tarball brought. So the
+  request omits it and the extracted *source tree* keeps the archive's stored
+  modes; this is inert (the build does not depend on them, and the installed
+  module gets 0644 through the copy). Extract into a dedicated directory if
+  you want the `mode=` parity.
 - **D3 — build `creates:` gate reconstructed control-side.** A `Shell` action
   has no in-operation `creates`, so the gate is a `FileExists(built_so)`
   snapshot read after the extraction, freezing the `need_build` set. The three

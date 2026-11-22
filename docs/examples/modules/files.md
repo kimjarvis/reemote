@@ -465,9 +465,11 @@ extraction is stateless like pyinfra's. The workspace `dest` is created when
 absent (pyinfra raises instead), and `sudo=True` elevates the extraction for
 the root-owned `/usr/local/src` while the scp spool transfer stays
 unprivileged. The script runs the same deploy twice: the first run extracts,
-the second reports no change on every host. It omits a hardcoded checksum so
-it stays runnable against the live xdebug.org URL; add
-`checksum="sha256:<hex>"` in production to pin the two-phase fetch.
+the second reports no change on every host. A third deploy adds issue #58's
+`mode` — the geerlingguy.helm role's `unarchive: mode: 0755`, which lands as a
+recursive `chmod` of `dest` after the extraction and any ownership step. It
+omits a hardcoded checksum so it stays runnable against the live xdebug.org
+URL; add `checksum="sha256:<hex>"` in production to pin the two-phase fetch.
 
 ::: files_unarchive
     options:

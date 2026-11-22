@@ -3914,6 +3914,7 @@ async def unarchive(
     user: str | None = None,
     group: str | None = None,
     checksum: str | None = None,
+    mode: int | str | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Extract an archive into a remote directory, gated by ``creates``.
@@ -3944,12 +3945,18 @@ async def unarchive(
             before anything is staged. Pinning it makes the two-phase fetch
             deterministic. Ignored for a remote-path ``src``. Defaults to
             None (fetch without verification).
+        mode (int | str | None, optional): The extracted tree's permissions --
+            an octal-digit int or string (``755``, ``"0755"``, ``"0o755"``) or
+            a symbolic mode -- applied with a recursive ``chmod`` of ``dest``
+            after the extraction (Ansible's ``unarchive`` ``mode:``). Runs
+            after the ownership step, because a chown clears mode bits.
+            Defaults to None (the archive's stored modes are kept).
         **kwargs: Additional keyword arguments.
 
     Yields:
         Command: The directory creation, spool transfer, extraction, spool
-            cleanup and ownership commands, only when ``creates`` does not
-            already exist.
+            cleanup, ownership and mode commands, only when ``creates`` does
+            not already exist.
 
     **Raises:**
 
@@ -3988,6 +3995,20 @@ async def unarchive(
             checksum=(
                 "sha256:5891b5b522d5df086d0ff0b110fbd9d21bb4fc7163af34d08286a2e846f6be03"
             ),
+            sudo=True,
+        )
+
+        # Extract a vendor tarball and hand the extracted tree a fixed mode --
+        # Ansible's ``unarchive`` ``mode:`` (the geerlingguy.helm install).
+        # ``chmod -R`` covers everything under ``dest``, so extract into a
+        # dedicated directory rather than a shared one such as ``/tmp``.
+        yield op(
+            files.unarchive,
+            name="Unpack the helm release",
+            src="https://get.helm.sh/helm-v3.2.1-linux-amd64.tar.gz",
+            dest="/usr/local/src/helm",
+            creates="/usr/local/src/helm/linux-amd64",
+            mode="0755",
             sudo=True,
         )
         ```
@@ -4030,11 +4051,23 @@ async def unarchive(
     # ``extra_opts`` is a tuple, not pyinfra's list (``OperationRequest``
     # arguments must be hashable). ``user``/``group`` yield a recursive
     # ``ChownCommand`` on ``dest`` after the extraction, pyinfra's ownership
-    # step; the named account must already exist. The extraction, mkdir,
-    # cleanup and chown are shell text, so flag the request ``sudo=True`` for
-    # a root-owned ``dest``; the spool transfer stays unprivileged regardless.
+    # step; the named account must already exist. ``mode`` (issue #58, the
+    # Ansible ``unarchive`` ``mode:``) yields a recursive ``ChmodCommand`` on
+    # the extracted tree, normalised through ``_ensure_mode_int`` and -- like
+    # the ``files.copy``/``files.move`` metadata half -- emitted
+    # unconditionally whenever the extraction runs, so both phases yield the
+    # identical request sequence and convergence stays ``creates``-scoped: a
+    # mode-only drift on an already-extracted tree is *not* re-chmodded, because
+    # no fact enumerates the extracted members. Like ``files.directory``'s
+    # ``recursive``, the mode covers everything under ``dest``, not only the
+    # archive's members -- extract into a dedicated directory. The chmod runs
+    # after the chown (a chown clears setuid/setgid bits, the ``files.install``
+    # ordering). The extraction, mkdir,
+    # cleanup, chown and chmod are shell text, so flag the request ``sudo=True``
+    # for a root-owned ``dest``; the spool transfer stays unprivileged regardless.
     # ``**kwargs`` absorbs any further global arguments (``op()`` already
     # strips ``name``/``sudo``/``su``).
+    mode = _ensure_mode_int(mode)
     is_url = src.startswith(("http://", "https://"))
     name = (
         PurePosixPath(urllib.parse.urlparse(src).path).name
@@ -4088,6 +4121,9 @@ async def unarchive(
     if user or group:
         reasons.append(f"will set ownership of {dest} recursively")
         yield ChownCommand(path=dest, user=user, group=group, recursive=True)
+    if mode:
+        reasons.append(f"will set mode {mode} of {dest} recursively")
+        yield ChmodCommand(path=dest, mode=mode, recursive=True)
 
     ctx.changed = True
     ctx.reason = "; ".join(reasons)

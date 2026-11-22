@@ -13,14 +13,15 @@ resolved in-operation through ``FileExists`` so a converged host reports
 ``changed=False``; without it the extraction is stateless, pyinfra's
 behaviour. ``dest`` is created when absent (the issue's requirement --
 pyinfra raises instead), and ``user``/``group`` chown the extracted tree
-recursively.
+recursively. ``mode`` (issue #58, Ansible's ``unarchive`` ``mode:``) chmods
+that tree recursively after the ownership step.
 
 The single network read (``_fetch_url_bytes``) is monkeypatched to a
 canned-bytes stub so every test stays offline. Covers the descriptor
 rendering (every tar-family flag, zip, extra_opts placement, quoting,
 elevation asymmetry), the format validation, the creates gate, the
 remote-path validation, the dest creation, the binary-safe URL fetch with
-checksum verification, the ownership step, the SimulatedHost seam
+checksum verification, the ownership and mode steps, the SimulatedHost seam
 (``archive_members`` -> extracted tree), and end-to-end ``run``/plan/log
 behaviour including the two-pass no-op and the dry run.
 """
@@ -36,6 +37,7 @@ from reemote.hosts import Host
 from reemote.modules import files
 from reemote.modules.files import files as files_module
 from reemote.modules.files.files import (
+    ChmodCommand,
     ChownCommand,
     MkdirCommand,
     RemoveTreeCommand,
@@ -367,7 +369,7 @@ async def test_unarchive_rejects_a_non_file_remote_src():
         [cmd async for cmd in files.unarchive(make_ctx(host), REMOTE_SRC, DEST)]
 
 
-# --- Ownership and option parity -------------------------------------------------
+# --- Ownership, mode and option parity -------------------------------------------
 
 
 async def test_unarchive_chowns_the_tree_recursively(canned_fetch):
@@ -390,6 +392,118 @@ async def test_unarchive_group_alone_renders_chgrp(canned_fetch):
         cmd async for cmd in files.unarchive(make_ctx(host), URL, DEST, group="www")
     ]
     assert commands[-1].shell() == f"chgrp -R www {DEST}"
+
+
+async def test_unarchive_chmods_the_tree_recursively(canned_fetch):
+    """Issue #58: Ansible's ``unarchive`` ``mode:`` is a real parameter, not a
+    ``**kwargs`` the operation swallows -- it yields a recursive chmod of the
+    extracted directory."""
+    host = make_host(
+        directory_stats={DEST: {"mode": 700, "user": "root", "group": "root"}}
+    )
+    ctx = make_ctx(host)
+    commands = [cmd async for cmd in files.unarchive(ctx, URL, DEST, mode="0755")]
+    chmod_cmd = commands[-1]
+    assert isinstance(chmod_cmd, ChmodCommand)
+    assert chmod_cmd.path == DEST
+    assert chmod_cmd.mode == 755  # the canonical octal-digit int
+    assert chmod_cmd.recursive
+    assert chmod_cmd.shell() == f"chmod -R 755 {DEST}"
+    assert ctx.reason == (
+        f"will extract {URL} into {DEST}; will set mode 755 of {DEST} recursively"
+    )
+
+
+async def test_unarchive_accepts_every_mode_spelling(canned_fetch):
+    """The ``_ensure_mode_int`` contract ``files.file``/``files.directory``/
+    ``files.copy`` accept, now extended to the extraction."""
+    for spelling in (755, "755", "0755", "0o755"):
+        host = make_host()
+        commands = [
+            cmd async for cmd in files.unarchive(make_ctx(host), URL, DEST, mode=spelling)
+        ]
+        assert commands[-1] == ChmodCommand(path=DEST, mode=755, recursive=True)
+
+
+async def test_unarchive_symbolic_mode_rides_verbatim(canned_fetch):
+    """A symbolic mode is not foldable into the fact's octal int, so it stays
+    the string the caller spelled -- the ``files.file`` precedent."""
+    host = make_host()
+    commands = [
+        cmd async for cmd in files.unarchive(make_ctx(host), URL, DEST, mode="u+x")
+    ]
+    assert commands[-1].mode == "u+x"
+    assert commands[-1].shell() == f"chmod -R u+x {DEST}"
+
+
+async def test_unarchive_rejects_a_non_octal_mode_before_fetching(canned_fetch):
+    """The mode is validated up front, so a typo fails fast: no fetch, no
+    spool, no extraction."""
+    host = make_host()
+    with pytest.raises(ValueError, match="non-octal digits"):
+        [cmd async for cmd in files.unarchive(make_ctx(host), URL, DEST, mode="778")]
+    assert canned_fetch == []
+    assert host.remote_files == {}
+
+
+async def test_unarchive_chowns_before_chmodding(canned_fetch):
+    """A chown clears setuid/setgid bits, so the ownership command runs first
+    and the mode lands last -- the ``files.install``/``copy``/``move``
+    ordering, applied to the whole extracted tree."""
+    host = make_host()
+    commands = [
+        cmd
+        async for cmd in files.unarchive(
+            make_ctx(host), URL, DEST, user="www", group="www", mode="0750"
+        )
+    ]
+    assert commands[-2:] == [
+        ChownCommand(path=DEST, user="www", group="www", recursive=True),
+        ChmodCommand(path=DEST, mode=750, recursive=True),
+    ]
+    assert [cmd.shell() for cmd in commands[-2:]] == [
+        f"chown -R www:www {DEST}",
+        f"chmod -R 750 {DEST}",
+    ]
+
+
+async def test_unarchive_mode_is_gated_by_creates(canned_fetch):
+    """Convergence stays ``creates``-scoped: on an already-extracted tree the
+    requested mode yields no command at all (no fact enumerates the
+    members), exactly as the ownership step does."""
+    host = make_host(existing_files={CREATES})
+    ctx = make_ctx(host)
+    commands = [
+        cmd
+        async for cmd in files.unarchive(
+            ctx, URL, DEST, creates=CREATES, mode="0755", user="www"
+        )
+    ]
+    assert commands == []
+    assert not ctx.changed
+    assert ctx.reason == f"archive already extracted ({CREATES} exists)"
+    assert canned_fetch == []
+
+
+async def test_unarchive_remote_src_chmods_the_tree_too():
+    """The mode half is transport-independent: a remote-path extraction (no
+    spool, no cleanup) gets the same trailing chmod."""
+    host = SimulatedHost(
+        name="h",
+        file_stats={REMOTE_SRC: REMOTE_STATS},
+        directory_stats={DEST: {"mode": 755, "user": "root", "group": "root"}},
+        archive_members={REMOTE_SRC: MEMBERS},
+    )
+    commands = [
+        cmd
+        async for cmd in files.unarchive(
+            make_ctx(host), REMOTE_SRC, DEST, creates=CREATES, mode="0755"
+        )
+    ]
+    assert [cmd.shell() for cmd in commands] == [
+        f"tar -xz -f {REMOTE_SRC} -C {DEST}",
+        f"chmod -R 755 {DEST}",
+    ]
 
 
 async def test_unarchive_forwards_extra_opts(canned_fetch):
@@ -442,6 +556,59 @@ async def test_seam_unseeded_archive_extracts_nothing():
     host = SimulatedHost(name="h")
     await send_command(host, UnarchiveCommand(src=SPOOL, dest=DEST))
     assert host.existing_files == set()
+
+
+async def test_seam_recursive_chmod_reaches_the_extracted_tree():
+    """``chmod -R`` is the mode half's whole-tree effect, so the simulation
+    applies it to every seeded path under the named one: the extracted
+    members converge, not just ``dest`` itself."""
+    host = SimulatedHost(
+        name="h",
+        directory_stats={DEST: {"mode": 755, "user": "root", "group": "root"}},
+        archive_members={SPOOL: MEMBERS},
+    )
+    await send_command(host, UnarchiveCommand(src=SPOOL, dest=DEST))
+    assert host.file_stats[f"{CREATES}/config.m4"]["mode"] == 644
+
+    await send_command(host, ChmodCommand(path=DEST, mode=755, recursive=True))
+    assert host.directory_stats[DEST]["mode"] == 755
+    assert host.directory_stats[CREATES]["mode"] == 755
+    assert host.file_stats[f"{CREATES}/config.m4"]["mode"] == 755
+    assert host.file_stats[f"{CREATES}/php_xdebug.h"]["mode"] == 755
+
+
+async def test_seam_plain_chmod_leaves_the_tree_alone():
+    """Without ``-R`` only the named path is re-moden, so the recursion is
+    really driven by the flag and not by the flat stores."""
+    host = SimulatedHost(
+        name="h",
+        directory_stats={DEST: {"mode": 755, "user": "root", "group": "root"}},
+        archive_members={SPOOL: MEMBERS},
+    )
+    await send_command(host, UnarchiveCommand(src=SPOOL, dest=DEST))
+    await send_command(host, ChmodCommand(path=DEST, mode=700))
+    assert host.directory_stats[DEST]["mode"] == 700
+    assert host.directory_stats[CREATES]["mode"] == 755
+    assert host.file_stats[f"{CREATES}/config.m4"]["mode"] == 644
+
+
+async def test_seam_recursive_chown_reaches_the_extracted_tree():
+    """The ownership twin: ``chown -R`` covers the extracted members too, so a
+    ``user``/``group`` + ``mode`` request converges the whole tree."""
+    host = SimulatedHost(
+        name="h",
+        directory_stats={DEST: {"mode": 755, "user": "root", "group": "root"}},
+        archive_members={SPOOL: MEMBERS},
+    )
+    await send_command(host, UnarchiveCommand(src=SPOOL, dest=DEST))
+    await send_command(
+        host, ChownCommand(path=DEST, user="www", group="www", recursive=True)
+    )
+    assert host.directory_stats[CREATES]["user"] == "www"
+    assert host.file_stats[f"{CREATES}/config.m4"]["group"] == "www"
+    # A non-recursive chown (files.link's ``chown -h`` shape) stays targeted.
+    await send_command(host, ChownCommand(path=DEST, user="root"))
+    assert host.file_stats[f"{CREATES}/config.m4"]["user"] == "www"
 
 
 # --- End to end through the driver -------------------------------------------------
@@ -594,3 +761,49 @@ async def test_unarchive_remote_src_end_to_end():
     assert f"$ sudo chown -R www:www {DEST}" in log
     assert host.file_stats[REMOTE_SRC] == REMOTE_STATS  # the archive stays
     assert host.directory_stats[DEST]["user"] == "www"
+
+
+async def test_unarchive_mode_end_to_end_converges_the_tree(canned_fetch):
+    """Issue #58's acceptance proof: the request carries ``mode``, the extracted
+    tree converges on the first apply (chown, then chmod), both phases yield
+    the identical command sequence, and the repeat run stays a creates-gated
+    no-op that sends nothing."""
+    host = SimulatedHost(name="web1", archive_members={SPOOL: MEMBERS})
+
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            files.unarchive,
+            name="Unpack the vendor tarball",
+            src=URL,
+            dest=DEST,
+            creates=CREATES,
+            user="www",
+            group="www",
+            mode="0755",
+            sudo=True,
+        )
+
+    plans, report, _hosts = await run(
+        INVENTORY, deploy, host_factory=lambda entry: host
+    )
+    assert report is not None
+    assert report.log[0].changed
+    log = format_log(report)
+    assert f"$ sudo tar -xz -f {SPOOL} -C {DEST}" in log
+    assert f"$ sudo chown -R www:www {DEST}" in log
+    assert f"$ sudo chmod -R 755 {DEST}" in log
+
+    # The whole extracted tree, not just ``dest``, answers with the mode.
+    member = host.file_stats[f"{CREATES}/config.m4"]
+    assert member["mode"] == 755
+    assert member["user"] == "www"
+    assert host.directory_stats[CREATES]["mode"] == 755
+
+    # The repeat run: the creates gate short-circuits before any command, so
+    # the mode is not re-applied (convergence stays creates-scoped).
+    plans, report, _hosts = await run(
+        INVENTORY, deploy, host_factory=lambda entry: host
+    )
+    assert report is not None
+    assert not report.log[0].changed
+    assert not plans["web1"][0].changed

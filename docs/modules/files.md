@@ -443,8 +443,9 @@ stays unprivileged regardless. See
 for the `get_url`/`rpm_key` mapping.
 
 `files.unarchive` is the pyinfra `files.unarchive` migration that closes
-issue #21 (Ansible `unarchive` parity -- the php-xdebug source tarball): it
-extracts an archive into a remote directory, idempotently gated by `creates`.
+issue #21 (Ansible `unarchive` parity -- the php-xdebug source tarball) and
+carries issue #58's `mode`: it extracts an archive into a remote directory,
+idempotently gated by `creates`.
 `src` is auto-detected: an `http(s)` URL is fetched *control-side* as binary
 bytes (the `_fetch_url_bytes` seam `files.fetch_url` rides, without its
 text-only decode -- a `.tgz`/`.zip` body never raises), spooled to a
@@ -472,13 +473,26 @@ a regular file raises in *both* phases, the phase-unaware strictness
 (request arguments must be hashable), placed between the tool's flags and the
 archive path -- tar keeps `-f` adjacent to the path so an extra is never
 mistaken for it. `user`/`group` yield a recursive `chown` of `dest` after the
-extraction (the named account must already exist). The optional `checksum` is
+extraction (the named account must already exist), and `mode` (issue #58,
+Ansible's `unarchive` `mode:`) yields a recursive `chmod` of `dest` after the
+chown -- a chown clears setuid/setgid bits, so the mode lands last, the
+`files.install`/`copy`/`move` ordering. The mode accepts every `files.file`
+spelling (`755`, `"755"`, `"0755"`, `"0o755"`, or a symbolic mode) and is
+normalised through `_ensure_mode_int`, so a non-octal typo raises `ValueError`
+before any fetch. Unlike Ansible -- which modes only the members it extracted
+-- the `chmod -R`/`chown -R` cover **everything under `dest`**, so extract into
+a dedicated directory rather than a shared one such as `/tmp`. Both are emitted
+unconditionally whenever the extraction runs, so both phases yield the identical
+command sequence and convergence stays `creates`-scoped: a mode- or owner-only
+drift on an already-extracted tree is not re-applied (no fact enumerates the
+members) -- manage such a tree's metadata with `files.directory(recursive=True)`.
+The optional `checksum` is
 a reemote addition, the `files.download` contract
 (`"<algorithm>:<hexdigest>"`): a URL-fetched body must match it or
 `ValueError` raises before anything is staged -- pinning it is what keeps the
 two-phase fetch deterministic, because the body runs once per phase and both
-phases must stage byte-identical content. The extraction, mkdir, cleanup and
-chown are shell text, so flag the request `sudo=True` for a root-owned
+phases must stage byte-identical content. The extraction, mkdir, cleanup,
+chown and chmod are shell text, so flag the request `sudo=True` for a root-owned
 `dest`; the spool transfer stays unprivileged regardless.
 
 `files.fetch_url` is the control-side GET helper and a reemote original: it

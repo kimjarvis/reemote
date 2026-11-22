@@ -1356,7 +1356,7 @@ config that depend on the built binary.
 | Ansible | reemote |
 | --- | --- |
 | `git: {repo, dest, version}` clone the source | [`git.repo(src=..., dest=..., branch=...)`][reemote.modules.git.git.repo] — inside a deploy |
-| `unarchive: {src: <url>, dest, creates}` fetch + extract a tarball source | [`files.unarchive(src=..., dest=..., creates=...)`][reemote.modules.files.files.unarchive] — inside a deploy; the URL is fetched control-side as binary and the `creates` gate is **in-operation** (a converged tree fetches nothing) |
+| `unarchive: {src: <url>, dest, creates, mode}` fetch + extract a tarball source | [`files.unarchive(src=..., dest=..., creates=..., mode=...)`][reemote.modules.files.files.unarchive] — inside a deploy; the URL is fetched control-side as binary and the `creates` gate is **in-operation** (a converged tree fetches nothing); `mode` is the issue #58 `chmod -R` of `dest` |
 | `command: ./buildconf --force` / `./configure …` / `make` / `make install` | [`gather_action(hosts, Shell, command="…")`](guide.md#actions) — **outside** any deploy, one action per step (or a staged build script run by [`Script`][reemote.actions.Script]) |
 | `file: {src, dest, state: link}` symlink the binary | [`files.link(path=..., target=...)`][reemote.modules.files.files.link] — inside a deploy |
 | `copy:`/`template:` a config or unit file | [`files.install(content=..., dest=...)`][reemote.modules.files.files.install] — inside a deploy (pre-render a template control-side, see the [Jinja2 migration](#migrating-jinja2-templates)) |

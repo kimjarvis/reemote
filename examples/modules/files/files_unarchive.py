@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: extract a source tarball with files.unarchive (issue #21).
+"""Example: extract a source tarball with files.unarchive (issues #21, #58).
 
 This is a *usage* example, not part of the library. ``files.unarchive`` is the
 pyinfra ``files.unarchive`` migration that closes issue #21 -- Ansible's
@@ -45,9 +45,14 @@ How it works:
   yields.
 * **dest created when absent.** The workspace directory is created with its
   parents when missing (the issue's requirement -- pyinfra raises instead).
-* **Two privilege levels.** The extraction, mkdir, spool cleanup and any
-  ownership step are shell text, so ``sudo=True`` elevates them for a
+* **Two privilege levels.** The extraction, mkdir, spool cleanup, ownership
+  and mode steps are shell text, so ``sudo=True`` elevates them for a
   root-owned workspace; the scp spool transfer stays unprivileged regardless.
+* **Ownership and mode.** ``user``/``group`` chown ``dest`` recursively after
+  the extraction, and ``mode`` (issue #58, Ansible's ``unarchive`` ``mode:``)
+  chmods it recursively after the chown -- a chown clears setuid/setgid bits,
+  so the mode lands last. Both cover everything under ``dest``, so extract
+  into a dedicated directory rather than a shared one such as ``/tmp``.
 
 The body runs once per phase (prepare, then apply), so the URL is fetched
 twice per host. Pass ``checksum="sha256:<hexdigest>"`` (the
@@ -59,7 +64,8 @@ vendor's published value.
 The script extracts the tarball, then runs the very same deploy a second
 time: the first run extracts, the second reports no change on every host (the
 ``creates`` directory now exists, so the gate short-circuits before any
-fetch).
+fetch). A third deploy shows the issue #58 addition -- the same extraction
+with Ansible's ``mode: 0755``, which the geerlingguy.helm role asks for.
 
 Every request carries ``when=is_ubuntu``, the declarative eligibility guard:
 the predicate reads only **static** inventory data -- ``host.family``, set by the ``"family"`` key of the inventory entry -- and is a stable module-level
@@ -104,6 +110,14 @@ TARBALL_URL = f"https://xdebug.org/files/xdebug-{XDEBUG_VERSION}.tgz"
 WORKSPACE = "/usr/local/src"
 SRC_DIR = f"{WORKSPACE}/xdebug-{XDEBUG_VERSION}"
 
+# Issue #58's motivating case: geerlingguy.helm extracts the vendor tarball and
+# spells ``mode: 0755`` on it. The dedicated ``dest`` matters -- the recursive
+# chmod covers everything under it, not only the archive's members.
+HELM_VERSION = "v3.2.1"
+HELM_URL = f"https://get.helm.sh/helm-{HELM_VERSION}-linux-amd64.tar.gz"
+HELM_DIR = f"{WORKSPACE}/helm"
+HELM_EXTRACTED = f"{HELM_DIR}/linux-amd64"
+
 def is_ubuntu(host: Host) -> bool:
     """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
@@ -138,6 +152,29 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     )
 
 
+def extract_with_mode(host: Host) -> Generator[OperationRequest]:
+    """The same extraction with Ansible's ``unarchive`` ``mode:`` (issue #58).
+
+    ``mode="0755"`` is a real parameter, normalised like every other files
+    metadata mode (``755``, ``"755"``, ``"0755"``, ``"0o755"`` and a symbolic
+    mode all spell the request) and applied with ``chmod -R`` on ``dest``
+    *after* the extraction and any ownership step. Convergence stays
+    ``creates``-gated: once the tree is extracted the request is a no-op, so a
+    mode-only drift is not re-applied -- manage an already-extracted tree's
+    metadata with ``files.directory(recursive=True)`` instead.
+    """
+    yield op(
+        files.unarchive,
+        name="Unpack the helm tarball",
+        src=HELM_URL,
+        dest=HELM_DIR,
+        creates=HELM_EXTRACTED,
+        mode="0755",
+        sudo=True,
+        when=is_ubuntu,
+    )
+
+
 async def main() -> None:
     try:
         inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
@@ -163,6 +200,18 @@ async def main() -> None:
         # request reports no change.
         plans, report, _hosts = await run(inventory, deploy)
         print("\n== Log: untar Xdebug (second run, no-op) ==")
+        assert report is not None
+        print(format_log(report))
+
+        # Third deploy: the issue #58 form. --dry shows the trailing
+        # ``chmod -R 755`` in the plan, then the real run applies it to the
+        # whole extracted tree.
+        plans, _, _hosts = await run(inventory, extract_with_mode, dry=True)
+        print("\n== Plan: extract with mode 0755 (--dry) ==")
+        print(format_plan(plans))
+
+        plans, report, _hosts = await run(inventory, extract_with_mode)
+        print("\n== Log: extract with mode 0755 ==")
         assert report is not None
         print(format_log(report))
     except (OSError, json.JSONDecodeError) as exc:

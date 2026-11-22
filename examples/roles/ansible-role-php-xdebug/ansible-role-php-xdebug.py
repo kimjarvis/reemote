@@ -81,10 +81,12 @@ Deliberate deviations from Ansible semantics
 
 Recorded at the point of use and in ``ansible-role-php-xdebug.md``:
 
-* ``unarchive: mode=0755`` is dropped -- ``files.unarchive`` has no ``mode``
-  parameter. The extracted *source tree's* modes are not converged to 0755;
-  this is inert (the build does not depend on them, and the installed module
-  gets 0644 through the copy).
+* ``unarchive: mode=0755`` is not passed. ``files.unarchive`` gained ``mode`` in
+  issue #58, but this role extracts into the shared ``/root`` workspace and the
+  mode lands as ``chmod -R`` on ``dest`` -- which would re-mode everything under
+  ``/root``, not only the tarball's members. The extracted *source tree* keeps
+  the archive's stored modes; this is inert (the build does not depend on them,
+  and the installed module gets 0644 through the copy).
 * the build ``command:`` loop's ``creates:`` gate is reconstructed control-side
   from a ``FileExists`` snapshot (``need_build``); a ``Shell`` action has no
   in-operation ``creates``. The three loop items (``phpize``, ``./configure``,
@@ -450,9 +452,10 @@ def build_setup(
     one request: the URL is fetched control-side as binary, spooled, extracted
     and cleaned up, with ``creates=src_dir`` resolving Ansible's ``creates:``
     gate in-operation (a converged host is a no-op and never fetches). The
-    ``mode=0755`` the role sets on the extraction is dropped (no ``mode``
-    parameter; inert -- see the module docstring). The module directory is
-    created here, an earlier barrier than the copy that validates its parent.
+    ``mode=0755`` the role sets on the extraction is deliberately not passed --
+    the ``chmod -R`` covers the whole shared ``/root`` workspace (see the module
+    docstring). The module directory is created here, an earlier barrier than
+    the copy that validates its parent.
     """
 
     def setup(host: Host) -> Generator[OperationRequest]:
