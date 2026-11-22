@@ -4,7 +4,7 @@
 | --- | --- |
 | Role | [`datadog.datadog`](https://github.com/DataDog/ansible-datadog) 5.6.0 |
 | Program | [`ansible-datadog.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/ansible-datadog/ansible-datadog.py) |
-| Target | **Ubuntu** — hosts in the inventory group `"ubuntu"` |
+| Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
 | Inventory | [`inventory.json`](https://github.com/kimjarvis/reemote/blob/main/inventory.json) at the project root |
 | Scope | the role's Debian/Ubuntu **default path** (see [§8](#8-scoped-out)) |
 | Offline test | [`tests/test_roles_ansible_datadog.py`](https://github.com/kimjarvis/reemote/blob/main/tests/test_roles_ansible_datadog.py) |
@@ -103,7 +103,7 @@ privilege settings come from the inventory, never from the program:
 ```
 
 The other three entries (`alpine`, `web1`, `web2`) need no changes. They are not in
-the `ubuntu` group, so `when=is_ubuntu` skips them and **they are never contacted** —
+the `Ubuntu` family, so `when=is_ubuntu` skips them and **they are never contacted** —
 a skipped request is not materialized at all.
 
 > The API key is written to `/etc/datadog-agent/datadog.yaml` (mode `0640`) and
@@ -228,7 +228,7 @@ freeze the answer into a per-host dict, close a deploy factory over it. The
 barriers are load-bearing, not stylistic.
 
 ```
-load_inventory + validate_inventory ──► Host.from_inventory ──► targets = group "ubuntu"
+load_inventory + validate_inventory ──► Host.from_inventory ──► targets = family "Ubuntu"
 role_settings(host)  ──► API-key / custom-repo / removed-variable gates   (no host contacted)
 fetch_keys(5 URLs)                                                        (control-side HTTPS)
 │

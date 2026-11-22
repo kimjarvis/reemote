@@ -16,11 +16,11 @@ driving the two-phase execution model:
    ``Host.from_inventory`` factory. Each ``Host`` lazily opens an asyncssh
    connection from its ``connection`` data when a fact is gathered.
 3. Guard the gather with a ``when`` predicate: ``is_ubuntu`` reads only
-   **static** inventory data -- ``host.group`` -- and the fact is gathered
+   **static** inventory data -- ``host.family`` -- and the fact is gathered
    on the hosts that pass it. ``gather_fact`` itself takes no ``when``
    parameter, so the predicate filters the host list before the fan-out --
    the direct equivalent of a driver-side skip. Hosts outside the
-   ``"ubuntu"`` group are named on a
+   ``"Ubuntu"`` family are named on a
    ``== Skipped (when guard is_ubuntu): ... ==`` line and never connected.
 4. Gather ``LxdInstances`` on the guarded hosts at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
@@ -109,17 +109,16 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_ubuntu(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"ubuntu"``.
+    """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. The Ubuntu
     demo host is the one ``provision_lxd.py`` provisions with LXD before
-    this gather (see the module docstring), so the gather is guarded to
-    that group.
+    this gather (see the module docstring), so the gather is guarded to that family.
     """
-    return host.group == "ubuntu"
+    return host.family == "Ubuntu"
 
 
 async def main() -> None:

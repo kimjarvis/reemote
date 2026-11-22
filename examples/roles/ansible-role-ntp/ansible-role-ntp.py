@@ -16,7 +16,7 @@ inventory entry's extra keys (reemote's ``host_vars`` mechanism), so
 ``ntp_enabled``, ``ntp_timezone``, ``ntp_manage_config`` and friends live
 beside ``host``/``connection`` in ``inventory.json``.
 
-Target: hosts in the inventory group ``"ubuntu"``. Every request carries
+Target: hosts in the ``"Ubuntu"`` OS family. Every request carries
 ``when=is_ubuntu``, and a skipped request is never materialized -- the
 Alpine and CentOS hosts in the shared inventory are not even contacted.
 The role's RedHat, Suse, Archlinux and FreeBSD branches are out of scope (a
@@ -336,14 +336,14 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_ubuntu(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"ubuntu"``.
+    """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
     Reads only static inventory data and stays a stable module-level
     function, so both deploy phases reach the same eligibility decision.
     A skipped request is never materialized, so the Alpine and CentOS
     hosts in the shared inventory are not contacted at all.
     """
-    return host.group == "ubuntu"
+    return host.family == "Ubuntu"
 
 
 def _require_bool(value: Any, key: str, name: str) -> bool:
@@ -440,8 +440,7 @@ def resolve_vars(info: dict[str, Any]) -> dict[str, str]:
     (``Ubuntu-24.04``), ``{os_family}-{distribution_major_version}``
     (``Debian-24``), ``{os_family}`` (``Debian``). The first present in
     ``VARS_FILES`` wins. The migration targets Ubuntu, so a host reporting
-    another distribution is a hard error -- the inventory group said
-    ``ubuntu`` (the java migration's fail-fast precedent). This narrows the
+    another distribution is a hard error -- the inventory family said ``Ubuntu`` (the java migration's fail-fast precedent). This narrows the
     role's multi-OS ``include_vars`` dispatch to the Debian family
     (deviation D5).
     """
@@ -449,7 +448,7 @@ def resolve_vars(info: dict[str, Any]) -> dict[str, str]:
     if name != "Ubuntu":
         raise ValueError(
             f"this migration targets Ubuntu; the host reports {name!r} "
-            "(LinuxDistribution.name) -- check the inventory group"
+            "(LinuxDistribution.name) -- check the inventory family"
         )
     try:
         major = int(info["major"])
@@ -818,7 +817,7 @@ async def main() -> None:
         if skipped:
             print("\n== Skipped (when guard is_ubuntu): " + ", ".join(skipped) + " ==")
         if not targets:
-            print("\nNo host in the inventory group 'ubuntu'; nothing to deploy.")
+            print("\nNo host in the Ubuntu family; nothing to deploy.")
             return
 
         # The role's variable gates, before any host is contacted.

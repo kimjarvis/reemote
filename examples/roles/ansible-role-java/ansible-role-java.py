@@ -14,7 +14,7 @@ read from the inventory entry's extra keys (reemote's ``host_vars``
 mechanism), so ``java_packages`` and ``java_home`` live beside
 ``host``/``connection`` in ``inventory.json``.
 
-Target: hosts in the inventory group ``"ubuntu"``. Every request carries
+Target: hosts in the ``"Ubuntu"`` OS family. Every request carries
 ``when=is_ubuntu``, and a skipped request is never materialized -- the
 other hosts in the shared inventory are not even contacted. The role's
 RedHat, Amazon and FreeBSD branches are out of scope (a Phase 0 single-OS
@@ -145,14 +145,14 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_ubuntu(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"ubuntu"``.
+    """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
     Reads only static inventory data and stays a stable module-level
     function, so both deploy phases reach the same eligibility decision.
     A skipped request is never materialized, so the Alpine and CentOS
     hosts in the shared inventory are not contacted at all.
     """
-    return host.group == "ubuntu"
+    return host.family == "Ubuntu"
 
 
 def role_settings(host: Host) -> dict[str, Any]:
@@ -201,7 +201,7 @@ def ubuntu_major(info: dict[str, Any]) -> int:
     """``ansible_facts.distribution_version.split('.')[0]`` from a fact read.
 
     The migration targets Ubuntu, so a host reporting another distribution
-    is a hard error -- the inventory group said ``ubuntu``. The
+    is a hard error -- the inventory family said ``Ubuntu``. The
     ``LinuxDistribution`` fact's ``major`` may arrive as an int or a str;
     both normalize here.
     """
@@ -209,7 +209,7 @@ def ubuntu_major(info: dict[str, Any]) -> int:
     if name != "Ubuntu":
         raise ValueError(
             f"this migration targets Ubuntu; the host reports {name!r} "
-            "(LinuxDistribution.name) -- check the inventory group"
+            "(LinuxDistribution.name) -- check the inventory family"
         )
     try:
         return int(info["major"])
@@ -358,7 +358,7 @@ async def main() -> None:
         if skipped:
             print("\n== Skipped (when guard is_ubuntu): " + ", ".join(skipped) + " ==")
         if not targets:
-            print("\nNo host in the inventory group 'ubuntu'; nothing to deploy.")
+            print("\nNo host in the Ubuntu family; nothing to deploy.")
             return
 
         # The role's variable gates, before any host is contacted.

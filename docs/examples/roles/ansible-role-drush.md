@@ -11,10 +11,8 @@ Five tasks: check the path's current state (`stat` + `register`), remove an
 old symlink, ensure the directory exists, download the launcher phar
 (`get_url`), and make it executable.
 
-**This migration targets Ubuntu only.** Hosts in the inventory group
-`"ubuntu"` execute the deploy; every request carries the static `when` guard
-`is_ubuntu`, so the other hosts in the shared `inventory.json` (Alpine,
-CentOS) are skipped without being contacted. The role's two opt-in branches —
+**This migration targets Ubuntu only.** Hosts in the `"Ubuntu"` OS family execute the deploy; every request carries the static `when` guard
+`is_ubuntu`, so the other hosts in the shared `inventory.json` (Alpine, RedHat) are skipped without being contacted. The role's two opt-in branches —
 `drush_composer_global_install` and `drush_install_from_source`, both
 default-false — are scoped out (§9), so the launcher path is the whole
 migration.

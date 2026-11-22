@@ -8,7 +8,7 @@ warning and the error-reporting contract every script follows.
 The read-only fact-gathering examples (`snap_snap_package.py` reading
 `SnapPackage` for one package over `gather_fact`, and `snap_snap_packages.py`
 reading `SnapPackages` for the whole installed name list, both guarded to the
-`ubuntu` group) are not rendered here — they read single facts, and the facts
+`Ubuntu` family) are not rendered here — they read single facts, and the facts
 themselves are documented on the [`snap` module page](../../modules/snap.md).
 
 ## Installing snap packages

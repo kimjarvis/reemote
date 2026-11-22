@@ -56,8 +56,8 @@ No request here needs ``sudo``: the path is the SSH user's own writable
 reads and the ``rm -rf`` removal all run unprivileged (creating under a
 root-owned parent would be the case for flagging the request ``sudo=True``).
 Like the other pip-facing examples, every request carries ``when=is_ubuntu``:
-the shared ``inventory.json`` holds one host in the ``"ubuntu"`` group
-alongside hosts in other groups, so each run reconciles the virtualenv on
+the shared ``inventory.json`` holds one host in the ``"Ubuntu"`` family
+alongside hosts in other families, so each run reconciles the virtualenv on
 the Ubuntu host and skips every other one -- on a host outside the group
 the driver skips each request without materializing it, so neither the
 ``virtualenv`` command nor the probe behind it runs, and plan and log
@@ -136,18 +136,18 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_ubuntu(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"ubuntu"``.
+    """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision and the
     determinism guard holds. The Ubuntu demo host is the one the
     prerequisite deploy below installs the ``virtualenv`` tool on, so both
-    deploys are guarded to that group; on a host outside it every request
+    deploys are guarded to that family; on a host outside it every request
     would fail before doing anything, so the driver skips them all instead.
     """
-    return host.group == "ubuntu"
+    return host.family == "Ubuntu"
 
 
 def install_virtualenv(host: Host) -> Generator[OperationRequest]:

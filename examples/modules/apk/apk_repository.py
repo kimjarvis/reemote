@@ -99,7 +99,7 @@ Every request also carries ``when=is_alpine``, the declarative eligibility
 guard (see
 ``examples/demonstrations/composition/composed_when_guard.py``). Two rules
 make it deterministic: the predicate reads only **static** inventory data --
-``host.group``, set by the ``"group"`` key of the inventory entry -- never a
+``host.family``, set by the ``"family"`` key of the inventory entry -- never a
 mutable fact, and it is a stable module-level function, so the prepare and
 apply phases reach the same skip decision. ``when`` is a meta-parameter like
 ``doas``: captured on the request, never forwarded to the operation, and
@@ -165,9 +165,9 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_alpine(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"alpine"".
+    """``when`` guard: the host belongs to the ``"Alpine"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision and the
@@ -175,7 +175,7 @@ def is_alpine(host: Host) -> bool:
     non-Alpine host has no ``/etc/apk/repositories`` to manage, so the
     driver skips every request instead.
     """
-    return host.group == "alpine"
+    return host.family == "Alpine"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:

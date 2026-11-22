@@ -68,10 +68,10 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 def is_systemd(host: Host) -> bool:
     """Host-list filter: the host runs systemd rather than OpenRC.
 
-    Reads only static inventory data (``host.group``); the ``alpine`` group
+    Reads only static inventory data (``host.family``); the ``"Alpine"`` family
     uses OpenRC, where ``systemctl`` is absent.
     """
-    return host.group != "alpine"
+    return host.family != "Alpine"
 
 
 async def main() -> None:

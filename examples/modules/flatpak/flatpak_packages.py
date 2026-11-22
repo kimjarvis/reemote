@@ -61,7 +61,7 @@ flatpak, and on a host outside that group the driver skips each request
 without materializing it -- neither the ``flatpak`` commands nor the
 ``FlatpakPackages`` fact behind them runs -- so plan and log render
 ``[skipped: when guard is_ubuntu]``. The shared ``inventory.json`` holds one
-host in the ``"ubuntu"`` group alongside hosts in other groups, so each run
+host in the ``"Ubuntu"`` family alongside hosts in other families, so each run
 installs and removes on the Ubuntu host and skips every other one.
 
 flatpak is *not* set up out of the box on Ubuntu -- Ubuntu ships snap, not
@@ -141,19 +141,19 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_ubuntu(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"ubuntu"``.
+    """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision and the
     determinism guard holds. The Ubuntu demo host is the one ``install.py``
     provisions with flatpak before this example deploys (see the module
-    docstring), so the install/removal is guarded to that group; on a host
+    docstring), so the install/removal is guarded to that family; on a host
     outside it every request below would fail before doing anything, so the
     driver skips them all instead.
     """
-    return host.group == "ubuntu"
+    return host.family == "Ubuntu"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:

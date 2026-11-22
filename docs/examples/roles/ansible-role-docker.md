@@ -12,10 +12,8 @@ plugins), the optional `/etc/docker/daemon.json` and `docker.service`
 ExecStart override, the service's running/enabled state, a single
 `restart docker` handler, and the `docker_users` group memberships.
 
-**This migration targets Ubuntu only.** Hosts in the inventory group
-`"ubuntu"` execute the deploy; every request carries the static `when` guard
-`is_ubuntu`, so the other hosts in the shared `inventory.json` (Alpine,
-CentOS) are skipped without being contacted. The role's `include_vars` OS
+**This migration targets Ubuntu only.** Hosts in the `"Ubuntu"` OS family execute the deploy; every request carries the static `when` guard
+`is_ubuntu`, so the other hosts in the shared `inventory.json` (Alpine, RedHat) are skipped without being contacted. The role's `include_vars` OS
 dispatch collapses to frozen Debian constants, and the RedHat/Suse branches
 plus the opt-in standalone docker-compose binary install are scoped out
 (see §8).

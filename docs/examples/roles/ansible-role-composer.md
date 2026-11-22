@@ -12,10 +12,8 @@ the resulting `composer.phar` to `/usr/local/bin/composer`, ensures the
 globally requires a configured package list, and adds the global `vendor/bin`
 directory to every user's `PATH` through `/etc/profile.d/composer.sh`.
 
-**This migration targets Ubuntu only.** Hosts in the inventory group
-`"ubuntu"` execute the deploy; every request carries the static `when` guard
-`is_ubuntu`, so the other hosts in the shared `inventory.json` (Alpine,
-CentOS) are skipped without being contacted. The role's two opt-in branches —
+**This migration targets Ubuntu only.** Hosts in the `"Ubuntu"` OS family execute the deploy; every request carries the static `when` guard
+`is_ubuntu`, so the other hosts in the shared `inventory.json` (Alpine, RedHat) are skipped without being contacted. The role's two opt-in branches —
 `composer_keep_updated` (self-update) and `composer_add_project_to_path`
 (project `vendor/bin` on `PATH`), both default-false — are scoped out (§8).
 

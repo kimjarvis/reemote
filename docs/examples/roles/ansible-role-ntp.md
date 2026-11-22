@@ -10,11 +10,10 @@ competing `systemd-timesyncd` unit, brings the daemon up (or down) per
 flush at the end of the play: `restart ntp` (notified by the config template)
 and `restart cron` (notified by the timezone task).
 
-**This migration targets Ubuntu only.** Hosts in the inventory group
-`"ubuntu"` execute the deploy; every request carries the static `when` guard
+**This migration targets Ubuntu only.** Hosts in the `"Ubuntu"` OS family execute the deploy; every request carries the static `when` guard
 `is_ubuntu`, so the other hosts in the shared `inventory.json` (the `centos`
 group's `web1`/`web2` and the `alpine` host) are skipped without being
-contacted. The guard reads `host.group`, not the tags — `web1`/`web2` carry an
+contacted. The guard reads `host.family`, not the tags — `web1`/`web2` carry an
 `ubuntu_host` tag but sit in the `centos` group, so they are skipped. The
 role's RedHat, Suse, Archlinux and FreeBSD branches are scoped out (§8).
 
@@ -256,7 +255,7 @@ change). Every row maps.
   families; the migration ships only the Debian-family vars files the Ubuntu
   target can reach (`Ubuntu-24.04`, `Debian-11`, `Debian`). A host reporting
   another distribution is a hard error (`resolve_vars` raises) rather than
-  selecting another OS's vars — the inventory group said `ubuntu` (the java
+  selecting another OS's vars — the inventory family said `Ubuntu` (the java
   migration's fail-fast precedent). The three-level `with_first_found` chain
   itself is preserved, because `Debian-11` differs from `Debian` (ntp vs ntpsec).
 - **D6 — chrony template reachability.** `chrony.conf.j2` is bundled and

@@ -11,10 +11,9 @@ directory workaround (Debian bug 863199 / role issue #64), the `apt`
 install, and the optional `java_home.sh` profile template. The role has
 no handlers, no loops and no command/shell tasks.
 
-**This migration targets Ubuntu only.** Hosts in the inventory group
-`"ubuntu"` execute the deploy; every request carries the static `when`
+**This migration targets Ubuntu only.** Hosts in the `"Ubuntu"` OS family execute the deploy; every request carries the static `when`
 guard `is_ubuntu`, so the other hosts in the shared `inventory.json`
-(Alpine, CentOS) are skipped without being contacted. The RedHat, Amazon
+(Alpine, RedHat) are skipped without being contacted. The RedHat, Amazon
 and FreeBSD branches are scoped out (see §8). Unlike a role whose vars
 split only by OS family, this role's Ubuntu vars split by *major version*
 (`vars/Ubuntu-12.yml` through `vars/Ubuntu-26.yml`), so the single-OS
@@ -229,7 +228,7 @@ are scoped out (§8). The role has no `handlers/main.yml`.
   dependency. The trailing newline is kept (the Apache precedent's
   `keep_trailing_newline=True`); a renderer with Jinja2's *library*
   default (`keep_trailing_newline=False`) would strip it.
-- **D3 — a non-Ubuntu host in the `ubuntu` group fails fast.** The role
+- **D3 — a non-Ubuntu host in the `Ubuntu` family fails fast.** The role
   would dispatch to another OS's vars and tasks; this migration targets
   Ubuntu only, so `ubuntu_major` raises a clear error naming the reported
   distribution instead of silently deploying the wrong package list.

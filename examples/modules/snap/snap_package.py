@@ -59,7 +59,7 @@ Every request also carries ``when=is_ubuntu``, the declarative eligibility
 guard (see
 ``examples/demonstrations/composition/composed_when_guard.py``). Two rules
 make it deterministic: the predicate reads only **static** inventory data --
-``host.group``, set by the ``"group"`` key of the inventory entry -- never a
+``host.family``, set by the ``"family"`` key of the inventory entry -- never a
 mutable fact, and it is a stable module-level function, so the prepare and
 apply phases reach the same skip decision. ``when`` is a meta-parameter like
 ``sudo``: captured on the request, never forwarded to the operation, and
@@ -70,7 +70,7 @@ the step as ``[skipped: when guard is_ubuntu]`` and none of its commands --
 nor the ``SnapPackage`` fact behind it -- is materialized at all, which is
 exactly why a snap operation must be guarded rather than run blind on a host
 without ``snap``. The project root's ``inventory.json`` holds one host in the
-``"ubuntu"`` group alongside hosts in other groups, so the run installs on the
+``"Ubuntu"`` family alongside hosts in other families, so the run installs on the
 Ubuntu host and visibly skips every other one.
 
 Because installing a snap mutates shared system state on the demo host, this
@@ -132,9 +132,9 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_ubuntu(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"ubuntu"``.
+    """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision and the
@@ -142,7 +142,7 @@ def is_ubuntu(host: Host) -> bool:
     non-Ubuntu host every request below would fail on a missing ``snap``
     binary, so the driver skips them all instead.
     """
-    return host.group == "ubuntu"
+    return host.family == "Ubuntu"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:

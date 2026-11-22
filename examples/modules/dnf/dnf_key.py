@@ -90,7 +90,7 @@ transferred to -- and no ``rpm`` command run on -- a host without the
 binary, and plan and log render the step as
 ``[skipped: when guard is_redhat]`` in its lockstep slot. The shared
 ``inventory.json`` holds two hosts in the ``"RedHat"`` family alongside hosts
-in other groups, so the run visibly imports on the RedHat hosts and skips
+in other families, so the run visibly imports on the RedHat hosts and skips
 every other one.
 
 Run it with::

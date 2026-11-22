@@ -64,7 +64,7 @@ and Ubuntu hosts neither the commands nor the ``DnfRepoFile`` fact behind
 them run, and plan and log render the step as
 ``[skipped: when guard is_redhat]`` in its lockstep slot. The shared
 ``inventory.json`` holds two hosts in the ``"RedHat"`` family alongside hosts
-in other groups, so the run visibly writes the repo file on the RedHat hosts
+in other families, so the run visibly writes the repo file on the RedHat hosts
 and skips every other one.
 
 Run it with::

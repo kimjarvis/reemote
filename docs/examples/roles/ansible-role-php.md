@@ -11,10 +11,8 @@ APCu/OpCache stray-config sweep and the role's own extension ini files, the
 optional PHP-FPM pools and service, and two chained handlers
 (`restart webserver` → `restart php-fpm`).
 
-**This migration targets Ubuntu only.** Hosts in the inventory group
-`"ubuntu"` execute the deploy; every request carries the static `when` guard
-`is_ubuntu`, so the other hosts in the shared `inventory.json` (Alpine,
-CentOS) are skipped without being contacted. The role's `include_vars` OS
+**This migration targets Ubuntu only.** Hosts in the `"Ubuntu"` OS family execute the deploy; every request carries the static `when` guard
+`is_ubuntu`, so the other hosts in the shared `inventory.json` (Alpine, RedHat) are skipped without being contacted. The role's `include_vars` OS
 dispatch collapses to a frozen Ubuntu version table, and the RHEL/CentOS
 branch and the opt-in `php_install_from_source` path are scoped out (see §8).
 

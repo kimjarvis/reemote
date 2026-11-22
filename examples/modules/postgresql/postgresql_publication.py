@@ -49,10 +49,10 @@ own PostgreSQL machines to run live.
 
 Every request carries ``when=is_ubuntu``, the declarative eligibility
 guard: the predicate reads only **static** inventory data --
-``host.group``, set by the ``"group"`` key of the inventory entry -- and
+``host.family``, set by the ``"family"`` key of the inventory entry -- and
 is a stable module-level function, so the prepare and apply phases reach
 the same skip decision. The driver skips a rejected request without
-materializing it, so on hosts outside the ``"ubuntu"`` group neither the
+materializing it, so on hosts outside the ``"Ubuntu"`` family neither the
 commands nor the facts behind them run, and plan and log render the step
 as ``[skipped: when guard is_ubuntu]`` in its lockstep slot. The path is
 resolved from ``__file__``, so the example works from any working
@@ -119,14 +119,14 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_ubuntu(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"ubuntu"``.
+    """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "ubuntu"
+    return host.family == "Ubuntu"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:

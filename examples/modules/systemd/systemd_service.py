@@ -63,7 +63,7 @@ escalation at all.
 
 Every request also carries ``when=is_systemd``, the declarative eligibility
 guard. Two rules make it deterministic: the predicate reads only **static**
-inventory data -- ``host.group`` -- never a mutable fact, and it is a stable
+inventory data -- ``host.family`` -- never a mutable fact, and it is a stable
 module-level function, so the prepare and apply phases reach the same skip
 decision. The project root's ``inventory.json`` holds an ``alpine`` host
 (which uses OpenRC, not systemd) alongside systemd hosts, so the run visibly
@@ -126,14 +126,14 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 def is_systemd(host: Host) -> bool:
     """``when`` guard: the host runs systemd rather than OpenRC.
 
-    Reads only static inventory data (``host.group``), never a mutable fact,
+    Reads only static inventory data (``host.family``), never a mutable fact,
     and stays a stable module-level function -- the two rules every ``when``
     predicate follows so both deploy phases reach the same eligibility
-    decision and the determinism guard holds. The ``alpine`` group uses
+    decision and the determinism guard holds. The ``"Alpine"`` family uses
     OpenRC, where ``systemctl`` is absent, so the driver skips it instead of
     failing on a missing binary.
     """
-    return host.group != "alpine"
+    return host.family != "Alpine"
 
 
 def web_server_unit(host: Host) -> str:

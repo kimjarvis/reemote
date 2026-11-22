@@ -582,7 +582,7 @@ def test_resolve_vars_first_found_chain():
     }
     assert ntp.resolve_vars(debian_11) is ntp.DEBIAN_11_VARS
     assert ntp.DEBIAN_11_VARS["daemon"] == "ntp"
-    # A non-Ubuntu distribution is a hard error (the inventory group said ubuntu).
+    # A non-Ubuntu distribution is a hard error (the inventory family said Ubuntu).
     with pytest.raises(ValueError, match="targets Ubuntu"):
         ntp.resolve_vars({**UBUNTU_2404, "name": "CentOS"})
     # An unreadable major version fails the chain.

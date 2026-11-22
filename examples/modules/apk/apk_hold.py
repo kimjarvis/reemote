@@ -82,7 +82,7 @@ Every request also carries ``when=is_alpine``, the declarative eligibility
 guard (see
 ``examples/demonstrations/composition/composed_when_guard.py``). Two rules
 make it deterministic: the predicate reads only **static** inventory data --
-``host.group``, set by the ``"group"`` key of the inventory entry -- never a
+``host.family``, set by the ``"family"`` key of the inventory entry -- never a
 mutable fact, and it is a stable module-level function, so the prepare and
 apply phases reach the same skip decision. On a host the guard rejects, the
 plan and the run log render the step as ``[skipped: when guard is_alpine]``
@@ -90,7 +90,7 @@ and none of its commands -- nor the ``ApkHeldPackages`` and ``ApkInstalledPackag
 facts behind them -- is materialized at all, which is exactly why an
 apk-native operation must be guarded rather than run blind on a host without
 ``apk``. The project root's ``inventory.json`` holds one host in the
-``"alpine"`` group alongside hosts in other groups, so the run visibly pins
+``"Alpine"`` family alongside hosts in other families, so the run visibly pins
 and releases on the Alpine host and skips every other one.
 
 Run it with::
@@ -163,9 +163,9 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_alpine(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"alpine"".
+    """``when`` guard: the host belongs to the ``"Alpine"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision and the
@@ -173,7 +173,7 @@ def is_alpine(host: Host) -> bool:
     non-Alpine host every request below would fail on a missing ``apk``
     binary, so the driver skips them all instead.
     """
-    return host.group == "alpine"
+    return host.family == "Alpine"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:

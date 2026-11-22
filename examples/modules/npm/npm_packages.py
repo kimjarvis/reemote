@@ -71,8 +71,8 @@ tree would leave ``node_modules`` behind on the shared host -- exactly what the
 self-restoring cycle above exists to avoid.
 
 Like the other examples, every request carries ``when=is_ubuntu``: the shared
-``inventory.json`` holds one host in the ``"ubuntu"`` group alongside hosts in
-other groups, so each run installs and removes on the Ubuntu host and skips
+``inventory.json`` holds one host in the ``"Ubuntu"`` family alongside hosts in
+other families, so each run installs and removes on the Ubuntu host and skips
 every other one -- on a host outside the group the driver skips each request
 without materializing it, so neither the ``npm`` commands nor the
 ``NpmPackages`` fact behind them runs, and plan and log render
@@ -151,19 +151,19 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_ubuntu(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"ubuntu"``.
+    """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision and the
     determinism guard holds. The Ubuntu demo host is the one
     ``provision_npm.py`` installs npm on before this example deploys (see the
-    module docstring), so the install/removal is guarded to that group; on a
+    module docstring), so the install/removal is guarded to that family; on a
     host outside it the bare ``npm`` fact read would fail before doing
     anything, so the driver skips them all instead.
     """
-    return host.group == "ubuntu"
+    return host.family == "Ubuntu"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:

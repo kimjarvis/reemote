@@ -13,10 +13,8 @@ legacy `vhosts.conf` cleanup, the rendered `nginx.conf` installed behind
 `nginx -t` validation, the service's running/enabled state, and the
 `restart nginx` / `reload nginx` handlers.
 
-**This migration targets Ubuntu only.** Hosts in the inventory group
-`"ubuntu"` execute the deploy; every request carries the static `when` guard
-`is_ubuntu`, so the other hosts in the shared `inventory.json` (Alpine,
-CentOS) are skipped without being contacted. The role's `include_vars` OS
+**This migration targets Ubuntu only.** Hosts in the `"Ubuntu"` OS family execute the deploy; every request carries the static `when` guard
+`is_ubuntu`, so the other hosts in the shared `inventory.json` (Alpine, RedHat) are skipped without being contacted. The role's `include_vars` OS
 dispatch collapses to frozen Debian constants, and the RedHat, Suse,
 Archlinux, FreeBSD and OpenBSD branches are scoped out (see §8). Both Ubuntu
 opt-in toggles (`nginx_ppa_use`, `nginx_remove_default_vhost`) **are**

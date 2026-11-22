@@ -37,7 +37,7 @@ second as a no-op, because the fresh per-step fact cache now sees the
 
 ``systemctl reset-failed`` writes root-owned state, so the requests are flagged
 ``sudo=True``. The scope flags stay at their system-scope defaults. Every
-request carries ``when=is_systemd``, reading only static ``host.group`` so the
+request carries ``when=is_systemd``, reading only static ``host.family`` so the
 OpenRC ``alpine`` host is skipped rather than failing on a missing ``systemctl``.
 
 Run it with::
@@ -85,11 +85,11 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 def is_systemd(host: Host) -> bool:
     """``when`` guard: the host runs systemd rather than OpenRC.
 
-    Reads only static inventory data (``host.group``), never a mutable fact,
+    Reads only static inventory data (``host.family``), never a mutable fact,
     and stays a stable module-level function so both deploy phases reach the
     same eligibility decision and the determinism guard holds.
     """
-    return host.group != "alpine"
+    return host.family != "Alpine"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:

@@ -20,8 +20,7 @@ themselves are documented on the
 
 Every operation example reads the project root's `inventory.json` (validated
 up front with `validate_inventory`) and guards each request with
-`when=is_systemd`, a stable module-level predicate reading only static
-`host.group` so the OpenRC `alpine` host is skipped rather than failing on a
+`when=is_systemd`, a stable module-level predicate reading only static `host.family` so the OpenRC `alpine` host is skipped rather than failing on a
 missing `systemctl`. The `systemctl` and file-writing operations need root, so
 their requests are flagged `sudo=True`. `run_examples.py` runs every script
 live, so the state-mutating examples are written to be safe on the shared demo
@@ -50,7 +49,7 @@ extensions: `reloaded=True` with `soft_reload=True`
 issues `systemctl reload-or-try-restart`, gated on the unit actually running.
 The managed unit is chosen per OS family by `web_server_unit` — `httpd` on the
 RHEL-family RedHat hosts, `apache2` on the Debian-family `ubuntu` host — a
-branch on static `host.group` that stays identical across both phases, so the
+branch on static `host.family` that stays identical across both phases, so the
 determinism guard holds even though the unit name differs per host.
 
 ::: systemd_service

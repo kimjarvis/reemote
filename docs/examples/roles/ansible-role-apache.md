@@ -11,10 +11,8 @@ the `mods-enabled`/`conf-enabled` symlinks, a rendered
 default-vhost removal, the service's running/enabled state, and a single
 `restart apache` handler notified by every configuration task.
 
-**This migration targets Ubuntu only.** Hosts in the inventory group
-`"ubuntu"` execute the deploy; every request carries the static `when` guard
-`is_ubuntu`, so the other hosts in the shared `inventory.json` (Alpine,
-CentOS) are skipped without being contacted. The role's `include_vars` OS
+**This migration targets Ubuntu only.** Hosts in the `"Ubuntu"` OS family execute the deploy; every request carries the static `when` guard
+`is_ubuntu`, so the other hosts in the shared `inventory.json` (Alpine, RedHat) are skipped without being contacted. The role's `include_vars` OS
 dispatch collapses to frozen Debian constants, and the RHEL/SLES/Solaris/
 Amazon Linux branches are scoped out (see §8).
 

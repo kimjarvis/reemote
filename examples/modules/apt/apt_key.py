@@ -61,14 +61,14 @@ Release (CE deb) signing key -- the armored body of
 bytes; swap in your own vendor key's armor to trust a different repository.
 
 Like the other apt examples, the request carries ``when=is_ubuntu``: the
-predicate reads only static inventory data (``host.group``) and is a stable
+predicate reads only static inventory data (``host.family``) and is a stable
 module-level function, so both phases reach the same skip decision. The
 driver skips a rejected request without materializing it -- neither the
 scp spool transfer nor the elevated install runs on a non-Ubuntu host,
 whose package manager would never read an ``/etc/apt/keyrings`` file -- and
 plan and log render ``[skipped: when guard is_ubuntu]``. The shared
-``inventory.json`` holds one host in the ``"ubuntu"`` group alongside hosts
-in other groups, so each run installs on the Ubuntu host and skips every
+``inventory.json`` holds one host in the ``"Ubuntu"`` family alongside hosts
+in other families, so each run installs on the Ubuntu host and skips every
 other one.
 
 Run it with::
@@ -194,9 +194,9 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_ubuntu(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"ubuntu"``.
+    """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision and the
@@ -204,7 +204,7 @@ def is_ubuntu(host: Host) -> bool:
     keyring the request writes under ``/etc/apt/keyrings/`` is only read by
     apt, which a non-Ubuntu host does not run, so the driver skips it there.
     """
-    return host.group == "ubuntu"
+    return host.family == "Ubuntu"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:

@@ -29,7 +29,7 @@ arguments, `directory` and `prefix`, so each host reports its own default
 global tree; run `npm_packages.py` first to see a tree that actually holds
 packages. Like the other examples it reads the shared project-root
 `inventory.json` (validated up front with `validate_inventory`) and the gather
-is guarded to the `"ubuntu"` group by filtering the host list — `gather_fact`
+is guarded to the `"Ubuntu"` family by filtering the host list — `gather_fact`
 has no `when` parameter of its own — so the other demo hosts are named in a
 `== Skipped (when guard is_ubuntu): ... ==` line and never connected.
 

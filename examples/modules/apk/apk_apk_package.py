@@ -21,11 +21,11 @@ inventory comes from the shared ``inventory.json`` in the project root:
 3. Guard the gather with a ``when`` predicate, the same style as the deploy
    meta-parameter (see ``examples/demonstrations/
    composed_when_guard.py``): ``is_alpine`` reads only **static** inventory
-   data -- ``host.group`` -- and the fact is gathered on the hosts that pass
+   data -- ``host.family`` -- and the fact is gathered on the hosts that pass
    it. ``gather_fact`` itself takes no ``when`` parameter, so the predicate
    filters the host list before the fan-out -- the direct equivalent of a
    driver-side skip. The shared ``inventory.json`` holds one host in the
-   ``"alpine"`` group alongside hosts in other groups, so the run prints its
+   ``"Alpine"`` family alongside hosts in other families, so the run prints its
    Alpine result plus a ``== Skipped (when guard is_alpine): ... ==`` line
    naming every other one.
 4. Gather ``ApkPackage`` for the package ``curl`` on the guarded hosts at once
@@ -53,7 +53,7 @@ configured repositories are what ``ApkRepositories`` reports.
 The path is resolved from ``__file__``, so the example works from any
 working directory. Point ``INVENTORY_PATH`` at your own file (or edit
 ``inventory.json``) to target your machines, and ``PACKAGE`` at the
-package you want to inspect; hosts outside the ``"alpine"`` group are
+package you want to inspect; hosts outside the ``"Alpine"`` family are
 skipped by the ``when`` guard.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
@@ -106,14 +106,14 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_alpine(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"alpine"".
+    """``when`` guard: the host belongs to the ``"Alpine"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "alpine"
+    return host.family == "Alpine"
 
 
 async def main() -> None:

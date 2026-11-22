@@ -51,12 +51,12 @@ The inventory is read from the project root's `inventory.json` (validated
 up front with `validate_inventory`), and every request carries
 `when=is_alpine` — the request-level counterpart of the host-list filter
 the fact scripts apply. The predicate reads only static inventory data
-(`host.group`) and is a stable module-level function, so both phases reach
+(`host.family`) and is a stable module-level function, so both phases reach
 the same decision; the driver skips a rejected request without
 materializing it, so on a non-OpenRC host neither the commands nor the
 facts behind them run, and plan and log render
 `[skipped: when guard is_alpine]` in the request's lockstep slot. The
-shared inventory holds one Alpine host alongside hosts in other groups, so
+shared inventory holds one Alpine host alongside hosts in other families, so
 the run manages crond on the Alpine host and skips every other one.
 
 ::: openrc_service

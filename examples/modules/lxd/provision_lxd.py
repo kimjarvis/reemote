@@ -42,8 +42,8 @@ data, so a non-zero result is raised as a ``CommandError`` naming the host,
 while an unreachable host or a rejected sudo credential still raises
 ``HostConnectionError`` / ``PrivilegeError``.
 
-Both steps are scoped to the ``"ubuntu"`` inventory group: ``provision_lxd``
-filters the inventory to that group before contacting anything, so the other
+Both steps are scoped to the ``"Ubuntu"`` family: ``provision_lxd``
+filters the inventory to that family before contacting anything, so the other
 demo hosts are never touched. ``install_lxd`` also carries ``when=is_ubuntu``
 -- the same static guard the sibling examples use -- so the deploy is safe to
 drive against a full inventory as well.
@@ -124,14 +124,14 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_ubuntu(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"ubuntu"``.
+    """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
-    Reads only static inventory data (``host.group``), never a mutable fact,
+    Reads only static inventory data (``host.family``), never a mutable fact,
     and stays a stable module-level function -- the two rules every ``when``
     predicate follows so both deploy phases reach the same eligibility
     decision and the determinism guard holds.
     """
-    return host.group == "ubuntu"
+    return host.family == "Ubuntu"
 
 
 def install_lxd(host: Host) -> Generator[OperationRequest]:
@@ -158,7 +158,7 @@ async def provision_lxd(inventory: list[dict[str, Any]]) -> None:
     """Provision the lxd snap + an initialized daemon on the Ubuntu hosts.
 
     The shared prerequisite every lxd example awaits before its own logic.
-    Scoped to the ``"ubuntu"`` group: the inventory is filtered first, so no
+    Scoped to the ``"Ubuntu"`` family: the inventory is filtered first, so no
     other demo host is materialized or contacted. Returns nothing and prints
     nothing -- it is a pure helper; the caller (an example's ``main`` or this
     module's) owns the output.
@@ -176,7 +176,7 @@ async def provision_lxd(inventory: list[dict[str, Any]]) -> None:
     rejected sudo credential raises ``HostConnectionError`` / ``PrivilegeError``
     from either step. With no Ubuntu host in the inventory this is a no-op.
     """
-    ubuntu = [entry for entry in inventory if entry.get("group") == "ubuntu"]
+    ubuntu = [entry for entry in inventory if entry.get("family") == "Ubuntu"]
     if not ubuntu:
         return
 
@@ -213,9 +213,9 @@ async def main() -> None:
     print(f"== Inventory loaded from {INVENTORY_PATH} ==")
     print(", ".join(entry["host"] for entry in inventory))
 
-    ubuntu = [entry["host"] for entry in inventory if entry.get("group") == "ubuntu"]
+    ubuntu = [entry["host"] for entry in inventory if entry.get("family") == "Ubuntu"]
     if not ubuntu:
-        print("\n== No host in the 'ubuntu' group; nothing to provision ==")
+        print("\n== No host in the 'Ubuntu' family; nothing to provision ==")
         return
 
     print(f"\n== Provisioning LXD on: {', '.join(ubuntu)} ==")

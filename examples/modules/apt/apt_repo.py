@@ -82,14 +82,14 @@ command over SSH; the spool copy always rides scp as the login user,
 because transfers never elevate.
 
 Like the other apt examples, every request carries ``when=is_ubuntu``: the
-predicate reads only static inventory data (``host.group``) and is a stable
+predicate reads only static inventory data (``host.family``) and is a stable
 module-level function, so both phases reach the same skip decision. The
 driver skips a rejected request without materializing it -- neither the
 spool-and-install pair nor the ``AptSources`` and ``AptSourcesFile`` facts
 behind it runs on a non-Ubuntu host, whose package manager would never read
 the apt sources -- and plan and log render
 ``[skipped: when guard is_ubuntu]``. The shared ``inventory.json`` holds one
-host in the ``"ubuntu"`` group alongside hosts in other groups, so each run
+host in the ``"Ubuntu"`` family alongside hosts in other families, so each run
 rewrites the sources on the Ubuntu host and skips every other one.
 
 Run it with::
@@ -150,9 +150,9 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_ubuntu(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"ubuntu"``.
+    """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision and the
@@ -160,7 +160,7 @@ def is_ubuntu(host: Host) -> bool:
     sources the requests write under ``/etc/apt`` are only read by apt,
     which a non-Ubuntu host does not run, so the driver skips them there.
     """
-    return host.group == "ubuntu"
+    return host.family == "Ubuntu"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:

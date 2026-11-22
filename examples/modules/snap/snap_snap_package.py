@@ -21,11 +21,11 @@ from the shared ``inventory.json`` in the project root:
 3. Guard the gather with a ``when`` predicate, the same style as the deploy
    meta-parameter (see ``examples/demonstrations/
    composed_when_guard.py``): ``is_ubuntu`` reads only **static** inventory
-   data -- ``host.group`` -- and the fact is gathered on the hosts that pass
+   data -- ``host.family`` -- and the fact is gathered on the hosts that pass
    it. ``gather_fact`` itself takes no ``when`` parameter, so the predicate
    filters the host list before the fan-out -- the direct equivalent of a
    driver-side skip. The shared ``inventory.json`` holds one host in the
-   ``"ubuntu"`` group alongside hosts in other groups, so the run prints its
+   ``"Ubuntu"`` family alongside hosts in other families, so the run prints its
    Ubuntu result plus a ``== Skipped (when guard is_ubuntu): ... ==`` line
    naming every other one.
 4. Gather ``SnapPackage`` for the package ``lxd`` on the guarded hosts at once
@@ -50,7 +50,7 @@ hyphenated ``snap-id`` onto a valid identifier.
 The path is resolved from ``__file__``, so the example works from any
 working directory. Point ``INVENTORY_PATH`` at your own file (or edit
 ``inventory.json``) to target your machines, and ``PACKAGE`` at the
-snap you want to inspect; hosts outside the ``"ubuntu"`` group are skipped by
+snap you want to inspect; hosts outside the ``"Ubuntu"`` family are skipped by
 the ``when`` guard.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
@@ -103,15 +103,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_ubuntu(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"ubuntu"".
+    """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. snap is
-    installed by default on Ubuntu, so the gather is guarded to that group.
+    installed by default on Ubuntu, so the gather is guarded to that family.
     """
-    return host.group == "ubuntu"
+    return host.family == "Ubuntu"
 
 
 async def main() -> None:

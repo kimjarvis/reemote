@@ -12,10 +12,8 @@ extension conf path, the optional CLI disable, and the two chained handlers
 (`restart webserver` → `restart php-fpm`) inherited from its
 [`geerlingguy.php`](https://github.com/geerlingguy/ansible-role-php) dependency.
 
-**This migration targets Ubuntu only.** Hosts in the inventory group
-`"ubuntu"` execute the deploy; every request carries the static `when` guard
-`is_ubuntu`, so the other hosts in the shared `inventory.json` (Alpine,
-CentOS) are skipped without being contacted. The role's `include_vars` OS
+**This migration targets Ubuntu only.** Hosts in the `"Ubuntu"` OS family execute the deploy; every request carries the static `when` guard
+`is_ubuntu`, so the other hosts in the shared `inventory.json` (Alpine, RedHat) are skipped without being contacted. The role's `include_vars` OS
 dispatch collapses to the frozen `vars/Debian.yml` constants, and the
 RHEL/CentOS branch (`yum: '@development'`) is scoped out (§8). Unlike the
 sibling `geerlingguy.php` migration — where build-from-source is an opt-in

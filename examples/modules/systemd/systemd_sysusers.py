@@ -51,7 +51,7 @@ now sees the content the first step installed.
 It is compile-checked and exercised by the offline example harness rather than
 run against shared hosts; point ``INVENTORY_PATH`` at your own throwaway
 machines to execute it for real. Every request carries ``when=is_systemd``,
-reading only static ``host.group`` so the OpenRC ``alpine`` host is skipped
+reading only static ``host.family`` so the OpenRC ``alpine`` host is skipped
 rather than failing on a missing ``systemd-sysusers``.
 
 Run it with::
@@ -104,11 +104,11 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 def is_systemd(host: Host) -> bool:
     """``when`` guard: the host runs systemd rather than OpenRC.
 
-    Reads only static inventory data (``host.group``), never a mutable fact,
+    Reads only static inventory data (``host.family``), never a mutable fact,
     and stays a stable module-level function so both deploy phases reach the
     same eligibility decision and the determinism guard holds.
     """
-    return host.group != "alpine"
+    return host.family != "Alpine"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:

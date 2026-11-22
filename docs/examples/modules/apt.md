@@ -24,12 +24,12 @@ each reads a single fact, and the facts themselves are documented on the
 Every example below loads that same shared `inventory.json` (validated up
 front with `validate_inventory`, so a malformed file fails before any host
 is materialized) and guards each request with `when=is_ubuntu` — a stable
-module-level predicate reading only the static `host.group` inventory data,
+module-level predicate reading only the static `host.family` inventory data,
 so both deploy phases reach the same skip decision. The driver skips a
 rejected request without materializing it: neither its commands nor the
 facts behind them run on a non-Ubuntu host, and plan and log render
 `[skipped: when guard is_ubuntu]`. The shared file holds one host in the
-`ubuntu` group alongside hosts in other groups, so each run targets the
+`Ubuntu` family alongside hosts in other families, so each run targets the
 Ubuntu host and visibly skips every other one.
 
 ## Installing a `.deb` file with version idempotence

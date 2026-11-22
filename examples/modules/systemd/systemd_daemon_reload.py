@@ -85,10 +85,10 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 def is_systemd(host: Host) -> bool:
     """``when`` guard: the host runs systemd rather than OpenRC.
 
-    Reads only static inventory data (``host.group``) and stays a stable
+    Reads only static inventory data (``host.family``) and stays a stable
     module-level function, so both deploy phases reach the same decision.
     """
-    return host.group != "alpine"
+    return host.family != "Alpine"
 
 
 def web_server_unit(host: Host) -> str:

@@ -13,10 +13,9 @@ mode-less directory loop, the `exports.j2` template with its
 `notify: reload nfs`, the gated `service` task, and one **command**
 handler.
 
-**This migration targets Ubuntu only.** Hosts in the inventory group
-`"ubuntu"` execute the deploy; every request carries the static `when`
+**This migration targets Ubuntu only.** Hosts in the `"Ubuntu"` OS family execute the deploy; every request carries the static `when`
 guard `is_ubuntu`, so the other hosts in the shared `inventory.json`
-(Alpine, CentOS) are skipped without being contacted. The RedHat and
+(Alpine, RedHat) are skipped without being contacted. The RedHat and
 Fedora branches are scoped out (see §8). The role's vars split only by OS
 family, so the single-OS scope collapses the `include_vars` dispatch to
 frozen module constants — no fact gather is needed: the template consumes

@@ -10,10 +10,9 @@ enables the service. A config change notifies the role's single handler,
 `restart memcached`. The role has no loops, no command/shell tasks and no
 consumed `register:` outcomes.
 
-**This migration targets Ubuntu only.** Hosts in the inventory group
-`"ubuntu"` execute the deploy; every request carries the static `when`
+**This migration targets Ubuntu only.** Hosts in the `"Ubuntu"` OS family execute the deploy; every request carries the static `when`
 guard `is_ubuntu`, so the other hosts in the shared `inventory.json`
-(Alpine, CentOS) are skipped without being contacted. The RedHat branch
+(Alpine, RedHat) are skipped without being contacted. The RedHat branch
 (`vars/RedHat.yml`, `memcached-RedHat.conf.j2`, the sysconfig destination)
 is scoped out (§8). The vars split only by OS family, so the single-OS
 scope collapses the `include_vars` dispatch to frozen module constants —

@@ -15,7 +15,7 @@ memberships. Every role variable is read from the inventory entry's extra
 keys (reemote's ``host_vars`` mechanism), so ``docker_users`` and friends
 live beside ``host``/``connection`` in ``inventory.json``.
 
-Target: hosts in the inventory group ``"ubuntu"``. Every request carries
+Target: hosts in the ``"Ubuntu"`` OS family. Every request carries
 ``when=is_ubuntu``, and a skipped request is never materialized -- the
 other hosts in the shared inventory are not even contacted. The role's
 RedHat and Suse branches are out of scope (a Phase 0 single-OS decision),
@@ -200,14 +200,14 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
 
 
 def is_ubuntu(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"ubuntu"``.
+    """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
     Reads only static inventory data and stays a stable module-level
     function, so both deploy phases reach the same eligibility decision.
     A skipped request is never materialized, so the Alpine and CentOS
     hosts in the shared inventory are not contacted at all.
     """
-    return host.group == "ubuntu"
+    return host.family == "Ubuntu"
 
 
 def _package_state(value: Any, key: str, host: Host) -> str:
@@ -609,7 +609,7 @@ async def main() -> None:
         if skipped:
             print("\n== Skipped (when guard is_ubuntu): " + ", ".join(skipped) + " ==")
         if not targets:
-            print("\nNo host in the inventory group 'ubuntu'; nothing to deploy.")
+            print("\nNo host in the Ubuntu family; nothing to deploy.")
             return
 
         # The role's variable resolution and its scoped-out gate, before any

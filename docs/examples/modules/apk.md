@@ -49,13 +49,13 @@ front with `validate_inventory`), and every request carries
 `when=is_alpine` — the request-level counterpart of the `when` guard the
 [`composed_when_guard`](../demonstrations/composition.md) demonstration shows
 for the RedHat family. The predicate reads only static inventory data
-(`host.group`) and is a stable module-level function, so both phases reach the
+(`host.family`) and is a stable module-level function, so both phases reach the
 same decision; the driver skips a rejected request without materializing it,
 so on a non-Alpine host neither the `apk` commands nor the
 `ApkInstalledPackages` fact behind them run, and plan and log render
 `[skipped: when guard is_alpine]` in the request's lockstep slot. That skip
 is visible on every run: the shared `inventory.json` holds one Alpine host
-alongside hosts in other groups, so the run installs on the Alpine host and
+alongside hosts in other families, so the run installs on the Alpine host and
 skips every other one. The read-only fact examples guard differently by
 necessity: `gather_fact` takes no
 `when` parameter, so their predicate filters the host list before the
@@ -97,7 +97,7 @@ request carries `when=is_alpine`, so on a non-Alpine host neither the `apk
 add -t`/`apk del` commands nor the `ApkExplicitPackages` fact behind them
 run — the driver skips each request without materializing it and plan and log
 render `[skipped: when guard is_alpine]`. Since the shared inventory holds
-one Alpine host among hosts in other groups, each run creates and removes the
+one Alpine host among hosts in other families, each run creates and removes the
 group on that host and skips every other one.
 
 ::: apk_virtual
@@ -142,7 +142,7 @@ request carries `when=is_alpine`, so on a non-Alpine host neither the
 facts behind them run — the driver skips each request without materializing it
 and plan and log render `[skipped: when guard is_alpine]`. Each run therefore
 pins and releases on the inventory's single Alpine host and skips the hosts
-in the other groups.
+in the other families.
 
 ::: apk_hold
     options:
@@ -182,7 +182,7 @@ request carries `when=is_alpine`, so on a non-Alpine host neither the
 `apk add --purge` command nor the `ApkAutoremovablePackages` purge simulation behind
 it runs — the driver skips each request without materializing it and plan and
 log render `[skipped: when guard is_alpine]`. Each run therefore purges on
-the inventory's single Alpine host and skips the hosts in the other groups.
+the inventory's single Alpine host and skips the hosts in the other families.
 
 ::: apk_autoremove
     options:

@@ -6,8 +6,7 @@ Scripts under `examples/modules/flatpak/` — one per fact or operation of the
 warning and the error-reporting contract every script follows.
 
 The read-only fact-gathering example (`flatpak_flatpak_package.py` reading
-`FlatpakPackage` for one package over `gather_fact`, guarded to the `ubuntu`
-group) is not rendered here — it reads a single fact, and the fact itself is
+`FlatpakPackage` for one package over `gather_fact`, guarded to the `Ubuntu` family) is not rendered here — it reads a single fact, and the fact itself is
 documented on the [`flatpak` module page](../../modules/flatpak.md).
 
 ## Installing and removing flatpak applications

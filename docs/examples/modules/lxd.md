@@ -6,7 +6,7 @@ the [`lxd`](../../modules/lxd.md) module. See the
 warning and the error-reporting contract every script follows.
 
 Every script reads the shared project-root `inventory.json` and guards on
-the `"ubuntu"` group (`is_ubuntu` on every operation request, a host-list
+the `"Ubuntu"` family (`is_ubuntu` on every operation request, a host-list
 filter before each `gather_fact` fan-out), targeting the demo host
 `ubuntu`, which the scripts provision themselves before deploying. The
 operation requests ride
