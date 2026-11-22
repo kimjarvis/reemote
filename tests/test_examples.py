@@ -432,11 +432,12 @@ SNAPSHOT_ARGS = {
         name: {"repofile": "/etc/yum.repos.d/epel.repo", "enabled": "1"}
     },
     # The PostgreSQL role migration: seven single-snapshot factories closing
-    # over the frozen per-host plan (vars table, renders, conf transforms and
-    # the role catalog already decided). build_handler takes two required
-    # parameters, so the harness skips it entirely -- no entry needed. The
-    # users fixture is absent from the (empty) catalog, so build_users drains
-    # the CREATE USER-defaults request and build_users_props the GAP-2 fill.
+    # over the frozen per-host plan (vars table, renders and conf transforms
+    # already decided). build_handler takes two required parameters, so the
+    # harness skips it entirely -- no entry needed. build_users drains the
+    # presence-only request and build_users_props the listed-flag reconcile;
+    # neither reads a role catalog now that postgresql.role reconciles only
+    # the flags a request lists (#45).
     (
         "examples/roles/ansible-role-postgresql/ansible-role-postgresql.py",
         "build_setup",
@@ -495,7 +496,6 @@ SNAPSHOT_ARGS = {
                     "psql_port": None,
                 },
             ),
-            "roles_catalog": {},
         }
     },
     (
@@ -535,7 +535,6 @@ SNAPSHOT_ARGS = {
                     "psql_port": None,
                 },
             ),
-            "roles_catalog": {},
             "privs": (
                 {
                     "roles": ("jdoe",),

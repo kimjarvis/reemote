@@ -49,16 +49,12 @@ The library gaps this migration found are CLOSED on main
   module's ``sleep:`` parity: it splits a restart into ``systemctl stop``, a
   raw ``sleep N`` and ``systemctl start``. ``build_handler`` passes ``sleep=5``,
   the role's own ``handlers/main.yml`` value.
-
-One implementation gap remains OPEN (workaround tagged in the code)
--------------------------------------------------------------------
-
-* **GAP-2 (#45)** -- ``postgresql.role`` reconciles all six boolean attribute
-  flags unconditionally, while Ansible's ``role_attr_flags`` adjusts ONLY the
-  listed flags. Workaround: gather ``PostgresqlRoles`` after the service is
-  up, freeze the catalog, and fill every unlisted flag from the frozen current
-  value (existing role) or ``CREATE USER``'s server defaults (absent role) --
-  see ``build_users`` / ``build_users_props``.
+* **#45** (the former GAP-2) -- ``postgresql.role``'s eight attribute options
+  are all tri-state (``bool | None``), so on an existing role only the flags a
+  request lists are reconciled and an unlisted attribute is left alone -- the
+  Ansible ``role_attr_flags`` partial semantics, natively. ``build_users`` and
+  ``build_users_props`` now pass exactly the listed flags; the former
+  ``PostgresqlRoles`` catalog freeze and its unlisted-flag fill are gone.
 
 Why this shape
 --------------
@@ -69,9 +65,8 @@ state) and both passes must yield the identical request sequence. The role's
 ``become_user: postgres`` tasks read mutable state / switch run-as users, so
 they move out of the deploys: the stat gate is an elevated ``Shell`` action
 (the data directory is 0700 postgres -- the unprivileged ``FileExists`` fact
-cannot traverse it), ``initdb`` is a ``Shell`` action on a postgres-privilege
-inventory view, and the role catalog is a ``PostgresqlRoles`` gather between
-the service deploy and the data deploy. The handler is the two-deploy split:
+cannot traverse it), and ``initdb`` is a ``Shell`` action on a postgres-privilege
+inventory view. The handler is the two-deploy split:
 the notifying requests carry names, ``changed_hosts`` freezes the notified
 set between runs, and ``service_handler`` restarts only those hosts.
 
@@ -89,10 +84,10 @@ Recorded at the point of use and in
 * ``login_host`` is ignored: Ansible's ``login_unix_socket`` wins over
   ``login_host`` in psycopg2, so the effective connection is always the
   socket (``psql_host=<socket dir>``).
-* ``role_attr_flags`` partial reconciliation is reproduced control-side
-  (GAP-2, #45); a duplicate user name fails fast instead of Ansible's
-  last-item-wins, and a ``state: absent`` user is not created first (the
-  role's users.yml creates every user before users_props.yml applies state).
+* a duplicate user name fails fast instead of Ansible's last-item-wins, and a
+  ``state: absent`` user is not created first (the role's users.yml creates
+  every user before users_props.yml applies state). ``role_attr_flags``
+  partial reconciliation is now native (#45), not a control-side fill.
 * ``postgresql_db``'s ``encoding: UTF-8`` default is normalized to the
   catalog spelling ``UTF8`` (PostgreSQL accepts both on CREATE; the fact
   reports ``UTF8``).
@@ -130,7 +125,6 @@ from reemote import (
     InventoryError,
     LinuxDistribution,
     OperationRequest,
-    PostgresqlRoles,
     PrivilegeError,
     Shell,
     changed_hosts,
@@ -231,32 +225,11 @@ PG_HBA_TEMPLATE = (
     "{% endfor %}\n"
 )
 
-#: ``CREATE USER``'s server defaults (community.postgresql.postgresql_user
-#: issues CREATE USER, which implies LOGIN and the PostgreSQL defaults).
-#: GAP-2 (#45): the fill values for flags an item does not list when the role
-#: is absent from the frozen catalog.
-CREATE_USER_DEFAULTS: dict[str, bool] = {
-    "login": True,
-    "superuser": False,
-    "inherit": True,
-    "createdb": False,
-    "createrole": False,
-    "replication": False,
-}
-
-#: ``postgresql.role`` option -> ``PostgresqlRoles`` catalog key (the fact
-#: reports the pg_roles column names). GAP-2 (#45) fill for an existing role.
-ROLE_FACT_KEYS: dict[str, str] = {
-    "login": "canlogin",
-    "superuser": "super",
-    "inherit": "inherit",
-    "createdb": "createdb",
-    "createrole": "createrole",
-    "replication": "replication",
-}
-
 #: Ansible ``role_attr_flags`` tokens -> (option, value). BYPASSRLS is the
-#: #31 parity flag; the six others are GAP-2 (#45) partial-reconcile flags.
+#: #31 parity flag; the six others are the #45 partial-reconcile flags. Only
+#: the tokens an item lists reach ``postgresql.role`` -- an unlisted attribute
+#: is left alone on an existing role and falls back to its ``CREATE ROLE``
+#: default on an absent one, so no control-side fill table is needed.
 ROLE_FLAG_TOKENS: dict[str, tuple[str, bool]] = {
     "SUPERUSER": ("superuser", True),
     "NOSUPERUSER": ("superuser", False),
@@ -399,8 +372,9 @@ def make_conf_transform(
 def parse_role_flags(value: Any) -> tuple[tuple[str, bool], ...] | None:
     """Ansible ``role_attr_flags``: comma-separated [NO]FLAG tokens.
 
-    Returns the listed (option, bool) pairs -- ONLY the listed ones; the
-    partial-reconciliation fill happens in ``build_users_props`` (GAP-2, #45).
+    Returns the listed (option, bool) pairs -- ONLY the listed ones, which is
+    exactly what ``postgresql.role`` reconciles now that its attribute options
+    are tri-state (#45): an unlisted flag is left alone on an existing role.
     ``None`` (omitted) stays None: presence-only, touch nothing.
     """
     if value is None:
@@ -954,14 +928,15 @@ def build_users(
 ) -> Callable[[Host], Generator[OperationRequest]]:
     """Deploy 5a: users.yml -- ensure the users exist, touch nothing else.
 
-    GAP-2 (#45): Ansible's postgresql_user WITHOUT role_attr_flags/password is
-    a presence-only no-op on an existing role, and CREATE USER (server
-    defaults) on an absent one. reemote's postgresql.role always reconciles
-    all six boolean flags, so an existing role is skipped here (the frozen
-    catalog proves presence) and an absent one is created with exactly
-    CREATE USER's defaults -- the explicit flags render identically to the
-    server defaults. The reconcile pass (build_users_props) fills unlisted
-    flags the same way.
+    Ansible's postgresql_user WITHOUT role_attr_flags/password is a
+    presence-only no-op on an existing role and CREATE USER (server defaults)
+    on an absent one. ``postgresql.role`` matches that natively now that its
+    attribute options are tri-state (#45): a request listing no attribute is a
+    no-op on an existing role and creates an absent one with the ``CREATE
+    ROLE`` defaults. So this pass yields one presence-only request per present
+    user and lets the operation's own ``PostgresqlRoles`` read decide CREATE vs
+    no-op -- no frozen catalog and no explicit default flags. The reconcile
+    pass (build_users_props) applies the listed flags.
 
     Deviation: a ``state: absent`` item is not created first (the role's
     users.yml creates every user before users_props.yml applies state).
@@ -972,18 +947,12 @@ def build_users(
         if plan is None:
             return
         for user in plan["users"]:
-            if not user["present"] or user["name"] in plan["roles_catalog"]:
+            if not user["present"]:
                 continue
             yield op(
                 postgresql.role,
                 name="Ensure PostgreSQL users are present.",
                 role=user["name"],
-                login=CREATE_USER_DEFAULTS["login"],
-                superuser=CREATE_USER_DEFAULTS["superuser"],
-                inherit=CREATE_USER_DEFAULTS["inherit"],
-                createdb=CREATE_USER_DEFAULTS["createdb"],
-                createrole=CREATE_USER_DEFAULTS["createrole"],
-                replication=CREATE_USER_DEFAULTS["replication"],
                 psql_user=user["psql_user"],
                 psql_host=user["psql_host"],
                 psql_port=user["psql_port"],
@@ -1034,14 +1003,14 @@ def build_users_props(
 ) -> Callable[[Host], Generator[OperationRequest]]:
     """Deploy 5c: users_props.yml -- attribute reconciliation and privileges.
 
-    GAP-2 (#45): Ansible's role_attr_flags adjusts ONLY the listed flags.
-    reemote's postgresql.role diffs every non-None flag, so each unlisted
-    flag is filled from the frozen catalog (existing role) or CREATE USER's
-    defaults (absent role -- deploy 5a creates it with those defaults, so the
-    fill makes the reconcile a no-op on everything but the listed flags).
-    ``bypassrls`` stays None when unlisted (#31's tri-state already means
-    "leave alone"); ``connection_limit`` is not a role_attr_flags token.
-    An item without flags is presence-only: deploy 5a already ensured it.
+    Ansible's role_attr_flags adjusts ONLY the listed flags, and
+    ``postgresql.role``'s tri-state options now do exactly that (#45): this
+    pass forwards the item's listed flags verbatim, so an unlisted attribute
+    is left alone on an existing role, and an absent role (deploy 5a creates
+    it with the ``CREATE ROLE`` defaults) reconciles only the listed flags.
+    ``bypassrls`` rides the same listed-flag path (#31); ``connection_limit``
+    is not a role_attr_flags token. An item without flags is presence-only:
+    deploy 5a already ensured it.
     """
 
     def users_props(host: Host) -> Generator[OperationRequest]:
@@ -1068,22 +1037,11 @@ def build_users_props(
                 continue
             if not user["flags"]:
                 continue
-            listed = dict(user["flags"])
-            current = plan["roles_catalog"].get(user["name"])
-            attrs: dict[str, Any] = {}
-            for option, key in ROLE_FACT_KEYS.items():
-                if option in listed:
-                    attrs[option] = listed[option]
-                elif current is not None:
-                    attrs[option] = current[key]
-                else:
-                    attrs[option] = CREATE_USER_DEFAULTS[option]
-            attrs["bypassrls"] = listed.get("bypassrls")
             yield op(
                 postgresql.role,
                 name="Ensure PostgreSQL users are configured correctly.",
                 role=user["name"],
-                **attrs,
+                **dict(user["flags"]),
                 **conn,
                 sudo=True,
                 when=is_redhat,
@@ -1222,7 +1180,6 @@ async def main() -> None:
                     ),
                     "pg_version_path": posixpath.join(rv["data_dir"], "PG_VERSION"),
                     "initdb_command": f"{rv['bin_path']}/initdb -D {rv['data_dir']}",
-                    "roles_catalog": {},
                 }
         finally:
             for host in targets:
@@ -1265,8 +1222,8 @@ async def main() -> None:
 
         # The become_user: postgres view: a second inventory whose privilege
         # section names the run-as user. Run-as users come from the inventory,
-        # never from an operation -- so the initdb action, the role-catalog
-        # gather and the users/databases/privs deploy all ride this view.
+        # never from an operation -- so the elevated initdb action and the
+        # users/databases/privs deploy both ride this view.
         target_names = {host.name for host in targets}
         pg_inventory = [
             {
@@ -1293,25 +1250,34 @@ async def main() -> None:
 
         # initialize.yml's command task: initdb as postgres, only where the
         # frozen stat gate says the cluster is absent. An action, not a
-        # deploy request -- commands never run inside a deploy.
-        for host in targets:
-            plan = plans[host.name]
-            if plan["initialized"]:
-                continue
-            result = (
-                await gather_action(
-                    [pg_by_name[host.name]],
-                    Shell,
-                    command=plan["initdb_command"],
-                    sudo=True,
-                )
-            )[host.name]
-            if result["exit_status"] != 0:
-                raise ValueError(
-                    f"{host.name}: initdb failed (exit {result['exit_status']}): "
-                    f"{result['stderr'].strip()}"
-                )
-            print(f"\n== {host.name}: cluster initialized ({plan['data_dir']}) ==")
+        # deploy request -- commands never run inside a deploy. The
+        # postgres-privilege hosts serve only this elevated action, so the
+        # finally closes them; Deploy 5 builds its own hosts from pg_inventory
+        # and its postgresql operations read the role catalog themselves
+        # (the elevated re-read of #28) -- no frozen catalog is needed now
+        # that postgresql.role reconciles only the listed flags (#45).
+        try:
+            for host in targets:
+                plan = plans[host.name]
+                if plan["initialized"]:
+                    continue
+                result = (
+                    await gather_action(
+                        [pg_by_name[host.name]],
+                        Shell,
+                        command=plan["initdb_command"],
+                        sudo=True,
+                    )
+                )[host.name]
+                if result["exit_status"] != 0:
+                    raise ValueError(
+                        f"{host.name}: initdb failed (exit {result['exit_status']}): "
+                        f"{result['stderr'].strip()}"
+                    )
+                print(f"\n== {host.name}: cluster initialized ({plan['data_dir']}) ==")
+        finally:
+            for host in pg_hosts:
+                await host.aclose()
 
         report_configure = await execute(
             inventory,
@@ -1321,24 +1287,6 @@ async def main() -> None:
         report_service = await execute(
             inventory, build_service(plans), "Deploy 4: start and enable the service"
         )
-
-        # The role catalog, frozen AFTER the service is up (the server must
-        # answer). Peer auth denies the login user, so the fact's elevated
-        # re-read (#28) runs as postgres through the privilege view.
-        try:
-            for host in pg_hosts:
-                plan = plans[host.name]
-                plan["roles_catalog"] = (
-                    await gather_fact(
-                        [host],
-                        PostgresqlRoles,
-                        psql_user=plan["pg_user"],
-                        psql_host=plan["socket_dirs"][0],
-                    )
-                )[host.name]
-        finally:
-            for host in pg_hosts:
-                await host.aclose()
 
         report_data = await execute(
             pg_inventory,

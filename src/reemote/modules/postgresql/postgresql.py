@@ -3941,12 +3941,12 @@ async def role(
     ctx: OpContext,
     role: str,
     present: bool = True,
-    login: bool = True,
-    superuser: bool = False,
-    inherit: bool = True,
-    createdb: bool = False,
-    createrole: bool = False,
-    replication: bool = False,
+    login: bool | None = None,
+    superuser: bool | None = None,
+    inherit: bool | None = None,
+    createdb: bool | None = None,
+    createrole: bool | None = None,
+    replication: bool | None = None,
     bypassrls: bool | None = None,
     connection_limit: int | None = None,
     psql_user: str | None = None,
@@ -3957,31 +3957,52 @@ async def role(
 ) -> AsyncGenerator[Command]:
     """Add, alter or remove a PostgreSQL role.
 
+    Every attribute option is tri-state (``bool | None``): ``None`` means
+    "leave the current value alone" on an existing role, while a concrete
+    ``True``/``False`` is reconciled through ``ALTER ROLE`` only when it
+    differs from the catalog. On the CREATE path the six boolean flags
+    fall back to their PostgreSQL ``CREATE ROLE`` defaults when unset
+    (``login=True``, ``superuser=False``, ``inherit=True``,
+    ``createdb=False``, ``createrole=False``, ``replication=False``) and
+    are rendered explicitly as X/NOX pairs, so a created role matches the
+    declared state rather than relying on server defaults. This mirrors
+    the Ansible ``community.postgresql.postgresql_user`` ``role_attr_flags``
+    partial semantics: only the flags the caller lists are compared and
+    altered, an unlisted attribute is never touched, and omitting every
+    flag is a presence-only no-op on an existing role.
+
     Args:
         ctx (OpContext): Execution context for the operation.
         role (str): Name of the role to manage.
         present (bool, optional): Whether the role should exist.
             Defaults to True.
-        login (bool, optional): Whether the role may log in; reconciled
-            on an existing role. Defaults to True.
-        superuser (bool, optional): Whether the role is a superuser;
-            reconciled on an existing role. Defaults to False.
-        inherit (bool, optional): Whether the role inherits granted
-            roles' privileges; reconciled on an existing role. Defaults
-            to True (PostgreSQL's own default).
-        createdb (bool, optional): Whether the role may create
-            databases; reconciled on an existing role. Defaults to False.
-        createrole (bool, optional): Whether the role may create roles;
-            reconciled on an existing role. Defaults to False.
-        replication (bool, optional): Whether the role may initiate
-            replication; reconciled on an existing role. Defaults to
-            False.
+        login (bool | None, optional): Whether the role may log in;
+            reconciled on an existing role when set, left alone when
+            unset. Defaults to None (True on CREATE).
+        superuser (bool | None, optional): Whether the role is a
+            superuser; reconciled on an existing role when set, left
+            alone when unset. Defaults to None (False on CREATE).
+        inherit (bool | None, optional): Whether the role inherits
+            granted roles' privileges; reconciled on an existing role
+            when set, left alone when unset. Defaults to None (True on
+            CREATE, PostgreSQL's own default).
+        createdb (bool | None, optional): Whether the role may create
+            databases; reconciled on an existing role when set, left
+            alone when unset. Defaults to None (False on CREATE).
+        createrole (bool | None, optional): Whether the role may create
+            roles; reconciled on an existing role when set, left alone
+            when unset. Defaults to None (False on CREATE).
+        replication (bool | None, optional): Whether the role may
+            initiate replication; reconciled on an existing role when
+            set, left alone when unset. Defaults to None (False on
+            CREATE).
         bypassrls (bool | None, optional): Whether the role bypasses
-            row-level security (BYPASSRLS/NOBYPASSRLS); altered when it
-            differs, left alone when unset. Defaults to None.
+            row-level security (BYPASSRLS/NOBYPASSRLS); reconciled on an
+            existing role when set, left alone when unset. Defaults to
+            None.
         connection_limit (int | None, optional): Connection limit (-1
-            for unlimited); altered when it differs, left alone when
-            unset. Defaults to None.
+            for unlimited); reconciled on an existing role when set,
+            left alone when unset. Defaults to None.
         psql_user (str | None, optional): Role to connect as.
             Defaults to None.
         psql_host (str | None, optional): Server host to connect to.
@@ -4027,6 +4048,29 @@ async def role(
             psql_user="postgres",
         )
 
+        # Grant CREATEDB on an existing role, leaving every other flag
+        # alone (the Ansible role_attr_flags partial semantics): only the
+        # listed flags are reconciled, so a SUPERUSER role stays one.
+        yield op(
+            postgresql.role,
+            name="Let the app role create databases",
+            role="app_user",
+            createdb=True,
+            sudo=True,
+            psql_user="postgres",
+        )
+
+        # Ensure a role is present without touching any attribute: an
+        # existing role is a no-op, an absent one is created with the
+        # CREATE ROLE defaults.
+        yield op(
+            postgresql.role,
+            name="Ensure the reporting role exists",
+            role="reporting",
+            sudo=True,
+            psql_user="postgres",
+        )
+
         # Drop a role (present=False)
         yield op(
             postgresql.role,
@@ -4052,6 +4096,14 @@ async def role(
     # matches the declared state rather than relying on server defaults
     # -- a baseline omits false flags), and ``inherit`` defaults to True,
     # PostgreSQL's own default, instead of False.
+    # Issue #45 (the Ansible ``role_attr_flags`` partial semantics, the
+    # remaining half after #31's ``bypassrls``): all eight attribute
+    # options are tri-state (``bool | None``), so on an EXISTING role a
+    # ``None`` flag is never compared and never altered -- only the flags
+    # the caller lists are reconciled, and omitting every flag is a
+    # presence-only no-op. The six boolean flags fall back to their
+    # ``CREATE ROLE`` defaults ONLY on the create path (below), which
+    # keeps CREATE rendering byte-identical to the pre-#45 behaviour.
     # The ``password`` option is deliberately dropped (the
     # namespace credentials decision): the server cannot reveal a
     # stored password, so a password option could never be idempotent
@@ -4061,8 +4113,8 @@ async def role(
     # password-expiry metadata belongs to credential provisioning, not
     # to role shape -- set it out of band through postgresql.sql
     # (``ALTER ROLE ... VALID UNTIL '<timestamp>'``). ``bypassrls`` is
-    # the Ansible role_attr_flags parity flag: tri-state like
-    # connection_limit, reconciled against the fact's ``rolbypassrls``.
+    # the Ansible role_attr_flags parity flag (#31): tri-state like the
+    # six booleans now are, reconciled against the fact's ``rolbypassrls``.
     # Needs CREATEROLE or superuser: flag the request ``sudo=True`` with
     # ``privilege.sudo_user = "postgres"``. ``**kwargs`` absorbs
     # any further global arguments.
@@ -4096,7 +4148,19 @@ async def role(
     if role not in roles:
         ctx.changed = True
         ctx.reason = f"postgresql role {role} will be created"
-        yield PostgresqlRoleCommand(role=role, **desired, **conn)
+        # CREATE renders every boolean flag explicitly (X/NOX pairs), so an
+        # unset flag falls back to its ``CREATE ROLE`` default here -- the
+        # tri-state "leave alone" meaning only applies to an existing role.
+        create_kwargs = {
+            **desired,
+            "login": True if login is None else login,
+            "superuser": False if superuser is None else superuser,
+            "inherit": True if inherit is None else inherit,
+            "createdb": False if createdb is None else createdb,
+            "createrole": False if createrole is None else createrole,
+            "replication": False if replication is None else replication,
+        }
+        yield PostgresqlRoleCommand(role=role, **create_kwargs, **conn)
         return
 
     # The fact's catalog keys for each option (a baseline alter branch

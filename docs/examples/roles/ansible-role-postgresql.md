@@ -18,7 +18,7 @@ is fresh, reconcile `postgresql.conf` options line-by-line, render
 service, then manage databases, users (with partial `role_attr_flags`
 reconciliation) and object privileges — restarting the service only on hosts
 whose configuration actually changed. It is a reemote **deploy program**:
-five deploys, two `Shell` actions, three fact gathers and one handler, with
+five deploys, two `Shell` actions, two fact gathers and one handler, with
 the role's mutable-state reads moved into the barriers between runs.
 
 Every role variable is read from the inventory entry's extra keys (reemote's
@@ -63,8 +63,8 @@ automatically.
   (and not Fedora/Amazon) and fails fast otherwise.
 - **Elevation.** Every request carries `sudo=True`. The login user needs
   passwordless sudo (`NOPASSWD`), or the inventory entry must supply a
-  password via a `privilege` section. The `initdb` action, the role-catalog
-  gather and the users/databases/privileges deploy additionally run **as the
+  password via a `privilege` section. The `initdb` action and the
+  users/databases/privileges deploy additionally run **as the
   `postgres` OS user**: the program derives a second inventory view with
   `privilege.sudo_user = "postgres"` (the role's `become_user`), so the login
   user must be allowed to `sudo -u postgres` as well.
@@ -195,7 +195,7 @@ adds the frozen RedHat vars table and the gathered facts:
 | `postgresql_global_config_options` | `unix_socket_directories` + `log_directory=log` | one `lineinfile`-equivalent transform per item; per-item `state: absent` removes every matching line |
 | `postgresql_hba_entries` | the role's four fresh-install rows | rendered byte-exactly (including the template's extra spaces); empty list skips the pg_hba write |
 | `postgresql_databases` | `[]` | `postgresql.database` per item (`lc_collate`/`lc_ctype` `en_US.UTF-8`, `encoding` `UTF-8`→`UTF8`, `template0`, owner `postgres`) |
-| `postgresql_users` | `[]` | create-only pass + partial `role_attr_flags` reconcile (GAP-2 workaround); `state: absent` drops |
+| `postgresql_users` | `[]` | presence-only create pass + partial `role_attr_flags` reconcile (#45, native tri-state); `state: absent` drops |
 | `postgresql_privs` | `[]` | `postgresql.privilege` per item; `login_db`/`db` required, `ALL_IN_SCHEMA`/`ALL_DEFAULT` supported |
 | `postgresql_packages`, `postgresql_daemon`, `postgresql_data_dir`, `postgresql_bin_path`, `postgresql_config_path`, `postgresql_version`, `postgresql_python_library`, `postgresql_unix_socket_directories_mode` | from `REDHAT_VARS` | the `vars/RedHat-<major>.yml` values, user-pinnable |
 
@@ -235,12 +235,10 @@ read + validate inventory.json ──► targets = family "RedHat" ──► rol
 │                                   files.install(pg_hba.conf, 0600) [notify]
 │                                   files.directory(socket dirs)
 ├─ run 4  build_service(plans)      systemd.service(running, enabled)
-├─ gather: PostgresqlRoles (as postgres, peer-auth re-read #28)
-│          → frozen role catalog (the GAP-2 fill source)
 ├─ run 5  compose(build_users, build_databases, build_users_props)(plans)
 │          on the postgres-privilege inventory view:
-│          postgresql.role (create) → postgresql.database → postgresql.role
-│          (partial reconcile) + postgresql.privilege
+│          postgresql.role (presence-only) → postgresql.database →
+│          postgresql.role (partial reconcile) + postgresql.privilege
 └─ handler  changed_hosts(run2 ∪ run3, NOTIFY_RESTART)
            → service_handler(notified, ("postgresql",), action=restarted_state, sleep=5)
 ```
@@ -252,8 +250,6 @@ Why this order:
 - **initdb between initialize and configure** — the conf file the transforms
   edit does not exist until `initdb` writes it; the log directory is created
   after initdb, exactly where the role creates it.
-- **the catalog gather after the service deploy** — the server must answer;
-  the frozen catalog is what makes the GAP-2 fill deterministic.
 - **the handler last** — Ansible flushes handlers at the end of the play; the
   notified set is the union of the profile/conf/pg_hba changes.
 
@@ -278,9 +274,9 @@ shape change) · **workaround** (possible with a recorded deviation).
 | `template: pg_hba.conf.j2 0600 postgres:postgres` `when: entries` `notify` | Jinja2 pre-render (byte-exact) + `files.install` | recipe |
 | `file: socket dirs owner/group=postgres mode=0755` loop | `files.directory` per dir | covered |
 | `service: started enabled` | `systemd.service(running=…, enabled=…)` | covered |
-| `postgresql_user` create pass (users.yml, no flags) | `postgresql.role` with CREATE USER defaults, skipped for catalog-present roles (GAP-2) | workaround |
+| `postgresql_user` create pass (users.yml, no flags) | `postgresql.role` presence-only — creates an absent role with the `CREATE ROLE` defaults, no-op on an existing one (#45) | covered |
 | `postgresql_db` loop | `postgresql.database` (encoding normalized, D5) | covered |
-| `postgresql_user` reconcile pass (`role_attr_flags`, `state`) | `postgresql.role` with the frozen-catalog fill (GAP-2) | workaround |
+| `postgresql_user` reconcile pass (`role_attr_flags`, `state`) | `postgresql.role` with only the listed flags — tri-state options leave unlisted attributes alone (#45) | covered |
 | `debug:` deprecated `priv` warning | control-side print | covered |
 | `postgresql_privs` loop | `postgresql.privilege` (#29); exotic types rejected citing #29 | covered |
 | handler `service: state=restarted sleep=5` | `service_handler(action=…, sleep=5)` — `systemd.service(sleep=)` splits the restart into stop / `sleep 5` / start (#44) | covered |
@@ -290,7 +286,7 @@ shape change) · **workaround** (possible with a recorded deviation).
 
 ## 6. Implementation gaps
 
-Seven gaps this migration family found are **closed on `main`** — it uses the
+Eight gaps this migration family found are **closed on `main`** — it uses the
 native operations directly:
 [#27](https://github.com/kimjarvis/reemote/issues/27) (`dnf.packages`
 `exclude`), [#28](https://github.com/kimjarvis/reemote/issues/28) (PostgreSQL
@@ -300,18 +296,14 @@ parity), [#30](https://github.com/kimjarvis/reemote/issues/30)
 (`server.FipsEnabled`), [#31](https://github.com/kimjarvis/reemote/issues/31)
 (`postgresql.role` `bypassrls`),
 [#32](https://github.com/kimjarvis/reemote/issues/32) (`dnf.packages`
-`enable_repos`), and
+`enable_repos`),
 [#44](https://github.com/kimjarvis/reemote/issues/44) (`systemd.service`
 `sleep`) — closed after this program first landed, so the handler now passes
-the role's own `sleep: 5` natively.
-
-One genuine gap remains **open**; it is feature-only (the default path
-migrates without it) and its workaround is tagged in the code for the second
-pass:
-
-| Issue | Gap | Workaround in this program |
-| --- | --- | --- |
-| [#45](https://github.com/kimjarvis/reemote/issues/45) — GAP-2 | `postgresql.role` reconciles all six boolean flags unconditionally; Ansible's `role_attr_flags` adjusts **only the listed flags** (an unlisted SUPERUSER survives a `CREATEDB`-only change) | gather `PostgresqlRoles` after the service deploy, freeze the catalog, fill every unlisted flag from the frozen current value (existing role) or CREATE USER's server defaults (absent role); presence-only items skip the attribute machinery |
+the role's own `sleep: 5` natively — and
+[#45](https://github.com/kimjarvis/reemote/issues/45) (`postgresql.role`'s
+tri-state attribute options), closed for this pass: `role_attr_flags` partial
+reconciliation is now native, so the former `PostgresqlRoles` catalog freeze
+and its unlisted-flag fill are gone.
 
 The exotic `postgresql_privs` object types (procedure, language, group,
 foreign_data_wrapper, foreign_server, type, parameter) are the **deliberate
@@ -329,7 +321,7 @@ Every one is recorded in a comment at its site in the program.
 | D1 | `password` / `encrypted` / `login_password` / `VALID UNTIL` are dropped; `no_log` and `PGOPTIONS` are moot | the namespace credentials decision: the server cannot reveal a stored password, so a password option could never be idempotent. Every connection rides peer auth over the unix socket as the OS postgres user; provision credentials out of band (`postgresql.sql`) if needed |
 | D2 | `login_host` is ignored; the connection is always the unix socket | Ansible's `login_unix_socket` wins over `login_host` in psycopg2, so the socket is the effective connection anyway; `psql_host=<socket dir>` reproduces it |
 | D3 | The `stat` gate rides an elevated `Shell` action, not the `FileExists` fact | the data directory is `0700 postgres`: the unprivileged `FileExists` read cannot traverse it (Ansible's stat ran under play-level `become`). The action's exit status is frozen into the plan exactly like a register |
-| D4 | `role_attr_flags` partial reconciliation is reproduced control-side (GAP-2, #45); duplicate user names fail fast; a `state: absent` user is not created first | the frozen-catalog fill makes the ALTER diff exactly the listed flags; Ansible's last-item-wins on duplicates is a configuration error here; the role's create-then-drop churn for absent users is pointless |
+| D4 | duplicate user names fail fast; a `state: absent` user is not created first | Ansible's last-item-wins on duplicates is a configuration error here; the role's create-then-drop churn for absent users is pointless. (`role_attr_flags` partial reconciliation is now native — #45 — not a deviation.) |
 | D5 | `encoding: UTF-8` is normalized to `UTF8` | PostgreSQL accepts both on CREATE; the fact reports the catalog spelling `UTF8` |
 | D6 | `fail_on_role` is absorbed; the deprecated `priv` warning still prints | explicitly out of scope per #29 |
 | D7 | `become_user: postgres` becomes a second inventory view with `privilege.sudo_user` | run-as users come from the inventory, never from an operation — the deliberate reemote boundary |
@@ -350,9 +342,9 @@ postgres, creates the database/user/grants, and restarts the service only on
 notified hosts; non-RedHat hosts are never touched; **the second pass reports
 `changed=False` everywhere, runs no `initdb` and queues no handler** (the
 elevated `test -e` stat probe still runs each pass — it is a read, not a
-mutation); the GAP-2 fill leaves unlisted flags alone (a pre-existing
-SUPERUSER survives a `CREATEDB`-only reconcile); and the transforms are
-fixpoints.
+mutation); `postgresql.role`'s tri-state options leave unlisted flags alone (a
+pre-existing SUPERUSER survives a `CREATEDB`-only reconcile, #45); and the
+transforms are fixpoints.
 
 The simulation limits bridged between passes (each a simulation limit, not a
 library bug): the `initdb` `Shell` action mutates no simulated store, so

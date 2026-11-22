@@ -55,7 +55,6 @@ import pytest
 from reemote import (
     FipsEnabled,
     LinuxDistribution,
-    PostgresqlRoles,
     Shell,
     changed_hosts,
     gather_action,
@@ -309,10 +308,11 @@ async def migrate(
     Mirrors ``main()`` barrier for barrier: variable resolution, the
     LinuxDistribution/FipsEnabled gathers, the elevated stat gate, the package
     and initialize deploys, the initdb action (privilege view swapped onto the
-    one persistent host), the configure/service deploys, the PostgresqlRoles
-    catalog gather, the composed data deploy on the postgres inventory view,
-    and the notified handler. ``apply=False`` stops after deploy 1's dry
-    preview (reports is empty).
+    one persistent host), the configure/service deploys, the composed data
+    deploy on the postgres inventory view, and the notified handler. The data
+    deploy's postgresql operations read the role catalog themselves (#45), so
+    there is no separate catalog gather. ``apply=False`` stops after deploy 1's
+    dry preview (reports is empty).
     """
     targets = [host for host in hosts.values() if pg.is_redhat(host)]
     settings = {host.name: pg.role_settings(host) for host in targets}
@@ -345,7 +345,6 @@ async def migrate(
                 ),
                 "pg_version_path": posixpath.join(rv["data_dir"], "PG_VERSION"),
                 "initdb_command": f"{rv['bin_path']}/initdb -D {rv['data_dir']}",
-                "roles_catalog": {},
             }
     finally:
         for host in targets:
@@ -420,24 +419,6 @@ async def migrate(
 
     report_configure = await stage(inventory, pg.build_configure(plans))
     report_service = await stage(inventory, pg.build_service(plans))
-
-    # The role catalog, frozen after the service is up. The PostgresqlRoles seam
-    # ignores the run-as user, so gathering on the target object is equivalent
-    # to main()'s postgres-view gather.
-    try:
-        for host in targets:
-            plan = plans[host.name]
-            plan["roles_catalog"] = (
-                await gather_fact(
-                    [host],
-                    PostgresqlRoles,
-                    psql_user=plan["pg_user"],
-                    psql_host=plan["socket_dirs"][0],
-                )
-            )[host.name]
-    finally:
-        for host in targets:
-            await host.aclose()
 
     report_data = await stage(
         pg_inventory,
@@ -652,14 +633,14 @@ async def test_dry_preview_mutates_nothing():
     assert host.postgres_roles == {}
 
 
-# --- GAP-2 (#45): partial role_attr_flags reconciliation ----------------------
+# --- #45: partial role_attr_flags reconciliation (now native) -----------------
 
 
-async def test_gap2_unlisted_flags_survive_reconcile():
+async def test_unlisted_flags_survive_reconcile():
     # An existing SUPERUSER jdoe; the item lists only CREATEDB. Ansible adjusts
-    # ONLY the listed flag -- the workaround fills superuser from the frozen
-    # catalog, so the superuser bit must survive (reemote's postgresql.role
-    # would otherwise force it False).
+    # ONLY the listed flag, and postgresql.role's tri-state options now match
+    # that natively (#45) -- the superuser bit survives with no frozen-catalog
+    # fill.
     superuser_jdoe = {
         **BOOTSTRAP_ROLE,
         "super": True,
@@ -681,8 +662,8 @@ async def test_gap2_unlisted_flags_survive_reconcile():
     assert jdoe["super"] is True  # the unlisted flag survived
     assert jdoe["createdb"] is True  # the listed flag applied
     assert jdoe["bypassrls"] is False  # unlisted bypassrls left alone (#31)
-    # The create pass skipped the catalog-present role.
-    assert entries_named(result, "Ensure PostgreSQL users are present.") == []
+    # The create pass is presence-only on the existing role: a no-op.
+    assert not entry_named(result, "Ensure PostgreSQL users are present.").changed
     assert entry_named(result, "Ensure PostgreSQL users are configured correctly.").changed
 
     second = await migrate(inventory, hosts)
@@ -714,7 +695,9 @@ async def test_no_flags_is_presence_only():
     inventory = make_inventory(postgresql_users=[{"name": "jdoe"}])
     hosts = make_hosts(inventory, initialized=True, extra_roles={"jdoe": role})
     result = await migrate(inventory, hosts)
-    assert entries_named(result, "Ensure PostgreSQL users are present.") == []
+    # The create pass is presence-only on the existing role: a no-op; the
+    # reconcile pass skips a flagless item entirely.
+    assert not entry_named(result, "Ensure PostgreSQL users are present.").changed
     assert entries_named(result, "Ensure PostgreSQL users are configured correctly.") == []
     assert hosts["web1"].postgres_roles["jdoe"]["super"] is True
     assert changed_entries(result) == [] or all(

@@ -17,17 +17,23 @@ two-phase execution model end to end over a **real SSH transport**
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
 ``postgresql.role`` mirrors the baseline's operation and extends it beyond
-creation: it reads the ``PostgresqlRoles`` fact, renders every flag
+creation: it reads the ``PostgresqlRoles`` fact and renders every flag
 explicitly as X/NOX pairs on CREATE (so the created role matches the
-declared state rather than relying on server defaults), and reconciles an
-existing role's flags and connection limit through ALTER ROLE only where
-they differ -- the baseline's alter branch compared option names against fact
-keys that never exist and never actually altered anything.
+declared state rather than relying on server defaults). Every attribute
+option is tri-state, matching the Ansible ``role_attr_flags`` partial
+semantics: on an existing role only the flags the request lists are
+reconciled through ``ALTER ROLE``, an unlisted attribute is never touched,
+and a request naming no attribute at all is a presence-only no-op. The
+baseline's alter branch compared option names against fact keys that never
+exist and never actually altered anything.
 
-The deploy yields the same request twice: in the prepare phase (where
-nothing is sent) both plan as changes, but in the apply phase the second
-request's fresh per-step fact cache sees the first CREATE ROLE and reports
-``postgresql role app_user exists and does not need updates``.
+The deploy yields the same request twice, then a third that grants a single
+flag: in the prepare phase (where nothing is sent) all three plan as changes
+against the absent role, but in the apply phase the second request's fresh
+per-step fact cache sees the first CREATE ROLE and reports ``postgresql role
+app_user exists and does not need updates``, and the third reconciles only
+``createdb`` through ALTER ROLE -- leaving ``login`` and ``connection_limit``
+untouched, the partial ``role_attr_flags`` semantics.
 
 **Host prerequisite.** This example needs a running PostgreSQL server. The demo Ubuntu
 host runs PostgreSQL 18.6 as a snap whose local socket uses ``trust`` authentication, so
@@ -96,13 +102,19 @@ def is_ubuntu(host: Host) -> bool:
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Ensure the app_user login role, twice, to show apply-phase convergence.
+    """Ensure the app_user login role, then grant CREATEDB on a single flag.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
 
-    CREATE/ALTER ROLE needs CREATEROLE or superuser, so both requests are
-    flagged ``sudo=True`` (root) and connect as the ``postgres`` role through
+    The first two requests are identical, so the second is a guaranteed
+    apply-phase no-op once the first CREATE ROLE has landed. The third lists
+    only ``createdb``: against the now-existing role it reconciles just that
+    flag through ALTER ROLE and leaves ``login`` and ``connection_limit``
+    alone -- the Ansible ``role_attr_flags`` partial semantics.
+
+    CREATE/ALTER ROLE needs CREATEROLE or superuser, so every request is
+    flagged ``sudo=True`` (root) and connects as the ``postgres`` role through
     ``psql_user="postgres"``.
     """
     yield op(
@@ -121,6 +133,15 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         role="app_user",
         login=True,
         connection_limit=20,
+        sudo=True,
+        psql_user="postgres",
+        when=is_ubuntu,
+    )
+    yield op(
+        postgresql.role,
+        name="Let the app role create databases",
+        role="app_user",
+        createdb=True,
         sudo=True,
         psql_user="postgres",
         when=is_ubuntu,

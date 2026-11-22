@@ -152,13 +152,21 @@ and alters an existing database's `OWNER`, `SET TABLESPACE`,
 `CONNECTION LIMIT` and `ALLOW_CONNECTIONS` idempotently, reporting
 creation-only options (TEMPLATE/ENCODING/LC_*) as skipped rather than
 pretending to change them; the role operation renders every flag
-explicitly as X/NOX pairs (so `INHERIT` appears where the baseline omitted
-it) and reconciles an existing role's flags and connection limit through
-`ALTER ROLE`. Beyond the baseline's flag set, `bypassrls` covers the
-Ansible `role_attr_flags` `BYPASSRLS`/`NOBYPASSRLS` keywords (tri-state:
-reconciled against `rolbypassrls` when set, left alone when unset), while
-`VALID UNTIL` stays deliberately excluded on the no-credentials boundary
-above — `postgresql.sql` is its escape hatch.
+explicitly as X/NOX pairs on CREATE (so `INHERIT` appears where the baseline
+omitted it) and reconciles an existing role's attributes through
+`ALTER ROLE`. Every attribute option is tri-state (`bool | None`), matching
+the Ansible `community.postgresql.postgresql_user` `role_attr_flags` partial
+semantics: on an existing role only the flags the caller lists are compared
+and altered, an unlisted attribute is never touched, and omitting every flag
+is a presence-only no-op. The six boolean flags (`login`, `superuser`,
+`inherit`, `createdb`, `createrole`, `replication`) fall back to their
+`CREATE ROLE` defaults only on the create path, so CREATE rendering is
+byte-identical to an all-flags-explicit request; `bypassrls` (#31) and
+`connection_limit` are tri-state on both paths. Beyond the baseline's flag
+set, `bypassrls` covers the Ansible `role_attr_flags`
+`BYPASSRLS`/`NOBYPASSRLS` keywords (reconciled against `rolbypassrls` when
+set, left alone when unset), while `VALID UNTIL` stays deliberately excluded
+on the no-credentials boundary above — `postgresql.sql` is its escape hatch.
 
 The nine reemote-original operations close the control gaps, modeled on
 the Ansible `community.postgresql` parameter shapes:

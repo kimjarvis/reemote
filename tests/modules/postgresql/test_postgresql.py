@@ -1686,6 +1686,72 @@ async def test_role_alter_maps_login_onto_canlogin():
     assert commands[0].shell() == "psql -Ac 'ALTER ROLE \"testuser\" NOLOGIN'"
 
 
+async def test_role_alters_only_the_listed_flags_on_an_existing_role():
+    # Issue #45 (the Ansible role_attr_flags partial semantics): a request
+    # listing only ``createdb`` against a SUPERUSER role alters CREATEDB and
+    # leaves SUPERUSER alone -- the unlisted flags are never compared, so the
+    # alter carries exactly one clause and the reason names only ``createdb``.
+    host = SimulatedHost(
+        name="h",
+        postgres_roles={"testuser": {**ROLE_ENTRY, "super": True}},
+    )
+    ctx, commands = await materialize(
+        host, postgresql.role, role="testuser", createdb=True
+    )
+    assert ctx.changed
+    assert ctx.reason == "postgresql role testuser will be altered (createdb)"
+    assert commands == [
+        PostgresqlRoleCommand(role="testuser", alter=True, createdb=True)
+    ]
+    assert commands[0].shell() == "psql -Ac 'ALTER ROLE \"testuser\" CREATEDB'"
+
+
+async def test_role_presence_only_noop_leaves_a_differing_role_alone():
+    # Issue #45: omitting every attribute is a presence-only no-op on an
+    # existing role, even where the live role differs from the old implicit
+    # defaults (super=True, canlogin=False). The pre-#45 behaviour would have
+    # force-reconciled all six flags back to their defaults; now nothing is
+    # compared, so the role is left exactly as it is.
+    host = SimulatedHost(
+        name="h",
+        postgres_roles={
+            "testuser": {**ROLE_ENTRY, "super": True, "canlogin": False}
+        },
+    )
+    ctx, commands = await materialize(host, postgresql.role, role="testuser")
+    assert not ctx.changed
+    assert ctx.reason == "postgresql role testuser exists and does not need updates"
+    assert commands == []
+
+
+async def test_role_create_fills_unset_flags_with_create_defaults():
+    # Issue #45: the tri-state "leave alone" meaning applies only to an
+    # existing role; on CREATE an unset flag falls back to its CREATE ROLE
+    # default and renders explicitly, so a ``createdb=True`` create still
+    # carries LOGIN/INHERIT and NOSUPERUSER/NOCREATEROLE/NOREPLICATION.
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host, postgresql.role, role="testuser", createdb=True
+    )
+    assert ctx.changed
+    assert ctx.reason == "postgresql role testuser will be created"
+    assert commands == [
+        PostgresqlRoleCommand(
+            role="testuser",
+            login=True,
+            superuser=False,
+            inherit=True,
+            createdb=True,
+            createrole=False,
+            replication=False,
+        )
+    ]
+    assert commands[0].shell() == (
+        "psql -Ac 'CREATE ROLE \"testuser\" LOGIN NOSUPERUSER INHERIT "
+        "CREATEDB NOCREATEROLE NOREPLICATION'"
+    )
+
+
 async def test_role_noop_matches_baseline_description():
     # role_update_noop.json: seeded on the catalog keys super/inherit.
     host = SimulatedHost(
