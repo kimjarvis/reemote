@@ -20,7 +20,7 @@ the read into the gap between two complete prepare/apply cycles:
    one request). Both phases yield the same one request per check.
 2. A fact SNAPSHOT taken between the runs: ``gather_fact`` fans
    ``FindFiles`` (``fname="conf.yaml"``, ``maxdepth=2`` -- exactly the
-   ``conf.d/<check>/conf.yaml`` layer) out across the CentOS hosts and
+   ``conf.d/<check>/conf.yaml`` layer) out across the RedHat hosts and
    returns a ``{host.name: list[str]}`` mapping of what is REALLY on each
    box, tracked and legacy alike. Run 1's apply-phase join is the
    barrier: every host finished installing before any snapshot is read.
@@ -55,9 +55,9 @@ afterwards. Run 2 builds fresh hosts from the same inventory.
 
 The inventory is read from the project root's ``inventory.json``
 (validated up front with ``validate_inventory``). Both deploys carry
-``when=is_centos`` and the snapshot filters the host list the same way
+``when=is_redhat`` and the snapshot filters the host list the same way
 (``gather_fact`` takes no ``when`` parameter), so the work stays on the
-CentOS hosts and deploy 2's lookup defaults to empty for the others.
+RedHat hosts and deploy 2's lookup defaults to empty for the others.
 
 Run it with::
 
@@ -134,16 +134,16 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. It guards both
     deploys' requests and (as a host-list filter) the ``FindFiles`` snapshot.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def ensure_tracked_checks(host: Host) -> Generator[OperationRequest]:
@@ -161,7 +161,7 @@ def ensure_tracked_checks(host: Host) -> Generator[OperationRequest]:
             content=CHECK_CONF[check],
             dest=f"{CONF_D}/{check}/conf.yaml",
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
 
 
@@ -176,9 +176,9 @@ def build_cleanup_conf_d(
     per stale path, sorted for a stable request order. Reading the live
     ``FindFiles`` fact here instead would re-introduce the phase-dependent
     branch (deploy 1's installs change what it returns) and trip the
-    determinism guard. The snapshot only covers the CentOS hosts, so the
+    determinism guard. The snapshot only covers the RedHat hosts, so the
     lookup defaults to empty for the others and every request also
-    carries ``when=is_centos``.
+    carries ``when=is_redhat``.
     """
     tracked = frozenset(f"{CONF_D}/{check}/conf.yaml" for check in TRACKED_CHECKS)
 
@@ -191,7 +191,7 @@ def build_cleanup_conf_d(
                     path=stale,
                     present=False,
                     sudo=True,
-                    when=is_centos,
+                    when=is_redhat,
                 )
 
     return cleanup_conf_d
@@ -205,7 +205,7 @@ async def main() -> None:
 
         # Run 1: prepare + apply the tracked-check installs. Its apply-phase
         # join is the barrier guaranteeing every host finished before the
-        # snapshot below. The when=is_centos guard skips the non-CentOS hosts.
+        # snapshot below. The when=is_redhat guard skips the non-RedHat hosts.
         plans, report, hosts = await run(inventory, ensure_tracked_checks)
         print("\n== Deploy 1: ensure tracked check configs ==")
         print(format_plan(plans))
@@ -214,16 +214,16 @@ async def main() -> None:
 
         # The snapshot: one concurrent read of the real conf.d contents,
         # keyed by host name. gather_fact has no ``when`` parameter, so the
-        # is_centos predicate filters the host list before the fan-out.
+        # is_redhat predicate filters the host list before the fan-out.
         # run closed these hosts, but connect is lazy, so gather_fact
         # re-opens the eligible ones; close them all again when done.
-        centos_hosts = [host for host in hosts if is_centos(host)]
-        skipped = [host.name for host in hosts if not is_centos(host)]
+        redhat_hosts = [host for host in hosts if is_redhat(host)]
+        skipped = [host.name for host in hosts if not is_redhat(host)]
         if skipped:
-            print("\n== Skipped (when guard is_centos): " + ", ".join(skipped) + " ==")
+            print("\n== Skipped (when guard is_redhat): " + ", ".join(skipped) + " ==")
         try:
             found = await gather_fact(
-                centos_hosts, FindFiles, CONF_D, fname="conf.yaml", maxdepth=2
+                redhat_hosts, FindFiles, CONF_D, fname="conf.yaml", maxdepth=2
             )
         finally:
             for host in hosts:

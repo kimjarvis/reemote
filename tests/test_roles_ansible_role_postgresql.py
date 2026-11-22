@@ -274,7 +274,7 @@ def make_hosts(
     hosts: dict[str, SimulatedHost] = {}
     for entry in inventory:
         host = SimulatedHost.from_inventory(entry)
-        if pg.is_centos(host):
+        if pg.is_redhat(host):
             seed(host, initialized=initialized, extra_roles=extra_roles)
         hosts[host.name] = host
     return hosts
@@ -314,7 +314,7 @@ async def migrate(
     and the notified handler. ``apply=False`` stops after deploy 1's dry
     preview (reports is empty).
     """
-    targets = [host for host in hosts.values() if pg.is_centos(host)]
+    targets = [host for host in hosts.values() if pg.is_redhat(host)]
     settings = {host.name: pg.role_settings(host) for host in targets}
 
     plans: dict[str, Any] = {}
@@ -580,7 +580,7 @@ async def test_first_pass_deploys_everything():
     assert changed_entries(result)
 
 
-async def test_non_centos_host_is_never_touched():
+async def test_non_redhat_host_is_never_touched():
     inventory = make_inventory(**data_overrides())
     hosts = make_hosts(inventory)
     result = await migrate(inventory, hosts)
@@ -946,8 +946,8 @@ def test_role_settings_rejects_bad_service_state():
         pg.role_settings(host)
 
 
-def test_is_centos_reads_the_static_group():
-    centos = SimulatedHost.from_inventory(make_inventory()[0])
+def test_is_redhat_reads_the_static_family():
+    redhat = SimulatedHost.from_inventory(make_inventory()[0])
     ubuntu = SimulatedHost.from_inventory(make_inventory()[1])
-    assert pg.is_centos(centos)
-    assert not pg.is_centos(ubuntu)
+    assert pg.is_redhat(redhat)
+    assert not pg.is_redhat(ubuntu)

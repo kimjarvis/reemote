@@ -23,11 +23,11 @@ sets the variables for the elevated command.
 Actions bypass ``op()`` and the plan layer's hashing, so a plain ``dict`` is
 legal here -- no ``UnhashableArgumentError`` concern.
 
-The script runs ``printenv`` on each ``centos`` host with ``DD_SERVICE`` and
+The script runs ``printenv`` on each RedHat host with ``DD_SERVICE`` and
 ``DD_ENV`` set, then reads the captured stdout from the ``Result``. The hosts
-come from the shared ``inventory.json`` in the project root; ``is_centos``
+come from the shared ``inventory.json`` in the project root; ``is_redhat``
 filters the host list before the ``gather_action`` fan-out -- an action has no
-``when`` meta-parameter -- so only the ``centos`` hosts are contacted.
+``when`` meta-parameter -- so only the RedHat hosts are contacted.
 
 Run it with::
 
@@ -76,14 +76,14 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """Group guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """Family guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only the host's static ``group`` field. Actions have no ``when``
+    Reads only the host's static ``family`` field. Actions have no ``when``
     meta-parameter, so the guard is applied by filtering the host list before
     the ``gather_action`` fan-out.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def report(label: str, results: dict) -> None:
@@ -111,11 +111,11 @@ async def main() -> None:
 
     print(f"== Inventory loaded from {INVENTORY_PATH} ==")
     all_hosts = [Host.from_inventory(entry) for entry in inventory]
-    # The group guard: gather_action has no `when`, so filter the host list
-    # before the fan-out -- only the centos hosts are ever contacted.
-    hosts = [host for host in all_hosts if is_centos(host)]
-    skipped = [host.name for host in all_hosts if not is_centos(host)]
-    print(f"== Skipped (group guard is_centos): {', '.join(skipped)} ==")
+    # The family guard: gather_action has no `when`, so filter the host list
+    # before the fan-out -- only the RedHat hosts are ever contacted.
+    hosts = [host for host in all_hosts if is_redhat(host)]
+    skipped = [host.name for host in all_hosts if not is_redhat(host)]
+    print(f"== Skipped (family guard is_redhat): {', '.join(skipped)} ==")
     try:
         # printenv with no arguments dumps the whole environment; grep for
         # the two variables we set to prove the env prefix worked.

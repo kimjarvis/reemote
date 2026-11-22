@@ -33,12 +33,12 @@ and ``su`` the innermost (``doas -n ... sudo ... su <user> -c ...``). This
 example uses ``doas`` alone.
 
 The hosts come from the shared ``inventory.json`` in the project root, read by
-``load_inventory`` and validated. ``is_centos`` (``host.group == "centos"``) is
-composed onto the deploy with ``sub_deploy(..., when=is_centos)``, so the
-``dnf`` work runs only on the ``centos`` hosts and is skipped -- facts included
+``load_inventory`` and validated. ``is_redhat`` (``host.family == "RedHat"``) is
+composed onto the deploy with ``sub_deploy(..., when=is_redhat)``, so the
+``dnf`` work runs only on the RedHat hosts and is skipped -- facts included
 -- on the rest; the inner operations carry no ``when`` of their own. The
 ``privilege`` section this demo needs is not in the shared file, so ``main``
-attaches it to the loaded ``centos`` entries: privilege stays an *inventory*
+attaches it to the loaded RedHat entries: privilege stays an *inventory*
 parameter, never a deploy-script one.
 
 The rendered log shows the credential-free ``$ doas -n dnf install -y httpd``:
@@ -91,7 +91,7 @@ HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
-# The privilege section this demo attaches to the loaded ``centos`` inventory
+# The privilege section this demo attaches to the loaded RedHat inventory
 # entries (the shared file carries none). ``doas_user`` is the ``doas`` target
 # -- ``root`` here, because installing packages needs superuser. ``root`` is
 # ``doas``'s own default target, so the command sent is a bare
@@ -115,13 +115,13 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only the host's static ``group`` field, so it is deterministic across
+    Reads only the host's static ``family`` field, so it is deterministic across
     the prepare and apply phases.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
@@ -130,7 +130,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     Branch-free, so the request sequence is identical in the prepare and apply
     phases, and both operations are flagged ``doas=True``. Neither names a target
     user -- the inventory's ``privilege`` section does. Neither carries a
-    ``when``: the ``is_centos`` group guard is composed onto the whole deploy
+    ``when``: the ``is_redhat`` family guard is composed onto the whole deploy
     below, so it need not be repeated on the inner operations.
     """
     yield op(
@@ -145,11 +145,11 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     )
 
 
-# The group guard, composed once at the outermost level: every request above
-# runs only on a ``centos`` host, and a skipped request is never materialized,
+# The family guard, composed once at the outermost level: every request above
+# runs only on a RedHat host, and a skipped request is never materialized,
 # so its facts (``DnfPackages``, the welcome file's ``FilesInfo``) are never
 # read on the other hosts either.
-deploy = sub_deploy(deploy, when=is_centos)
+deploy = sub_deploy(deploy, when=is_redhat)
 
 
 async def main() -> None:
@@ -165,10 +165,10 @@ async def main() -> None:
         raise SystemExit(1) from exc
 
     # The shared inventory carries no privilege section; attach this demo's to
-    # the centos entries, so elevation stays an inventory parameter and the
+    # the RedHat entries, so elevation stays an inventory parameter and the
     # credential is scoped to the group that actually elevates.
     for entry in inventory:
-        if entry.get("group") == "centos":
+        if entry.get("family") == "RedHat":
             entry["privilege"] = dict(PRIVILEGE)
 
     print(f"== Inventory loaded from {INVENTORY_PATH} ==")

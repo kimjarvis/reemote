@@ -2,10 +2,10 @@
 
 Scripts under `examples/demonstrations/privilege/` — scenarios that cross
 module boundaries to show privilege escalation. Each reads the shared
-`inventory.json` with `load_inventory`, composes an `is_centos`
-(`host.group == "centos"`) guard onto its deploy with `sub_deploy(..., when=...)`
-so the `dnf` work — facts included — stays on the `centos` hosts, and attaches
-its own `privilege` section to the loaded `centos` entries (the shared file
+`inventory.json` with `load_inventory`, composes an `is_redhat`
+(`host.family == "RedHat"`) guard onto its deploy with `sub_deploy(..., when=...)`
+so the `dnf` work — facts included — stays on the RedHat hosts, and attaches
+its own `privilege` section to the loaded RedHat entries (the shared file
 carries none): the sudo and su examples supply a plain-text password, while the
 doas example is passwordless. Privilege remains an *inventory* parameter, never
 a deploy-script one. See the [Examples overview](../../examples.md) for the
@@ -14,7 +14,7 @@ script follows.
 
 ## Elevating with a sudo password
 
-The base example's deploy, unchanged, run against the `centos` hosts whose
+The base example's deploy, unchanged, run against the RedHat hosts whose
 loaded inventory entries are given a `privilege` section — the run-as user and a
 plain-text `sudo_password`. The operations still only *ask* to elevate with
 `sudo=True`; the credential comes from the inventory alone, and the driver
@@ -31,7 +31,7 @@ host, instead of surfacing sudo's three password retries as a traceback.
 ## Elevating with su
 
 The `su` counterpart of the sudo-password example: the same deploy shape, run
-against the `centos` hosts whose loaded inventory entries are given a
+against the RedHat hosts whose loaded inventory entries are given a
 `privilege` section carrying a `su_user` and a plain-text `su_password`. The
 operations only *ask* to elevate with `su=True`; reemote runs a *default*
 `su <user> -c` (no login shell) and, since `su` has no askpass mechanism, pipes
@@ -47,7 +47,7 @@ reaches the log, and a rejected password surfaces as a single
 ## Elevating with doas
 
 The `doas` counterpart of the su example: the same deploy shape, run against
-the `centos` hosts whose loaded inventory entries are given a `privilege`
+the RedHat hosts whose loaded inventory entries are given a `privilege`
 section carrying only a `doas_user` — no password. The operations only *ask* to
 elevate with `doas=True`; reemote always
 runs `doas -n` (non-interactive), because `doas` has no askpass mechanism and

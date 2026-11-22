@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: gather the ``iptables.Ip6tablesVersion`` fact on real CentOS hosts.
+"""Example: gather the ``iptables.Ip6tablesVersion`` fact on real RedHat hosts.
 
 This is a *usage* example, not part of the library. It reads a single
 **fact** directly over the *real SSH transport* (asyncssh) instead of
@@ -15,13 +15,13 @@ driving the two-phase execution model:
 2. Materialize each entry into a plain ``Host`` with the default
    ``Host.from_inventory`` factory. Each ``Host`` lazily opens an asyncssh
    connection from its ``connection`` data when a fact is gathered.
-3. Guard the gather with a ``when`` predicate: ``is_centos`` reads only
-   **static** inventory data -- ``host.group`` -- and the fact is gathered
+3. Guard the gather with a ``when`` predicate: ``is_redhat`` reads only
+   **static** inventory data -- ``host.family`` -- and the fact is gathered
    on the hosts that pass it. ``gather_fact`` itself takes no ``when``
    parameter, so the predicate filters the host list before the fan-out --
    the direct equivalent of a driver-side skip. Hosts outside the
-   ``"centos"`` group are named on a
-   ``== Skipped (when guard is_centos): ... ==`` line and never connected.
+   ``\"RedHat\"`` family are named on a
+   ``== Skipped (when guard is_redhat): ... ==`` line and never connected.
 4. Gather ``Ip6tablesVersion`` on the guarded hosts at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a
@@ -42,7 +42,7 @@ below catches and reports.
 The demo hosts ship without ``ip6tables``, and ``Ip6tablesVersion`` is an
 unmasked read, so ``main`` first drives a tiny idempotent *install
 deploy* (``dnf.packages`` under ``sudo=True``, guarded by
-``when=is_centos``) to put the binary on every CentOS host, then gathers
+``when=is_redhat``) to put the binary on every RedHat host, then gathers
 the fact. The ``iptables`` package provides both the
 IPv4 and IPv6 binaries, so installing it covers this fact too. This is
 the same two-run split ``two_deploy_split.py`` demonstrates: a fact that
@@ -103,15 +103,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def install(host: Host) -> Generator[OperationRequest]:
@@ -125,7 +125,7 @@ def install(host: Host) -> Generator[OperationRequest]:
         name="Install iptables",
         packages=("iptables",),
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -141,17 +141,17 @@ async def main() -> None:
         # the binary. Install iptables first (idempotent, sudo=True) -- it
         # provides ip6tables -- so the fact read below succeeds on the demo
         # hosts, which ship without it. The when guard keeps the install off
-        # the non-CentOS hosts.
+        # the non-RedHat hosts.
         await run(inventory, install)
         # Materialize every inventory entry, then guard the gather below -- a
         # skipped host never reaches the fan-out at all. gather_fact has no
         # ``when`` parameter, so filtering the host list with the predicate is
         # the equivalent of a driver-side skip.
         all_hosts = [Host.from_inventory(entry) for entry in inventory]
-        hosts = [host for host in all_hosts if is_centos(host)]
+        hosts = [host for host in all_hosts if is_redhat(host)]
         skipped = [host.name for host in all_hosts if host not in hosts]
         if skipped:
-            print("\n== Skipped (when guard is_centos): " + ", ".join(skipped) + " ==")
+            print("\n== Skipped (when guard is_redhat): " + ", ".join(skipped) + " ==")
         # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans Ip6tablesVersion.process out with asyncio.gather and returns a
         # host-name-keyed mapping. The fact takes no arguments -- it always

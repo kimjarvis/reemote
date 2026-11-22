@@ -19,7 +19,7 @@ The elevation contract is identical to an operation's:
   password is supplied without a TTY (asyncssh channels are non-interactive).
   Without one, elevation assumes passwordless sudo.
 
-The script runs ``id`` twice on each ``centos`` host: once unprivileged
+The script runs ``id`` twice on each RedHat host: once unprivileged
 (reporting the login user) and once with ``sudo=True`` (reporting root). Both
 come back as
 ``Result`` objects; the elevated one rides the raw-result privileged path
@@ -31,11 +31,11 @@ rather than travelling back as an exit status. ``main`` catches it and prints
 one line naming the host, keeping the exit status and stderr as ``__cause__``.
 
 The hosts come from the shared ``inventory.json`` in the project root, read by
-``load_inventory`` and validated. ``is_centos`` (``host.group == "centos"``)
+``load_inventory`` and validated. ``is_redhat`` (``host.family == "RedHat"``)
 filters the host list before the ``gather_action`` fan-out -- an action has no
-``when`` meta-parameter -- so only the ``centos`` hosts are contacted. The
+``when`` meta-parameter -- so only the RedHat hosts are contacted. The
 ``privilege`` section this demo needs is not in the shared file, so ``main``
-attaches it to the loaded ``centos`` entries: privilege stays an *inventory*
+attaches it to the loaded RedHat entries: privilege stays an *inventory*
 parameter, never a caller one.
 
 The password is plain text in the inventory -- the only supported form -- and
@@ -69,7 +69,7 @@ from reemote import (
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
-# The privilege section this demo attaches to the loaded ``centos`` inventory
+# The privilege section this demo attaches to the loaded RedHat inventory
 # entries (the shared file carries none). The login user's ``sudo_password``
 # authenticates elevation; ``sudo_user`` is the run-AS target -- ``root`` here,
 # because only root may read /etc/shadow. ``root`` is sudo's own default
@@ -90,14 +90,14 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """Group guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """Family guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only the host's static ``group`` field. Actions have no ``when``
+    Reads only the host's static ``family`` field. Actions have no ``when``
     meta-parameter, so the guard is applied by filtering the host list before
     the ``gather_action`` fan-out.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 async def main() -> None:
@@ -113,19 +113,19 @@ async def main() -> None:
         raise SystemExit(1) from exc
 
     # The shared inventory carries no privilege section; attach this demo's to
-    # the centos entries, so elevation stays an inventory parameter and the
+    # the RedHat entries, so elevation stays an inventory parameter and the
     # credential is scoped to the group that actually elevates.
     for entry in inventory:
-        if entry.get("group") == "centos":
+        if entry.get("family") == "RedHat":
             entry["privilege"] = dict(PRIVILEGE)
 
     print(f"== Inventory loaded from {INVENTORY_PATH} ==")
     all_hosts = [Host.from_inventory(entry) for entry in inventory]
-    # The group guard: gather_action has no `when`, so filter the host list
-    # before the fan-out -- only the centos hosts are ever contacted.
-    hosts = [host for host in all_hosts if is_centos(host)]
-    skipped = [host.name for host in all_hosts if not is_centos(host)]
-    print(f"== Skipped (group guard is_centos): {', '.join(skipped)} ==")
+    # The family guard: gather_action has no `when`, so filter the host list
+    # before the fan-out -- only the RedHat hosts are ever contacted.
+    hosts = [host for host in all_hosts if is_redhat(host)]
+    skipped = [host.name for host in all_hosts if not is_redhat(host)]
+    print(f"== Skipped (family guard is_redhat): {', '.join(skipped)} ==")
     try:
         # Unprivileged: id reports the login user (kjarvis).
         plain = await gather_action(hosts, Shell, command="id")

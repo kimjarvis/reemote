@@ -63,13 +63,13 @@ the files stay in place. Re-running it is a no-op, because the ``SshKeyPair``
 fact already reports a fingerprint for each public half -- only ``force=True``
 would regenerate a pair, and this example never asks for that.
 
-Every request carries ``when=is_centos``, the declarative eligibility guard:
-the predicate reads only **static** inventory data -- ``host.group``, set by
-the ``"group"`` key of the inventory entry -- and is a stable module-level
+Every request carries ``when=is_redhat``, the declarative eligibility guard:
+the predicate reads only **static** inventory data -- ``host.family``, set by
+the ``\"family\"`` key of the inventory entry -- and is a stable module-level
 function, so the prepare and apply phases reach the same skip decision. The
 driver skips a rejected request without materializing it, so on hosts outside
-the ``"centos"`` group neither the commands nor the facts behind them run, and
-plan and log render the step as ``[skipped: when guard is_centos]`` in its
+the ``"RedHat"`` family neither the commands nor the facts behind them run, and
+plan and log render the step as ``[skipped: when guard is_redhat]`` in its
 lockstep slot. The same guard is applied by hand to the standalone
 ``gather_fact`` read at the top of ``main``, which has no ``when`` parameter of
 its own.
@@ -141,15 +141,15 @@ def login_user(host: Host) -> str:
     return host.connection.get("username") or host.connection.get("user") or getpass.getuser()
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
@@ -172,7 +172,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         type="ed25519",
         comment=f"{user}@{host.name}",
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
     # Second, identical request demonstrates the per-phase fact cache: in the
     # *plan* both requests read the same pre-deployment state, so both show a
@@ -185,7 +185,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         type="ed25519",
         comment=f"{user}@{host.name}",
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
     # Third request: the RSA variant at the default ``~/.ssh/id_rsa`` with the
     # conventional 4096 bits, commented with where it lives. Where an
@@ -201,7 +201,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         size=4096,
         comment=f"{user}@{host.name}-rsa",
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -217,10 +217,10 @@ async def main() -> None:
         # filtering the host list is the equivalent, and a skipped host never
         # gets connected.
         all_hosts = [Host.from_inventory(entry) for entry in inventory]
-        gathered = [host for host in all_hosts if is_centos(host)]
+        gathered = [host for host in all_hosts if is_redhat(host)]
         skipped = [host.name for host in all_hosts if host not in gathered]
         if skipped:
-            print("\n== Skipped (when guard is_centos): " + ", ".join(skipped) + " ==")
+            print("\n== Skipped (when guard is_redhat): " + ", ".join(skipped) + " ==")
         # The fact on its own, before anything is deployed: the driver fans
         # SshKeyPair.process out across the guarded hosts concurrently and
         # returns a host-name-keyed mapping. Each read is ``ssh-keygen -lf`` on

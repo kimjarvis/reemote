@@ -10,17 +10,17 @@ The scenario is "install nginx, probe it with a bespoke command, then
 configure it only where the probe succeeded":
 
 1. ``install_nginx`` -- a branch-free deploy that only installs the package.
-   Both phases trivially yield the same single request. The ``is_centos``
-   group guard is composed onto it with ``sub_deploy(..., when=is_centos)``,
+   Both phases trivially yield the same single request. The ``is_redhat``
+   family guard is composed onto it with ``sub_deploy(..., when=is_redhat)``,
    so the inner operation carries no ``when`` of its own.
-2. An ACTION between the runs: ``gather_action(centos_hosts, Shell,
+2. An ACTION between the runs: ``gather_action(redhat_hosts, Shell,
    command="nginx -v")`` runs a command the library knows nothing about and
    returns a ``{host.name: Result}`` mapping. ``nginx -v`` prints its version
    to stderr and exits 0 where nginx is installed (127 where it is not), so
    each ``Result``'s ``exit_status`` reports whether the install actually put
-   nginx on the box. The host list is filtered by ``is_centos`` BEFORE the
+   nginx on the box. The host list is filtered by ``is_redhat`` BEFORE the
    fan-out -- an action has no ``when`` meta-parameter -- so the probe only
-   touches the ``centos`` hosts.
+   touches the RedHat hosts.
    The apply-phase join of run 1 is the barrier: every host has finished
    installing before any host's probe runs; the awaited ``gather_action`` is
    itself a barrier, so every probe has finished before run 2 is built.
@@ -30,7 +30,7 @@ configure it only where the probe succeeded":
    snapshot taken BEFORE this deploy's prepare phase -- so the generator is a
    pure function of static input: prepare and apply resolve the branch
    identically and the determinism guard holds. The staged put additionally
-   carries ``when=is_centos``, guarding the request (and its facts) on the
+   carries ``when=is_redhat``, guarding the request (and its facts) on the
    hosts the probe never visited.
 
 This is exactly the two-deploy split, with an action ``Result`` playing the
@@ -41,7 +41,7 @@ action inside a deploy is both illegal (the in-deploy guard raises
 ``ActionInDeployError``) and impossible (a sync generator cannot await).
 
 The hosts come from the shared ``inventory.json`` in the project root, read
-by ``load_inventory`` and validated, so the ``centos`` hosts run the deploys
+by ``load_inventory`` and validated, so the RedHat hosts run the deploys
 and the probe while the ``alpine`` and ``ubuntu`` entries skip -- their
 requests are never materialized and the probe never contacts them.
 
@@ -119,29 +119,29 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only the host's static ``group`` field, so it is deterministic across
+    Reads only the host's static ``family`` field, so it is deterministic across
     the prepare and apply phases. The action probe between the deploys has no
     ``when`` meta-parameter, so it reuses this predicate as a host-list filter.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def install_nginx(host: Host) -> Generator[OperationRequest]:
     """Deploy 1: install only, branch-free, so both phases yield one request.
 
-    The operation carries no ``when``: the ``is_centos`` group guard is
+    The operation carries no ``when``: the ``is_redhat`` family guard is
     composed onto the whole deploy below.
     """
     yield op(dnf.packages, name="Install nginx", packages=("nginx",), sudo=True)
 
 
-# The group guard, composed once at the outermost level: the install runs only
-# on a ``centos`` host, and a skipped request is never materialized, so its
+# The family guard, composed once at the outermost level: the install runs only
+# on a RedHat host, and a skipped request is never materialized, so its
 # facts are never read on the other hosts either.
-install_nginx = sub_deploy(install_nginx, when=is_centos)
+install_nginx = sub_deploy(install_nginx, when=is_redhat)
 
 
 def build_configure_nginx(
@@ -152,7 +152,7 @@ def build_configure_nginx(
     The returned generator branches on ``probe.get(host.name)`` and its
     ``exit_status`` -- an ordinary dict lookup on a snapshot taken BEFORE this
     deploy's prepare phase -- so both phases resolve the branch identically.
-    The probe only visited the ``centos`` hosts, so ``.get`` yields ``None``
+    The probe only visited the RedHat hosts, so ``.get`` yields ``None``
     for every other host and the branch stays closed there. Running the
     action live here instead would trip the in-deploy guard (and could not be
     awaited in a sync generator anyway).
@@ -166,7 +166,7 @@ def build_configure_nginx(
                 name="Stage nginx.conf",
                 src=NGINX_CONF,
                 dest=STAGED_CONF,
-                when=is_centos,
+                when=is_redhat,
             )
 
     return configure_nginx
@@ -197,11 +197,11 @@ async def main() -> None:
         # The ACTION between deploys: a bespoke probe no fact models.
         # gather_action re-connects the (closed) hosts, runs `nginx -v` on the
         # selected ones concurrently, returns {host.name: Result}, and closes
-        # them again. The action fan-out has no `when`, so the group guard is
-        # a host-list filter: only the centos hosts are probed. The await is
+        # them again. The action fan-out has no `when`, so the family guard is
+        # a host-list filter: only the RedHat hosts are probed. The await is
         # the barrier before run 2 is built.
-        centos_hosts = [host for host in hosts if is_centos(host)]
-        probe = await gather_action(centos_hosts, Shell, command="nginx -v")
+        redhat_hosts = [host for host in hosts if is_redhat(host)]
+        probe = await gather_action(redhat_hosts, Shell, command="nginx -v")
         print("\n== Between deploys: action probe (nginx -v) ==")
         for name, result in probe.items():
             # nginx -v writes its version to stderr; ok is exit_status == 0.

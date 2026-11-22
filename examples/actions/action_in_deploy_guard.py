@@ -28,8 +28,8 @@ operation and raises ``OperationError`` for anything else.
 This script needs NO real host: the guard fires during prepare, before any
 fact is gathered or any connection opened, so it runs offline. The inventory
 is still read from the shared ``inventory.json`` with ``load_inventory``, and
-the ``is_centos`` group guard is composed onto the deploy with
-``sub_deploy(..., when=is_centos)`` like every other example -- but the
+the ``is_redhat`` family guard is composed onto the deploy with
+``sub_deploy(..., when=is_redhat)`` like every other example -- but the
 in-deploy guard fires while the generator is drained, before any ``when``
 skip is even considered, so the demonstration is unchanged. ``main`` treats
 the ``ActionInDeployError`` as the EXPECTED outcome (the demonstration
@@ -81,14 +81,14 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only the host's static ``group`` field. It never gets to act here:
+    Reads only the host's static ``family`` field. It never gets to act here:
     the in-deploy guard aborts the generator before any request is skipped or
     materialized.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def illegal_deploy(host: Host) -> Generator[OperationRequest]:
@@ -102,9 +102,9 @@ def illegal_deploy(host: Host) -> Generator[OperationRequest]:
     yield op(dnf.packages, name="Install htop", packages=("htop",), sudo=True)
 
 
-# The group guard, composed as in every other example -- the in-deploy guard
+# The family guard, composed as in every other example -- the in-deploy guard
 # still fires first, while the generator is drained.
-illegal_deploy = sub_deploy(illegal_deploy, when=is_centos)
+illegal_deploy = sub_deploy(illegal_deploy, when=is_redhat)
 
 
 async def main() -> None:

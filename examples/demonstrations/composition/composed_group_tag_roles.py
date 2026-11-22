@@ -1,21 +1,21 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: per-host roles selected by ``host.name``, ``host.group`` and ``host.tags``.
+"""Example: per-host roles selected by ``host.name``, ``host.family``/``host.group`` and ``host.tags``.
 
 This is a *usage* example, not part of the library. It builds on
 ``composed_per_host_roles.py`` -- one deploy whose request sequence differs
 per host -- and shows the same idea driven by the inventory's static
 classifiers: a single ``deploy`` generator that branches on ``host.name``,
-``host.group`` and ``host.tags`` to select which roles each machine gets.
+``host.family``/``host.group`` and ``host.tags`` to select which roles each machine gets.
 
 The inventory is read from the project root's ``inventory.json`` (validated
 up front with ``validate_inventory``), the same file the other composition
 examples use. Its four hosts carry the classifiers the deploy branches on:
-``web1`` and ``web2`` are in the ``"centos"`` group, ``ubuntu`` is in the
+``web1`` and ``web2`` are in the ``"RedHat"`` family, ``ubuntu`` is in the
 ``"ubuntu"`` group, and ``alpine`` is in the ``"alpine"`` group and carries the
 ``apk_package_manager`` tag. Each branch selects the package manager that
-matches its group -- ``dnf`` for the CentOS web role, ``apt`` for the Ubuntu
+matches its family or group -- ``dnf`` for the RedHat web role, ``apt`` for the Ubuntu
 database role, ``apk`` for the tag-selected Alpine tooling -- so the example
 also crosses module boundaries.
 
@@ -23,11 +23,11 @@ The rule that makes this safe is the one ``composed_per_host_roles.py``
 states: never branch on a *mutable* fact inside a deploy body (the prepare and
 apply phases would flatten differently and ``run_apply`` would raise
 ``DeterminismError``), but branching on **static** inventory data is fine.
-``host.name``, ``host.group`` and ``host.tags`` all come from the inventory
+``host.name``, ``host.family``, ``host.group`` and ``host.tags`` all come from the inventory
 entry and read identically in both phases, so ``deploy(host)`` produces the
 same per-host sequence every time the driver re-invokes it -- even though the
 sequences differ in length across hosts (a finished host simply idles at the
-lockstep barrier while the others run their extra steps). The ``is_centos``
+lockstep barrier while the others run their extra steps). The ``is_redhat``
 predicate used for the web branch is the same stable, static-data guard the
 other examples pass as ``when``; here it drives an ``if`` because the point of
 this example is per-host *sequences*, not a shared schedule with skips.
@@ -98,15 +98,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """Static predicate: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """Static predicate: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``), never a mutable fact,
+    Reads only static inventory data (``host.family``), never a mutable fact,
     and stays a stable module-level function. The other composition examples
     pass it as a ``when`` guard; here it drives the web-role ``if`` branch,
     which is safe for the same reason -- it reads identically in both phases.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 # Simulated pre-deployment state per host name (test-framework data, NOT
@@ -136,7 +136,7 @@ def simulated_factory(entry: dict) -> SimulatedHost:
 
 
 def role_web(host: Host) -> Generator[OperationRequest]:
-    """The web-server role, applied to every host in the ``centos`` group."""
+    """The web-server role, applied to every host in the RedHat family."""
     yield op(dnf.packages, name="Install nginx", packages=("nginx",), sudo=True)
 
 
@@ -169,14 +169,14 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     """Compose per host from the inventory's static classifiers.
 
     Three independent branch kinds, all reading data that is identical in the
-    prepare and apply phases: ``host.group`` selects the centos web role (via
-    ``is_centos``) and the ubuntu database role, ``host.tags`` opts a host into
+    prepare and apply phases: ``host.family`` (via ``is_redhat``) selects the
+    RedHat web role and ``host.group`` the ubuntu database role, ``host.tags`` opts a host into
     the apk tooling role, and ``host.name`` pins the backup role to web1.
     Because the branches are static, each host's request sequence is stable
     across phases and lockstep pairing holds even though the sequences differ
     in length.
     """
-    if is_centos(host):
+    if is_redhat(host):
         yield from role_web(host)
     if host.group == "ubuntu":
         yield from role_database(host)
@@ -223,7 +223,7 @@ async def main() -> None:
         assert isinstance(host, SimulatedHost)
         # Each group's packages live in its own manager's seam: dnf in
         # ``packages``, apt in ``apt_packages``, apk in ``apk_packages``.
-        if is_centos(host):
+        if is_redhat(host):
             installed = sorted(host.packages)
         elif host.group == "ubuntu":
             installed = sorted(host.apt_packages)

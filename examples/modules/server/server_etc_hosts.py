@@ -55,14 +55,14 @@ Note that this script mutates the target hosts' ``/etc/hosts`` for real:
 the entry stays in place. Re-running it is a no-op, because the ``EtcHosts``
 fact already reports the requested names.
 
-Every request carries ``when=is_centos``, the declarative eligibility
+Every request carries ``when=is_redhat``, the declarative eligibility
 guard: the predicate reads only **static** inventory data --
-``host.group``, set by the ``"group"`` key of the inventory entry -- and
+``host.family``, set by the ``\"family\"`` key of the inventory entry -- and
 is a stable module-level function, so the prepare and apply phases reach
 the same skip decision. The driver skips a rejected request without
-materializing it, so on hosts outside the ``"centos"`` group neither the
+materializing it, so on hosts outside the ``"RedHat"`` family neither the
 commands nor the facts behind them run, and plan and log render the step
-as ``[skipped: when guard is_centos]`` in its lockstep slot.
+as ``[skipped: when guard is_redhat]`` in its lockstep slot.
 
 The path is resolved from ``__file__``, so the example works from any
 working directory; point ``INVENTORY_PATH`` at your own file (or edit
@@ -123,15 +123,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
@@ -151,7 +151,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         ip=DB_IP,
         hostnames=DB_HOSTNAMES,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
     # Second, identical request demonstrates the per-phase fact cache: in the
     # *plan* both requests read the same pre-deployment state, so both show a
@@ -163,7 +163,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         ip=DB_IP,
         hostnames=DB_HOSTNAMES,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 

@@ -22,9 +22,9 @@ reading `Ip6tablesPersistence`, all over `gather_fact`) are not rendered
 here — they read a single fact, and the facts themselves are documented on
 the [`iptables` module page](../../modules/iptables.md). Like the dnf
 examples they read the shared project-root `inventory.json` and guard on
-the `"centos"` group: `is_centos` filters the host list before the
+the `"RedHat"` family: `is_redhat` filters the host list before the
 `gather_fact` fan-out, and the operation scripts below carry
-`when=is_centos` on every request. The table-reading facts retry through
+`when=is_redhat` on every request. The table-reading facts retry through
 passwordless `sudo -n` and read the empty value on an unprivileged login
 rather than failing, so every gather is safe on any Linux target — point
 `INVENTORY_PATH` at your own file of machines before executing.
@@ -38,7 +38,7 @@ then mutates. The two version-fact scripts
 (`iptables_iptables_version.py`, `iptables_ip6tables_version.py`) read an
 *unmasked* `--version` banner, so they run a small install deploy before
 gathering the fact (the `iptables` package provides both family binaries).
-Note that on the CentOS demo hosts SELinux confines sudo to `staff_t`,
+Note that on the RedHat demo hosts SELinux confines sudo to `staff_t`,
 which blocks the kernel netlink socket (`/run/xtables.lock`) and `/etc`
 writes: the operation scripts are correct but need an unconfined sudo
 domain (or permissive SELinux) to apply, while the version facts only read

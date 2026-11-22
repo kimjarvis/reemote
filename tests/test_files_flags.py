@@ -430,10 +430,10 @@ async def test_converge_example_rerun_is_all_no_op():
     example = _load_converge_example()
     marker = example.MARKER
     # The example loads the shared inventory.json (it keeps no module-level
-    # INVENTORY), so the test supplies its own single entry -- in the "centos"
-    # group, or the deploy's is_centos guard would skip every request. One host
-    # suffices for the fixpoint.
-    inventory = [{**INVENTORY[0], "group": "centos"}]
+    # INVENTORY), so the test supplies its own single entry -- in the
+    # "RedHat" family, or the deploy's is_redhat guard would skip every
+    # request. One host suffices for the fixpoint.
+    inventory = [{**INVENTORY[0], "family": "RedHat"}]
 
     # Run 1: fresh host. Both steps converge a not-yet-existing marker.
     plans, report, hosts = await run(inventory, example.deploy, host_factory=converge_factory)

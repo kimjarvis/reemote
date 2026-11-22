@@ -6,10 +6,10 @@ the [`postgresql`](../../modules/postgresql.md) module. See the
 warning and the error-reporting contract every script follows.
 
 Every script reads the shared project-root `inventory.json` and guards on
-the `"centos"` group (`is_centos` on every operation request, a host-list
+the `"RedHat"` family (`is_redhat` on every operation request, a host-list
 filter before each `gather_fact` fan-out). The shared file carries no
 `privilege` section, so each operation script attaches
-`{"sudo_user": "postgres"}` to the loaded `centos` entries and the
+`{"sudo_user": "postgres"}` to the loaded RedHat entries and the
 requests ride under `sudo`, so the `psql` client connects as the
 `postgres` OS user through peer authentication — no password travels
 through operation arguments, plans or logs (the baseline's `psql_password`
@@ -37,7 +37,7 @@ rendered here — they read a single fact, and the facts themselves are
 documented on the [`postgresql` module page](../../modules/postgresql.md).
 
 **Host prerequisite.** Every script here needs a running PostgreSQL server.
-On the demo CentOS hosts the packages install cleanly
+On the demo RedHat hosts the packages install cleanly
 (`sudo dnf install -y postgresql-server postgresql-contrib`), but the cluster
 cannot be initialized under their `staff_t`-confined sudo:
 

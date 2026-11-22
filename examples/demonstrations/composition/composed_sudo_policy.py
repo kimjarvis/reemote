@@ -11,10 +11,10 @@ no ``sudo`` flags at all, adopted under a site policy that connects as an
 ordinary user and elevates everywhere.
 
 The inventory is read from the project root's ``inventory.json`` (validated
-up front with ``validate_inventory``), which holds hosts in the ``"centos"``
-group alongside hosts in other groups. The same ``sub_deploy`` wrapper that
-sets the elevation policy also carries ``when=is_centos``, so the redis role
-is eligible only on the CentOS hosts; the driver skips it -- without reading
+up front with ``validate_inventory``), which holds RedHat-family hosts
+alongside hosts in other families. The same ``sub_deploy`` wrapper that
+sets the elevation policy also carries ``when=is_redhat``, so the redis role
+is eligible only on the RedHat hosts; the driver skips it -- without reading
 the ``DnfPackages`` fact -- on the Alpine and Ubuntu hosts. Privilege and
 eligibility are independent axes: ``sudo`` fills the unflagged requests
 (inner-wins), while ``when`` restricts who may run them at all (conjunction).
@@ -95,17 +95,17 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. The redis role
     installs through ``dnf``, so the guard keeps it (and the facts it reads)
     off the Alpine and Ubuntu hosts.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def role_redis(host: Host) -> Generator[OperationRequest]:
@@ -135,9 +135,9 @@ def role_redis(host: Host) -> Generator[OperationRequest]:
 
 
 # The policy statement: everything this role yields runs elevated, and only
-# on the CentOS hosts -- ``sudo`` fills the unflagged requests (inner-wins),
+# on the RedHat hosts -- ``sudo`` fills the unflagged requests (inner-wins),
 # ``when`` restricts eligibility (conjunction), both at the composition site.
-deploy = compose(sub_deploy(role_redis, name_prefix="redis", sudo=True, when=is_centos))
+deploy = compose(sub_deploy(role_redis, name_prefix="redis", sudo=True, when=is_redhat))
 
 
 async def main() -> None:
@@ -148,7 +148,7 @@ async def main() -> None:
 
         # --dry: prepare phase only. The plan already carries the wrapper's
         # names and privilege flags; no mutating command is sent. On the
-        # non-CentOS hosts every step is [skipped: when guard is_centos].
+        # non-RedHat hosts every step is [skipped: when guard is_redhat].
         plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("\n== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))

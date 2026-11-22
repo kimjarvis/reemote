@@ -57,9 +57,9 @@ sub-directory. Pick a page from the navigation, or start from this table:
     factory and an inventory of real machines — read from the shared
     `inventory.json` in the project root (each script loads it with
     `load_inventory`, validated up front with `validate_inventory`). The
-    default guard is `is_centos` (`host.group == "centos"`), keeping every
-    gather and request on the two CentOS hosts (`web1`, `web2`) and
-    skipping hosts in other groups with a visible reason. The
+    default guard is `is_redhat` (`host.family == "RedHat"`), keeping every
+    gather and request on the two RedHat hosts (`web1`, `web2`) and
+    skipping hosts in other families with a visible reason. The
     [`apk` examples](examples/modules/apk.md) and the
     [`openrc` examples](examples/modules/openrc.md) guard on `is_alpine`
     instead (the single `alpine` host), the
@@ -73,12 +73,12 @@ sub-directory. Pick a page from the navigation, or start from this table:
     [server page](examples/modules/server.md) likewise on `is_ubuntu`
     because `/etc/locale.gen` + `locale-gen` are Debian-family only. The
     [`composition` demonstrations](examples/demonstrations/composition.md)
-    (whose `is_centos` guard keeps the `dnf` work on the `centos` hosts), the
+    (whose `is_redhat` guard keeps the `dnf` work on the RedHat hosts), the
     [`privilege` demonstrations](examples/demonstrations/privilege.md)
-    (whose `is_centos` guard likewise keeps the `dnf` work on the `centos`
+    (whose `is_redhat` guard likewise keeps the `dnf` work on the RedHat
     hosts, each attaching its own `privilege` section — a plain-text password
-    for sudo and su, passwordless doas — to the loaded `centos` entries) and
-    the [`action` examples](examples/actions.md) (whose `is_centos` guard is
+    for sudo and su, passwordless doas — to the loaded RedHat entries) and
+    the [`action` examples](examples/actions.md) (whose `is_redhat` guard is
     composed onto the deploys and filters the host list before each action
     fan-out) follow the same convention — so running one opens
     real asyncssh connections: first read-only for the `dry=True` plan,

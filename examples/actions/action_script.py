@@ -11,11 +11,11 @@ an action's job, and the two meet outside the deploy model:
 
 1. A deploy stages the script: ``files.put`` copies a module-level
    ``io.StringIO`` payload to ``/tmp/reemote-script-demo.sh`` on the
-   ``centos`` hosts (``when=is_centos``). The put source is one stable
+   RedHat hosts (``when=is_redhat``). The put source is one stable
    stream identity across both phases, as ``OperationRequest`` compares a
    stream by identity. scp writes the file as the login user WITHOUT an
    executable bit.
-2. ``gather_action(centos_hosts, server.script, path=..., args=...)`` runs
+2. ``gather_action(redhat_hosts, server.script, path=..., args=...)`` runs
    the staged file. Because it is not executable, the action's wrapper
    falls back to ``sh <path> <args>`` -- no chmod needed. Each argument is
    shell-quoted individually.
@@ -30,9 +30,9 @@ an action's job, and the two meet outside the deploy model:
    stderr -- not an exception. A missing file is the script's own outcome,
    and the caller decides what it means, exactly as for ``Shell``.
 
-The fan-out is group-guarded: ``is_centos`` (``host.group == "centos"``)
+The fan-out is family-guarded: ``is_redhat`` (``host.family == "RedHat"``)
 filters the host list BEFORE each ``gather_action``, because an action
-fan-out has no ``when`` meta-parameter. Only the ``centos`` hosts are
+fan-out has no ``when`` meta-parameter. Only the RedHat hosts are
 contacted; the ``alpine`` and ``ubuntu`` entries are reported as skipped.
 
 Library-level failures still raise and are caught in ``main``:
@@ -102,14 +102,14 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """Group guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """Family guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only the host's static ``group`` field. The deploy carries it as
+    Reads only the host's static ``family`` field. The deploy carries it as
     ``when``; the action fan-outs have no ``when`` meta-parameter, so they
     reuse this predicate as a host-list filter.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def stage_script(host: Host) -> Generator[OperationRequest]:
@@ -119,7 +119,7 @@ def stage_script(host: Host) -> Generator[OperationRequest]:
         name="Stage the demo script",
         src=SCRIPT_BODY,
         dest=STAGED_SCRIPT,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -148,7 +148,7 @@ async def main() -> None:
 
     print(f"== Inventory loaded from {INVENTORY_PATH} ==")
     try:
-        # The deploy: files.put stages the script on the centos hosts. Its
+        # The deploy: files.put stages the script on the RedHat hosts. Its
         # apply-phase join is the barrier -- every host has the file before
         # any action runs.
         _plans, apply_report, hosts = await run(inventory, stage_script)
@@ -156,28 +156,28 @@ async def main() -> None:
         assert apply_report is not None
         print(format_log(apply_report))
 
-        # The group guard as a host-list filter: gather_action has no `when`.
-        centos_hosts = [host for host in hosts if is_centos(host)]
-        skipped = [host.name for host in hosts if not is_centos(host)]
-        print(f"== Skipped (group guard is_centos): {', '.join(skipped)} ==")
+        # The family guard as a host-list filter: gather_action has no `when`.
+        redhat_hosts = [host for host in hosts if is_redhat(host)]
+        skipped = [host.name for host in hosts if not is_redhat(host)]
+        print(f"== Skipped (family guard is_redhat): {', '.join(skipped)} ==")
 
         # Run 1: the staged file has NO executable bit, so the wrapper's
         # -x test falls back to `sh <path> <args>`. No chmod needed.
         via_sh = await gather_action(
-            centos_hosts, server.script, path=STAGED_SCRIPT, args=("world",)
+            redhat_hosts, server.script, path=STAGED_SCRIPT, args=("world",)
         )
 
         # Make it executable, then run the SAME call again: now the file
         # executes directly and the kernel honours its #!/bin/sh shebang.
-        await gather_action(centos_hosts, Shell, command=f"chmod +x {STAGED_SCRIPT}")
+        await gather_action(redhat_hosts, Shell, command=f"chmod +x {STAGED_SCRIPT}")
         direct = await gather_action(
-            centos_hosts, server.script, path=STAGED_SCRIPT, args=("world",)
+            redhat_hosts, server.script, path=STAGED_SCRIPT, args=("world",)
         )
 
         # A missing file is an error RESULT, not an exception: exit 127
         # with a "server.script: no such file" message on stderr.
         missing = await gather_action(
-            centos_hosts,
+            redhat_hosts,
             server.script,
             path="/tmp/reemote-script-does-not-exist.sh",
         )

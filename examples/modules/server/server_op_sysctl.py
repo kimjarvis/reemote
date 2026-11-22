@@ -88,11 +88,11 @@ back without changing anything is the companion
 The hosts come from the shared ``inventory.json`` in the project root,
 read with ``load_inventory`` (parse + ``validate_inventory``) and resolved
 from ``__file__`` so the example works from any working directory. The
-snapshot gathers are guarded by ``is_centos`` (``host.group == "centos"``):
+snapshot gathers are guarded by ``is_redhat`` (``host.family == "RedHat"``):
 ``gather_fact`` takes no ``when`` parameter, so the predicate filters the
-host list before the fan-out and hosts outside the ``"centos"`` group are
-named on a ``== Skipped (when guard is_centos): ... ==`` line and never
-connected. Every deploy request also carries ``when=is_centos``, and only
+host list before the fan-out and hosts outside the ``"RedHat"`` family are
+named on a ``== Skipped (when guard is_redhat): ... ==`` line and never
+connected. Every deploy request also carries ``when=is_redhat``, and only
 hosts with a snapshot entry can become pending.
 
 Run it with::
@@ -170,15 +170,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def _try_int(value: str | int) -> int | str:
@@ -306,7 +306,7 @@ def apply(host: Host) -> Generator[OperationRequest]:
         key=SYSCTL_KEY,
         string_value=STRING_VALUE,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -317,7 +317,7 @@ def spool(host: Host) -> Generator[OperationRequest]:
         name="Spool sysctl.conf",
         path=SPOOL_PATH,
         transform=SPOOL_TRANSFORMS[host.name],
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -330,7 +330,7 @@ def install(host: Host) -> Generator[OperationRequest]:
         dest="/etc",
         overwrite=True,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -342,14 +342,14 @@ async def main() -> None:
 
         # The snapshots: read every guarded host's live value for the key
         # and its real /etc/sysctl.conf (read-only sysctl / cat).
-        # gather_fact has no ``when`` parameter, so the is_centos predicate
+        # gather_fact has no ``when`` parameter, so the is_redhat predicate
         # filters the host list before the fan-out -- a skipped host is
         # never connected.
         all_hosts = [Host.from_inventory(entry) for entry in inventory]
-        hosts = [host for host in all_hosts if is_centos(host)]
+        hosts = [host for host in all_hosts if is_redhat(host)]
         skipped = [host.name for host in all_hosts if host not in hosts]
         if skipped:
-            print("\n== Skipped (when guard is_centos): " + ", ".join(skipped) + " ==")
+            print("\n== Skipped (when guard is_redhat): " + ", ".join(skipped) + " ==")
         try:
             sysctls = await gather_fact(hosts, Sysctl, keys=[SYSCTL_KEY])
             contents = (

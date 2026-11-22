@@ -10,12 +10,12 @@ request sequence differs per host -- extra canary tooling on web1 only --
 without endangering the determinism guard.
 
 The inventory is read from the project root's ``inventory.json`` (validated
-up front with ``validate_inventory``), which holds hosts in the ``"centos"``
-group alongside hosts in other groups. The whole deploy is wrapped with
-``sub_deploy(..., when=is_centos)``, so the ``dnf`` steps are eligible only on
-the CentOS hosts and the driver skips them -- without reading the
+up front with ``validate_inventory``), which holds hosts in the ``\"RedHat\"``
+family alongside hosts in other families. The whole deploy is wrapped with
+``sub_deploy(..., when=is_redhat)``, so the ``dnf`` steps are eligible only on
+the RedHat hosts and the driver skips them -- without reading the
 ``DnfPackages`` fact -- on the Alpine and Ubuntu hosts. The per-host variation
-below is a *second*, independent axis: within the eligible CentOS hosts the
+below is a *second*, independent axis: within the eligible RedHat hosts the
 canary branch still keys on ``host.name``.
 
 The rule: never branch on *mutable* facts inside a deploy body (the
@@ -87,17 +87,17 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. The ``dnf``
-    operations below only make sense on a CentOS host, so the guard keeps
+    operations below only make sense on a RedHat host, so the guard keeps
     them (and the facts they read) off the Alpine and Ubuntu hosts.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def role_baseline(host: Host) -> Generator[OperationRequest]:
@@ -145,11 +145,11 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         yield from role_canary_extras(host)
 
 
-# The site policy: the whole deploy is centos-only. Wrapping the generator
-# adds the same ``is_centos`` predicate to every request it yields, so the
+# The site policy: the whole deploy is RedHat-only. Wrapping the generator
+# adds the same ``is_redhat`` predicate to every request it yields, so the
 # Alpine and Ubuntu hosts skip all steps while web1/web2 still differ by the
 # canary name branch above -- eligibility and per-host variation compose.
-deploy = sub_deploy(deploy, when=is_centos)
+deploy = sub_deploy(deploy, when=is_redhat)
 
 
 async def main() -> None:
@@ -159,8 +159,8 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # --dry: prepare phase only. web1's plan holds one more entry than
-        # web2's; no mutating command is sent. On the non-CentOS hosts every
-        # step is [skipped: when guard is_centos].
+        # web2's; no mutating command is sent. On the non-RedHat hosts every
+        # step is [skipped: when guard is_redhat].
         plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("\n== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))

@@ -74,23 +74,23 @@ body of ``https://download.docker.com/linux/centos/gpg`` -- so ``rpm --import``
 accepts it instead of rejecting placeholder bytes; swap in your own vendor
 key's armor to trust a different repository. The dry run plans regardless
 (nothing is sent), and the pytest suite never touches the network. Applying
-for real needs an unconfined sudo: on a CentOS host whose sudo is confined to
+for real needs an unconfined sudo: on a RedHat host whose sudo is confined to
 SELinux ``staff_t``, the elevated ``sh -c 'rpm --import ...'`` wrapper cannot
 read the login user's ``0600`` scp spool (no ``CAP_DAC_OVERRIDE``), so the
 import fails with ``import read failed`` until the host is relaxed (see the
 ``dnf`` examples page for the full caveat).
 
-The requests also carry ``when=is_centos``, the declarative eligibility
+The requests also carry ``when=is_redhat``, the declarative eligibility
 guard (see ``examples/demonstrations/composition/composed_when_guard.py``).
-The predicate reads only **static** inventory data -- ``host.group``, set by
-the ``"group"`` key of the inventory entry -- and is a stable module-level
+The predicate reads only **static** inventory data -- ``host.family``, set by
+the ``\"family\"`` key of the inventory entry -- and is a stable module-level
 function, so the prepare and apply phases reach the same skip decision. The
 driver skips a rejected request without materializing it, so no key is
 transferred to -- and no ``rpm`` command run on -- a host without the
 binary, and plan and log render the step as
-``[skipped: when guard is_centos]`` in its lockstep slot. The shared
-``inventory.json`` holds two hosts in the ``"centos"`` group alongside hosts
-in other groups, so the run visibly imports on the CentOS hosts and skips
+``[skipped: when guard is_redhat]`` in its lockstep slot. The shared
+``inventory.json`` holds two hosts in the ``"RedHat"`` family alongside hosts
+in other groups, so the run visibly imports on the RedHat hosts and skips
 every other one.
 
 Run it with::
@@ -183,17 +183,17 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. The rpm
-    keyring import below only makes sense on a CentOS host, so the guard
+    keyring import below only makes sense on a RedHat host, so the guard
     keeps it off the Alpine and Ubuntu hosts.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
@@ -202,7 +202,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError),
     and identical on every host: eligibility is expressed with the
-    ``when=is_centos`` guard each request carries, not with an ``if``.
+    ``when=is_redhat`` guard each request carries, not with an ``if``.
     Both requests are idempotent on ``RpmGpgKeys``. The import request names
     the Docker key's short id (``keyid="621E9F35"``), so it yields its two
     commands at different privilege levels -- an unprivileged scp spool of
@@ -219,7 +219,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         src=GPG_KEY,
         keyid="621E9F35",
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
     yield op(
         dnf.key,
@@ -227,7 +227,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         keyid="4172A230",
         present=False,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -242,7 +242,7 @@ async def main() -> None:
         # host already holding the Docker key plans a no-op) and the
         # removal's present/absent decision without
         # touching a host. A request the ``when`` guard rejects is planned as
-        # [skipped: when guard is_centos] without materializing it.
+        # [skipped: when guard is_redhat] without materializing it.
         plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("\n== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))

@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: install httpd and remove its welcome page on real CentOS hosts.
+"""Example: install httpd and remove its welcome page on real RedHat hosts.
 
 This is a *usage* example, not part of the library. It shows how an
 application drives reemote's two-phase execution model end to end over a
@@ -56,7 +56,7 @@ Ansible's ``yum: enablerepo=<id>``, the postgresql role's
 ``update_cache: true`` -- inheriting the same
 ``repos``/``disable_repos``/``enable_repos`` scoping so the refresh and the
 install agree on which repos are in play. This example leaves them all
-unset: httpd resolves from CentOS's default repos and the base image's
+unset: httpd resolves from RedHat's default repos and the base image's
 cache is fresh.
 
 ``exclude=(<pkg>, ...)`` renders one ``--exclude=<pkg>`` per name on the
@@ -65,17 +65,17 @@ postgresql role's ``exclude: python-unversioned-command``) -- keeping the
 named packages out of dnf's dependency resolution; this example leaves it
 unset too, since httpd pulls nothing worth excluding.
 
-Every request carries ``when=is_centos``, the declarative eligibility guard
+Every request carries ``when=is_redhat``, the declarative eligibility guard
 (see ``examples/demonstrations/composition/composed_when_guard.py``). The
-predicate reads only **static** inventory data -- ``host.group``, set by the
-``"group"`` key of the inventory entry -- and is a stable module-level
+predicate reads only **static** inventory data -- ``host.family``, set by the
+``\"family\"`` key of the inventory entry -- and is a stable module-level
 function, so the prepare and apply phases reach the same skip decision. The
 driver skips a rejected request without materializing it, so on the Alpine
 and Ubuntu hosts neither the commands nor the facts behind them run, and
-plan and log render the step as ``[skipped: when guard is_centos]`` in its
+plan and log render the step as ``[skipped: when guard is_redhat]`` in its
 lockstep slot. The shared ``inventory.json`` holds two hosts in the
-``"centos"`` group alongside hosts in other groups, so the run visibly
-deploys on the CentOS hosts and skips every other one.
+``\"RedHat\"`` family alongside hosts in other families, so the run visibly
+deploys on the RedHat hosts and skips every other one.
 
 Run it with::
 
@@ -128,17 +128,17 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. The ``dnf``
-    operations below only make sense on a CentOS host, so the guard keeps
+    operations below only make sense on a RedHat host, so the guard keeps
     them (and the facts they read) off the Alpine and Ubuntu hosts.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
@@ -147,7 +147,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError),
     and identical on every host: eligibility is expressed with the
-    ``when=is_centos`` guard each request carries, not with an ``if``.
+    ``when=is_redhat`` guard each request carries, not with an ``if``.
 
     Both operations need root -- installing a system package and removing
     a root-owned file under ``/etc/httpd/conf.d/`` -- so both are flagged
@@ -158,7 +158,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Install httpd",
         packages=("httpd",),
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
     yield op(
         files.file,
@@ -166,7 +166,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         path=HTTPD_WELCOME_CONF,
         present=False,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -179,7 +179,7 @@ async def main() -> None:
         # --dry: prepare phase only. Facts are still gathered over SSH (read-only)
         # so the plan reflects each host's real pre-deployment state; no command
         # that mutates a host is sent. A request the ``when`` guard rejects is
-        # planned as [skipped: when guard is_centos] without materializing it,
+        # planned as [skipped: when guard is_redhat] without materializing it,
         # so its fact is not read on that host either.
         plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("\n== Plan (prepare phase, --dry) ==")

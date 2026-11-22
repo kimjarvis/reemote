@@ -13,19 +13,19 @@ each reads a single fact, and the facts themselves are documented on the
 [`dnf` module page](../../modules/dnf.md).
 
 Every script reads the shared project-root `inventory.json` (validated up
-front with `validate_inventory`) and guards on the `"centos"` group with a
-stable module-level `is_centos` predicate (`host.group == "centos"`), the
+front with `validate_inventory`) and guards on the `"RedHat"` family with a
+stable module-level `is_redhat` predicate (`host.family == "RedHat"`), the
 same convention as the
 [`composition` demonstrations](../demonstrations/composition.md). The
-operation examples carry `when=is_centos` on every request: the driver skips
+operation examples carry `when=is_redhat` on every request: the driver skips
 a rejected request without materializing it, so on the Alpine and Ubuntu
 hosts neither the `dnf` commands nor the facts behind them run, and plan and
-log render `[skipped: when guard is_centos]` in the request's lockstep slot.
+log render `[skipped: when guard is_redhat]` in the request's lockstep slot.
 The read-only fact examples guard differently by necessity — `gather_fact`
 takes no `when` parameter, so their predicate filters the host list before
-the fan-out and the run prints a `== Skipped (when guard is_centos): ... ==`
-line. The shared inventory holds two CentOS hosts (`web1`, `web2`) alongside
-hosts in other groups, so the skip is visible on every run.
+the fan-out and the run prints a `== Skipped (when guard is_redhat): ... ==`
+line. The shared inventory holds two RedHat hosts (`web1`, `web2`) alongside
+hosts in other families, so the skip is visible on every run.
 
 ## The base example
 
@@ -52,7 +52,7 @@ first-class rather than smuggled through `extra_install_args`. And
 `update_cache=True` yields a scoped `dnf -y makecache` ahead of the
 transaction — Ansible's `update_cache: true` — so a metadata refresh is
 first-class rather than a separate `dnf.makecache` request. The example
-leaves all three unset: httpd resolves from CentOS's default repos and the
+leaves all three unset: httpd resolves from RedHat's default repos and the
 base image's cache is fresh.
 
 ::: dnf_packages
@@ -118,7 +118,7 @@ reemote cannot gate on a same-deploy write determinism-safely, so the
 example places the unconditional refresh right after the `dnf.repo`
 request that ensures the Docker CE file (with the same arguments as the
 repo example above, so the shared hosts converge on one content). Both
-requests ride under `sudo` and carry the `is_centos` guard.
+requests ride under `sudo` and carry the `is_redhat` guard.
 
 ::: dnf_makecache
     options:
@@ -159,17 +159,17 @@ reemote's `dnf.rpm` installs a binary `.rpm` that must already be on the host
 example therefore stages the file itself first: a demo-side `curl` one-liner (a
 raw `StringCommand`, the same pattern as `apt_deb.py`'s `download_deb`)
 downloads `sl` — the small steam-locomotive `ls` joke, whose only library
-dependency `ncurses-libs` is part of the CentOS base — onto the host before
+dependency `ncurses-libs` is part of the RedHat base — onto the host before
 `dnf.rpm` reads it. The install rides under `sudo` (installing a package needs
 root), and the script yields the same install request twice — the second is a
 guaranteed no-op in the apply phase, because the first install is visible to it
 through the fresh per-step fact cache (in the prepare phase, where nothing is
 sent, both plan as changes). A final `present=False` request then removes `sl`
-again, so the example is **self-restoring**: it leaves the shared CentOS hosts
+again, so the example is **self-restoring**: it leaves the shared RedHat hosts
 as it found them and every run starts from the same not-installed state.
 
 Unlike `dnf.key`'s import below, this example applies cleanly even on the
-SELinux `staff_t`-confined CentOS hosts: `dnf.rpm`'s install is a *plain*
+SELinux `staff_t`-confined RedHat hosts: `dnf.rpm`'s install is a *plain*
 `sudo rpm -i <src>` (no `sh -c` wrapper), and a direct `sudo rpm` exec
 transitions to the privileged rpm domain that may write the rpm database;
 the removal is `sudo dnf remove -y sl`, which works the same way.
@@ -218,8 +218,8 @@ host without the legacy key plans a no-op. The erase is a *plain* `sudo rpm
 -e` (a single command, no `sh -c` wrapper), so — like `dnf.rpm` above and
 unlike the wrapped import — it applies cleanly even on the confined hosts.
 
-**Confinement caveat (CentOS hosts, import direction).** The dry-run plan and
-the pytest suite always pass, but the live apply is blocked on a CentOS host
+**Confinement caveat (RedHat hosts, import direction).** The dry-run plan and
+the pytest suite always pass, but the live apply is blocked on a RedHat host
 whose sudo is confined to SELinux `staff_t`. The scp spool lands as the login
 user's `0600` file, and the elevated `sh -c 'rpm --import …'` wrapper runs in
 `staff_t` without `CAP_DAC_OVERRIDE`, so it cannot even read that spool — rpm

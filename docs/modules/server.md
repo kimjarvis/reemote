@@ -257,7 +257,7 @@ separator) and replays the parts into a scratch `etc` directory that the
 come from the most precise source available (a distro-specific release file
 supplies the minor when `/etc/os-release` exposes only a major version);
 `minor` is `None` when no source provides it (e.g. CentOS Stream). `name` is
-the pretty form of the distro id (`centos` → `CentOS`), and `family` is the
+the pretty form of the distro id (`centos` → `RedHat`), and `family` is the
 Ansible-style OS family the distro groups under (`centos`/`rhel`/`fedora`/
 `rocky`/`almalinux` → `RedHat`, `ubuntu`/`debian` → `Debian`, `arch` →
 `Archlinux`, `alpine` → `Alpine`, `opensuse-leap` → `Suse`) — resolved from

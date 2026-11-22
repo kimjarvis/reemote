@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: mount a data filesystem and unmount a scratch one on real CentOS hosts.
+"""Example: mount a data filesystem and unmount a scratch one on real RedHat hosts.
 
 This is a *usage* example, not part of the library. It shows reemote's
 ``server.mount`` operation, baseline ``server.mount`` parity for managing
@@ -29,7 +29,7 @@ first awaits ``provision_mounts`` from the sibling ``provision.py``, which
 creates ``/data`` and ``/scratch`` with ``files.directory`` and attaches a
 64M loop-backed ext4 image as ``/dev/sdb1`` (the demo hosts have no spare
 disk, only ``/dev/sda``). Both steps are idempotent and scoped to the
-``"centos"`` group, so the example runs even on a host where none of this
+``\"RedHat\"`` family, so the example runs even on a host where none of this
 storage exists. The loop attachment does not survive a reboot, but
 provisioning re-attaches the existing image without reformatting it. A
 ``mount``/``umount`` that still exits non-zero (a busy filesystem on
@@ -49,14 +49,14 @@ uses the *default* factory (``Host.from_inventory``): each plain ``Host``
 lazily opens an asyncssh connection, reads ``/proc/self/mountinfo`` for real,
 and runs ``mount``/``umount`` under sudo where needed.
 
-Every request carries ``when=is_centos``, the declarative eligibility
+Every request carries ``when=is_redhat``, the declarative eligibility
 guard: the predicate reads only **static** inventory data --
-``host.group``, set by the ``"group"`` key of the inventory entry -- and
+``host.family``, set by the ``\"family\"`` key of the inventory entry -- and
 is a stable module-level function, so the prepare and apply phases reach
 the same skip decision. The driver skips a rejected request without
-materializing it, so on hosts outside the ``"centos"`` group neither the
+materializing it, so on hosts outside the ``"RedHat"`` family neither the
 commands nor the facts behind them run, and plan and log render the step
-as ``[skipped: when guard is_centos]`` in its lockstep slot.
+as ``[skipped: when guard is_redhat]`` in its lockstep slot.
 
 The path is resolved from ``__file__``, so the example works from any
 working directory; point ``INVENTORY_PATH`` at your own file (or edit
@@ -117,15 +117,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
@@ -144,7 +144,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         fs_type="ext4",
         options=("rw", "noatime"),
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
     yield op(
         server.mount,
@@ -152,7 +152,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         path="/scratch",
         mounted=False,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -163,7 +163,7 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Provision the mount points and the loop-backed /dev/sdb1 on the
-        # CentOS hosts before anything below reads or mutates mount state,
+        # RedHat hosts before anything below reads or mutates mount state,
         # so the example runs even on a host with no spare disk (see
         # provision.py).
         print("\n== Provisioning mount prerequisites (provision.py) ==")

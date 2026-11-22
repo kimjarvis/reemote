@@ -4,7 +4,7 @@
 | --- | --- |
 | Role | [`geerlingguy.postgresql`](https://github.com/geerlingguy/ansible-role-postgresql) |
 | Program | [`ansible-role-postgresql.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/ansible-role-postgresql/ansible-role-postgresql.py) |
-| Target | **CentOS** — hosts in the inventory group `"centos"` (CentOS Stream 9 or 10) |
+| Target | **RedHat** — hosts in the `"RedHat"` OS family (CentOS Stream 9 or 10) |
 | Inventory | [`inventory.json`](https://github.com/kimjarvis/reemote/blob/main/inventory.json) at the project root |
 | Scope | the role's whole default RedHat path — setup, initialize, configure, service, users, databases, privileges, handler |
 | Offline test | [`tests/test_roles_ansible_role_postgresql.py`](https://github.com/kimjarvis/reemote/blob/main/tests/test_roles_ansible_role_postgresql.py) |
@@ -50,7 +50,7 @@ automatically.
 
 ### 1.2 Control machine
 
-- **SSH access** to each `centos` host with the key named in its `connection`
+- **SSH access** to each RedHat host with the key named in its `connection`
   (`~/.ssh/id_ed25519` for the shipped `web1`/`web2` entries).
 - No other egress is needed: the packages install from the target's own dnf
   repositories.
@@ -73,14 +73,14 @@ automatically.
   package deploy for that reason.
 - `en_US.UTF-8` locale availability: the role's `postgresql_db` defaults
   (`lc_collate`/`lc_ctype`) need the locale present in glibc — stock on
-  CentOS. Override per database item if yours differs.
+  RedHat. Override per database item if yours differs.
 
 ### 1.4 Inventory: what you must add
 
 **Nothing is mandatory.** The shipped `inventory.json` already has two
-`centos`-group hosts (`web1`, `web2`); the role defaults apply as-is (install,
+RedHat-family hosts (`web1`, `web2`); the role defaults apply as-is (install,
 initialize, configure, start — no databases/users/privileges). Role variables
-are optional extra keys on a `centos` entry, e.g.:
+are optional extra keys on a RedHat-family entry, e.g.:
 
 ```json
 {
@@ -102,7 +102,7 @@ are optional extra keys on a `centos` entry, e.g.:
 ```
 
 The other entries (`alpine`, `ubuntu`) need no changes. They are not in the
-`centos` group, so `when=is_centos` skips them and **they are never
+RedHat family, so `when=is_redhat` skips them and **they are never
 contacted** — a skipped request is not materialized at all.
 
 ---
@@ -128,7 +128,7 @@ What you get, per deploy:
 == Inventory loaded from /home/kim/reemote/inventory.json ==
 alpine, web1, web2, ubuntu
 
-== Skipped (when guard is_centos): alpine, ubuntu ==
+== Skipped (when guard is_redhat): alpine, ubuntu ==
 == Frozen PostgreSQL plans ==
 web1: PostgreSQL 13 (EL9) -> /var/lib/pgsql/data (fresh, will initdb), auth=md5
 web2: PostgreSQL 13 (EL9) -> /var/lib/pgsql/data (fresh, will initdb), auth=md5
@@ -161,7 +161,7 @@ Failures are typed and printed to stderr with exit status 1 — no traceback:
 | Error | Meaning |
 | --- | --- |
 | `OSError` / `JSONDecodeError` | `inventory.json` missing/unreadable/not JSON |
-| `ValueError` | a role variable is invalid, the distribution is not CentOS/RHEL (or is Fedora/Amazon), the major has no pinned vars, an exotic `postgresql_privs` type (issue #29 boundary), or `initdb` exited non-zero |
+| `ValueError` | a role variable is invalid, the distribution is not RedHat/RHEL (or is Fedora/Amazon), the major has no pinned vars, an exotic `postgresql_privs` type (issue #29 boundary), or `initdb` exited non-zero |
 | `TypeError` | a role variable has the wrong type, or the gathered facts carry no integer major version |
 | `ImportError` | Jinja2 is missing — run with `--with jinja2` |
 | `InventoryError` | the document parsed but violates the inventory schema (names the entry index) |
@@ -218,7 +218,7 @@ state) and both passes must yield the identical request sequence. The role's
 and its handler all read mutable state, so they move into the barriers:
 
 ```
-load_inventory + validate ──► targets = group "centos" ──► role_settings (no host contacted)
+load_inventory + validate ──► targets = family "RedHat" ──► role_settings (no host contacted)
 │
 ├─ gather: LinuxDistribution (vars dispatch + family guard)
 │          FipsEnabled (auth-method ternary, #30)
@@ -335,7 +335,7 @@ Every one is recorded in a comment at its site in the program.
 | D7 | `become_user: postgres` becomes a second inventory view with `privilege.sudo_user` | run-as users come from the inventory, never from an operation — the deliberate reemote boundary |
 | D8 | `ansible_ssh_pipelining` is moot | reemote owns its transport |
 | D9 | The psycopg2 Python library is still installed | parity with the role (Ansible's modules need it); reemote itself drives the `psql` CLI |
-| D10 | Non-`centos`-group hosts are skipped, not failed | the migration targets one OS; the shared inventory holds Alpine and Ubuntu hosts that must not be touched |
+| D10 | Non-RedHat-family hosts are skipped, not failed | the migration targets one OS; the shared inventory holds Alpine and Ubuntu hosts that must not be touched |
 
 ---
 
@@ -347,7 +347,7 @@ persistent `SimulatedHost`s — the real driver, prepare + apply, plus a
 `dry=True` preview per deploy. It proves: the first pass installs the
 packages, writes the profile/conf/pg_hba files, runs `initdb` exactly once as
 postgres, creates the database/user/grants, and restarts the service only on
-notified hosts; non-CentOS hosts are never touched; **the second pass reports
+notified hosts; non-RedHat hosts are never touched; **the second pass reports
 `changed=False` everywhere, runs no `initdb` and queues no handler** (the
 elevated `test -e` stat probe still runs each pass — it is a read, not a
 mutation); the GAP-2 fill leaves unlisted flags alone (a pre-existing

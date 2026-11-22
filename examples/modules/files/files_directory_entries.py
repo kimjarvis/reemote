@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: gather the ``files.DirectoryEntries`` fact on real CentOS hosts.
+"""Example: gather the ``files.DirectoryEntries`` fact on real RedHat hosts.
 
 This is a *usage* example, not part of the library. Like
 ``examples/modules/files/files_find_files.py``, it reads a single **fact**
@@ -16,13 +16,13 @@ two-phase execution model:
 2. Materialize each entry into a plain ``Host`` with the default
    ``Host.from_inventory`` factory. Each ``Host`` lazily opens an asyncssh
    connection from its ``connection`` data when a fact is gathered.
-3. Guard the gather with a ``when`` predicate: ``is_centos`` reads only
-   **static** inventory data -- ``host.group`` -- and the fact is gathered
+3. Guard the gather with a ``when`` predicate: ``is_redhat`` reads only
+   **static** inventory data -- ``host.family`` -- and the fact is gathered
    on the hosts that pass it. ``gather_fact`` itself takes no ``when``
    parameter, so the predicate filters the host list before the fan-out --
    the direct equivalent of a driver-side skip. Hosts outside the
-   ``"centos"`` group are named on a
-   ``== Skipped (when guard is_centos): ... ==`` line and never connected.
+   ``\"RedHat\"`` family are named on a
+   ``== Skipped (when guard is_redhat): ... ==`` line and never connected.
 4. Gather ``DirectoryEntries`` for ``/etc/yum.repos.d`` on the guarded
    hosts at once with the driver's ``gather_fact`` helper -- it fans the
    fact's ``process`` coroutine out across the inventory with
@@ -41,7 +41,7 @@ type without recursing (Ansible's ``find`` with ``recurse: false``, the
 included, the directory itself is not, entries come back sorted by name,
 and the ``|| true`` guard masks a missing start path -- or a BSD find
 without ``-printf``, the fact is GNU-only -- to ``[]``. Here the question
-is the CentOS mirror of the apt legacy-``.list`` cleanup: which repo
+is the RedHat mirror of the apt legacy-``.list`` cleanup: which repo
 definitions exist in ``/etc/yum.repos.d`` at all? The listing minus the
 tracked ``.repo`` files is the set of stale definitions to remove --
 names the deploy author does not know, discovered in one read. For
@@ -78,7 +78,7 @@ from reemote import (
     validate_inventory,
 )
 
-# The CentOS package manager's repo-definition directory: every installed
+# The RedHat package manager's repo-definition directory: every installed
 # repository owns a .repo file here, and the shallow listing enumerates
 # them (plus whatever else shares the directory) in one read.
 REPOS_D = "/etc/yum.repos.d"
@@ -103,15 +103,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 async def main() -> None:
@@ -129,10 +129,10 @@ async def main() -> None:
         # predicate is the equivalent of the driver skipping a guarded
         # request on ineligible hosts -- the skipped hosts are never
         # connected, exactly as a skipped request is never materialized.
-        hosts = [host for host in all_hosts if is_centos(host)]
+        hosts = [host for host in all_hosts if is_redhat(host)]
         skipped = [host.name for host in all_hosts if host not in hosts]
         if skipped:
-            print("\n== Skipped (when guard is_centos): " + ", ".join(skipped) + " ==")
+            print("\n== Skipped (when guard is_redhat): " + ", ".join(skipped) + " ==")
         # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans DirectoryEntries.process out with asyncio.gather and returns
         # a host-name-keyed mapping, so the SSH round-trips overlap instead

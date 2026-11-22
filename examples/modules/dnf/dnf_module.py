@@ -52,17 +52,17 @@ unchanged: ``dnf module enable`` refuses to switch streams while packages from
 the currently-active stream are installed, so remove those packages (or run
 ``dnf module reset``) before switching.
 
-Every request also carries ``when=is_centos``, the declarative eligibility
+Every request also carries ``when=is_redhat``, the declarative eligibility
 guard (see ``examples/demonstrations/composition/composed_when_guard.py``).
-The predicate reads only **static** inventory data -- ``host.group``, set by
-the ``"group"`` key of the inventory entry -- and is a stable module-level
+The predicate reads only **static** inventory data -- ``host.family``, set by
+the ``\"family\"`` key of the inventory entry -- and is a stable module-level
 function, so the prepare and apply phases reach the same skip decision. The
 driver skips a rejected request without materializing it, so on the Alpine
 and Ubuntu hosts neither the commands nor the ``DnfEnabledModules`` fact
 behind them run, and plan and log render the step as
-``[skipped: when guard is_centos]`` in its lockstep slot. The shared
-``inventory.json`` holds two hosts in the ``"centos"`` group alongside hosts
-in other groups, so the run visibly enables the stream on the CentOS hosts
+``[skipped: when guard is_redhat]`` in its lockstep slot. The shared
+``inventory.json`` holds two hosts in the ``"RedHat"`` family alongside hosts
+in other groups, so the run visibly enables the stream on the RedHat hosts
 and skips every other one.
 
 Run it with::
@@ -119,17 +119,17 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. ``dnf`` only
-    exists on the CentOS hosts, so the guard keeps the module enables (and
+    exists on the RedHat hosts, so the guard keeps the module enables (and
     the facts they read) off the Alpine and Ubuntu hosts.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
@@ -138,7 +138,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError),
     and identical on every host: eligibility is expressed with the
-    ``when=is_centos`` guard each request carries, not with an ``if``.
+    ``when=is_redhat`` guard each request carries, not with an ``if``.
     The first request enables the stream; the second carries the same
     arguments and is a guaranteed no-op in the apply phase, because the
     first enable is already visible through the fresh per-step fact cache.
@@ -152,7 +152,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         module=POSTGRESQL_MODULE,
         stream=POSTGRESQL_STREAM,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
     yield op(
         dnf.module,
@@ -160,7 +160,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         module=POSTGRESQL_MODULE,
         stream=POSTGRESQL_STREAM,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -173,7 +173,7 @@ async def main() -> None:
         # --dry: prepare phase only. Facts are still gathered over SSH (read-only)
         # so the plan reflects each host's real pre-deployment state; no command
         # that mutates a host is sent. A request the ``when`` guard rejects is
-        # planned as [skipped: when guard is_centos] without materializing it,
+        # planned as [skipped: when guard is_redhat] without materializing it,
         # so its fact is not read on that host either.
         plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("\n== Plan (prepare phase, --dry) ==")

@@ -12,8 +12,8 @@ variable is read from the inventory entry's extra keys (reemote's ``host_vars``
 mechanism), so ``epel_repo_disable`` and friends live beside ``host``/
 ``connection`` in ``inventory.json``.
 
-Target: hosts in the inventory group ``"centos"``. Every request carries
-``when=is_centos``, and a skipped request is never materialized -- the Alpine
+Target: hosts in the ``\"RedHat\"`` OS family. Every request carries
+``when=is_redhat``, and a skipped request is never materialized -- the Alpine
 and Ubuntu hosts in the shared inventory are not even contacted. The role's
 URLs interpolate ``ansible_facts.distribution_major_version``; that fact read
 moves to ``main()`` (``LinuxDistribution``), so EPEL 7/8/9/10 all resolve from
@@ -174,15 +174,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
     Reads only static inventory data and stays a stable module-level function,
     so both deploy phases reach the same eligibility decision. A skipped
     request is never materialized, so the Alpine and Ubuntu hosts in the shared
     inventory are not contacted at all.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def _ansible_bool(value: Any, key: str) -> bool:
@@ -281,7 +281,7 @@ def build_install(
             src=plan["key_stream"],
             keyid=plan["keyid"],
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
         # yum downloads the URL on the target; dnf.rpm installs a .rpm that
         # already exists on the host, so stage it control-side first. The
@@ -294,14 +294,14 @@ def build_install(
             dest=plan["rpm_spool"],
             mode="0644",
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
         yield op(
             dnf.rpm,
             name="Install the EPEL release RPM.",
             src=plan["rpm_spool"],
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
         # No Ansible counterpart: yum leaves no local file. The spool is
         # removed so a later pass never installs from a stale staged RPM.
@@ -311,7 +311,7 @@ def build_install(
             path=plan["rpm_spool"],
             present=False,
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
 
     return install
@@ -349,7 +349,7 @@ def build_configure(
             create=False,
             mode="0644",
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
         yield op(
             files.file,
@@ -357,7 +357,7 @@ def build_configure(
             path=plan["repofile"],
             mode="0644",
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
 
     return configure
@@ -389,12 +389,12 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         hosts = [Host.from_inventory(entry) for entry in inventory]
-        targets = [host for host in hosts if is_centos(host)]
-        skipped = [host.name for host in hosts if not is_centos(host)]
+        targets = [host for host in hosts if is_redhat(host)]
+        skipped = [host.name for host in hosts if not is_redhat(host)]
         if skipped:
-            print("\n== Skipped (when guard is_centos): " + ", ".join(skipped) + " ==")
+            print("\n== Skipped (when guard is_redhat): " + ", ".join(skipped) + " ==")
         if not targets:
-            print("\nNo host in the inventory group 'centos'; nothing to deploy.")
+            print("\nNo host in the RedHat family; nothing to deploy.")
             return
 
         # The role's variable resolution, before any host is contacted.
@@ -412,7 +412,7 @@ async def main() -> None:
                 info = distributions[host.name]
                 if info.get("family") != "RedHat":
                     raise ValueError(
-                        f"{host.name}: group 'centos' but the distribution is "
+                        f"{host.name}: declared RedHat family but the distribution is "
                         f"{info.get('name')!r} (family {info.get('family')!r}); "
                         "the EPEL role targets the RHEL family"
                     )

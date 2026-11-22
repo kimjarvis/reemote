@@ -49,13 +49,13 @@ transparently re-opens them; the script closes them again afterwards. Run 2
 builds fresh hosts from the same inventory via the default factory.
 
 The inventory is read from the project root's ``inventory.json`` (validated
-up front with ``validate_inventory``), which holds hosts in the ``"centos"``
-group alongside hosts in other groups. Both deploys carry ``when=is_centos``
-so the ``dnf``/``files`` steps run only on the CentOS hosts, and the fact
+up front with ``validate_inventory``), which holds hosts in the ``\"RedHat\"``
+family alongside hosts in other families. Both deploys carry ``when=is_redhat``
+so the ``dnf``/``files`` steps run only on the RedHat hosts, and the fact
 snapshot is guarded the same way: ``gather_fact`` takes no ``when`` parameter,
-so the script filters the materialized host list to the ``centos`` group
+so the script filters the materialized host list to the RedHat family
 before the fan-out -- the ``DnfPackages`` read would fail on the Alpine and
-Ubuntu hosts, which have no ``dnf``. The snapshot is therefore keyed by CentOS
+Ubuntu hosts, which have no ``dnf``. The snapshot is therefore keyed by RedHat
 host only, and deploy 2's lookup uses a default for the hosts it never covers.
 
 Run it with::
@@ -121,17 +121,17 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. It guards both
     the requests and (as a host-list filter) the ``DnfPackages`` snapshot,
     keeping the ``dnf`` work off the Alpine and Ubuntu hosts.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def install_nginx(host: Host) -> Generator[OperationRequest]:
@@ -141,7 +141,7 @@ def install_nginx(host: Host) -> Generator[OperationRequest]:
         name="Install nginx",
         packages=("nginx",),
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -154,9 +154,9 @@ def build_configure_nginx(
     ordinary dict lookup on a snapshot taken BEFORE this deploy's prepare
     phase -- so both phases resolve the branch identically. Reading the live
     ``DnfPackages`` fact here instead would re-introduce the phase-dependent
-    branch and trip the determinism guard. The snapshot only covers the CentOS
-    hosts (the gather was filtered by ``is_centos``), so the lookup defaults to
-    empty for the others and the request also carries ``when=is_centos``.
+    branch and trip the determinism guard. The snapshot only covers the RedHat
+    hosts (the gather was filtered by ``is_redhat``), so the lookup defaults to
+    empty for the others and the request also carries ``when=is_redhat``.
     """
 
     def configure_nginx(host: Host) -> Generator[OperationRequest]:
@@ -166,7 +166,7 @@ def build_configure_nginx(
                 name="Stage nginx.conf",
                 src=NGINX_CONF,
                 dest=STAGED_CONF,
-                when=is_centos,
+                when=is_redhat,
             )
 
     return configure_nginx
@@ -180,7 +180,7 @@ async def main() -> None:
 
         # Run 1: prepare + apply the install. Its apply-phase join is the
         # barrier guaranteeing every host finished before the snapshot below.
-        # The when=is_centos guard skips the install on the non-CentOS hosts.
+        # The when=is_redhat guard skips the install on the non-RedHat hosts.
         plans, report, hosts = await run(inventory, install_nginx)
         print("\n== Deploy 1: install nginx ==")
         print(format_plan(plans))
@@ -189,16 +189,16 @@ async def main() -> None:
 
         # The snapshot: one concurrent read of the real post-install state,
         # keyed by host name. gather_fact has no ``when`` parameter, so the
-        # is_centos predicate filters the host list before the fan-out -- the
+        # is_redhat predicate filters the host list before the fan-out -- the
         # DnfPackages fact would fail on the Alpine/Ubuntu hosts (no dnf).
         # run closed these hosts, but connect is lazy, so gather_fact re-opens
         # the eligible ones; close them all again when done.
-        centos_hosts = [host for host in hosts if is_centos(host)]
-        skipped = [host.name for host in hosts if not is_centos(host)]
+        redhat_hosts = [host for host in hosts if is_redhat(host)]
+        skipped = [host.name for host in hosts if not is_redhat(host)]
         if skipped:
-            print("\n== Skipped (when guard is_centos): " + ", ".join(skipped) + " ==")
+            print("\n== Skipped (when guard is_redhat): " + ", ".join(skipped) + " ==")
         try:
-            installed = await gather_fact(centos_hosts, dnf.DnfPackages)
+            installed = await gather_fact(redhat_hosts, dnf.DnfPackages)
         finally:
             for host in hosts:
                 await host.aclose()

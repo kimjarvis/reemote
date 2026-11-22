@@ -87,7 +87,7 @@ async def main() -> None:
     await run(inventory, restart)                          # restart on changed hosts
 ```
 
-The runnable version of this — with a `when=is_centos` guard, `--dry` handler
+The runnable version of this — with a `when=is_redhat` guard, `--dry` handler
 preview and inventory loading — is
 [`handler_restart.py`](examples/demonstrations/composition.md#restarting-a-service-only-when-a-notifying-operation-changed).
 
@@ -295,7 +295,7 @@ determinism guard holds.
 fact returns a `family` field — the Ansible-style OS family the distro groups
 under (`RedHat`, `Debian`, `Suse`, `Archlinux`, `Alpine`, …), resolved from the
 distro id and its `ID_LIKE`. Key the dispatch table on `family` and one entry
-covers a whole family — RHEL, CentOS, Rocky, AlmaLinux and Fedora all collapse
+covers a whole family — RHEL, RedHat, Rocky, AlmaLinux and Fedora all collapse
 to `RedHat` — instead of enumerating every distribution name.
 
 ### The mapping
@@ -358,7 +358,7 @@ from reemote import Host, apt, dnf, gather_fact, op, run, server, validate_inven
 
 # The OS-specific vars, as a module-level table keyed by the OS family
 # LinuxDistribution reports -- one vars/<family>.yml per family, collapsed into
-# data the factory can read. One entry now covers a whole family: RHEL, CentOS,
+# data the factory can read. One entry now covers a whole family: RHEL, RedHat,
 # Rocky, AlmaLinux and Fedora all report family "RedHat". The value carries the
 # package manager too, so the dispatch swaps apt for dnf as well as the package
 # name.
@@ -429,7 +429,7 @@ identical gather → snapshot → factory sequence.
   OS family (`RedHat`, `Debian`, `Suse`, `Archlinux`, `Alpine`, …) that groups
   the RHEL rebuilds and the Debian derivatives, so one table entry covers a
   whole family — the direct equivalent of `ansible_os_family`. `name` is the
-  per-distro pretty form (`CentOS`, `Rocky Linux`, `Ubuntu`, …); reach for it,
+  per-distro pretty form (`RedHat`, `Rocky Linux`, `Ubuntu`, …); reach for it,
   or `major`/`release_meta`, only when a role splits finer than a family. An
   unrecognised distro's `family` falls back to its `name`, and a host with no
   release files reports `family=None` — neither matches a family key, so it

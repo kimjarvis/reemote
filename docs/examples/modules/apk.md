@@ -48,7 +48,7 @@ The inventory is read from the project root's `inventory.json` (validated up
 front with `validate_inventory`), and every request carries
 `when=is_alpine` — the request-level counterpart of the `when` guard the
 [`composed_when_guard`](../demonstrations/composition.md) demonstration shows
-for the `centos` group. The predicate reads only static inventory data
+for the RedHat family. The predicate reads only static inventory data
 (`host.group`) and is a stable module-level function, so both phases reach the
 same decision; the driver skips a rejected request without materializing it,
 so on a non-Alpine host neither the `apk` commands nor the

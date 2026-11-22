@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Provision the mount prerequisites on the CentOS demo hosts before ``server_mount.py`` runs.
+"""Provision the mount prerequisites on the RedHat demo hosts before ``server_mount.py`` runs.
 
 This is a *usage* example, not part of the library. It is the prerequisite
 step for ``server_mount.py``: ``server.mount`` manages mounted filesystems,
@@ -38,10 +38,10 @@ exit status is data, so a non-zero result is raised as a ``CommandError``
 naming the host, while an unreachable host or a rejected sudo credential
 still raises ``HostConnectionError`` / ``PrivilegeError``.
 
-Both steps are scoped to the ``"centos"`` inventory group: ``provision_mounts``
-filters the inventory to that group before contacting anything, so the other
+Both steps are scoped to the ``"RedHat"`` inventory family: ``provision_mounts``
+filters the inventory to that family before contacting anything, so the other
 demo hosts are never touched. ``create_mount_points`` also carries
-``when=is_centos`` -- the same static guard the mount example uses -- so the
+``when=is_redhat`` -- the same static guard the mount example uses -- so the
 deploy is safe to drive against a full inventory as well.
 
 The module is importable (``from provision import provision_mounts``) and
@@ -124,15 +124,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``), never a mutable fact,
+    Reads only static inventory data (``host.family``), never a mutable fact,
     and stays a stable module-level function -- the two rules every ``when``
     predicate follows so both deploy phases reach the same eligibility
     decision and the determinism guard holds.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def create_mount_points(host: Host) -> Generator[OperationRequest]:
@@ -151,15 +151,15 @@ def create_mount_points(host: Host) -> Generator[OperationRequest]:
             name=f"Ensure mount point {path}",
             path=path,
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
 
 
 async def provision_mounts(inventory: list[dict[str, Any]]) -> None:
-    """Provision the mount points and the loop-backed device on the CentOS hosts.
+    """Provision the mount points and the loop-backed device on the RedHat hosts.
 
     The prerequisite ``server_mount.py`` awaits before its own logic. Scoped
-    to the ``"centos"`` group: the inventory is filtered first, so no other
+    to the ``"RedHat"`` family: the inventory is filtered first, so no other
     demo host is materialized or contacted. Returns nothing and prints
     nothing -- it is a pure helper; the caller (the example's ``main`` or
     this module's) owns the output.
@@ -176,21 +176,21 @@ async def provision_mounts(inventory: list[dict[str, Any]]) -> None:
     A non-zero setup exit is raised as a ``CommandError`` naming the host
     (the action's exit status is otherwise data); an unreachable host or a
     rejected sudo credential raises ``HostConnectionError`` /
-    ``PrivilegeError`` from either step. With no CentOS host in the
+    ``PrivilegeError`` from either step. With no RedHat host in the
     inventory this is a no-op.
     """
-    centos = [entry for entry in inventory if entry.get("group") == "centos"]
-    if not centos:
+    redhat = [entry for entry in inventory if entry.get("family") == "RedHat"]
+    if not redhat:
         return
 
     # 1. Create the mount points. ``run`` owns and closes the hosts it
     #    materializes.
-    await run(centos, create_mount_points)
+    await run(redhat, create_mount_points)
 
     # 2. Provision the loop-backed device. ``gather_action`` re-connects
     #    (the deploy closed its hosts) and closes them again when it
     #    finishes, so build fresh ones.
-    hosts = [Host.from_inventory(entry) for entry in centos]
+    hosts = [Host.from_inventory(entry) for entry in redhat]
     results = await gather_action(hosts, Shell, command=LOOP_COMMAND, sudo=True)
     for name, result in results.items():
         if result["exit_status"] != 0:
@@ -217,12 +217,12 @@ async def main() -> None:
     print(f"== Inventory loaded from {INVENTORY_PATH} ==")
     print(", ".join(entry["host"] for entry in inventory))
 
-    centos = [entry["host"] for entry in inventory if entry.get("group") == "centos"]
-    if not centos:
-        print("\n== No host in the 'centos' group; nothing to provision ==")
+    redhat = [entry["host"] for entry in inventory if entry.get("family") == "RedHat"]
+    if not redhat:
+        print("\n== No host in the RedHat family; nothing to provision ==")
         return
 
-    print(f"\n== Provisioning mount prerequisites on: {', '.join(centos)} ==")
+    print(f"\n== Provisioning mount prerequisites on: {', '.join(redhat)} ==")
     try:
         await provision_mounts(inventory)
     except (CommandError, HostConnectionError, PrivilegeError) as exc:

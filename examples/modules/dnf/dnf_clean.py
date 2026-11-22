@@ -36,13 +36,13 @@ deploy. The role also marks its step ``failed_when: false``; reemote
 keeps its fail-fast convention -- a failing clean raises ``CommandError``
 at apply, which ``main`` reports without a traceback.
 
-Both requests carry ``when=is_centos`` (static inventory data only) and
+Both requests carry ``when=is_redhat`` (static inventory data only) and
 ``sudo=True``: writing the repo file and removing cached data from the
 shared cache need root. The script reads the shared project-root
 ``inventory.json`` and validates it up front, runs the prepare phase
 (``dry=True``) to print the plan, then the real run -- the same two-phase
 shape as ``dnf_repo.py``, whose plain Docker CE arguments it reuses so the
-shared CentOS hosts converge on one repo-file content.
+shared RedHat hosts converge on one repo-file content.
 
 Run it with::
 
@@ -101,22 +101,22 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``), never a mutable fact,
+    Reads only static inventory data (``host.family``), never a mutable fact,
     and stays a stable module-level function -- the two rules every ``when``
     predicate follows so both deploy phases reach the same eligibility
-    decision. ``dnf`` only exists on the CentOS hosts.
+    decision. ``dnf`` only exists on the RedHat hosts.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
     """Ensure the repo file, then drop only that repo's cached metadata.
 
     Branch-free: the request sequence is identical in both phases and on
-    every host; eligibility rides the ``when=is_centos`` guard. The repo
+    every host; eligibility rides the ``when=is_redhat`` guard. The repo
     write is content-idempotent (a no-op once the file matches), while the
     scoped clean is stateless and runs on every deploy -- the
     unconditional-refresh design, since gating on the same-deploy write
@@ -127,7 +127,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         dnf.repo,
         name="Ensure Docker CE repo",
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
         **DOCKER_REPO,
     )
     yield op(
@@ -136,7 +136,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         what="metadata",
         repos=("DockerCE",),
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -149,7 +149,7 @@ async def main() -> None:
         # --dry: prepare phase only. Facts are gathered over SSH (read-only)
         # so the plan reflects real pre-deployment state; nothing that
         # mutates a host is sent. The stateless clean plans as a change on
-        # every CentOS host, every run.
+        # every RedHat host, every run.
         plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("\n== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))

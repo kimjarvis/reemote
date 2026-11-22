@@ -10,10 +10,10 @@ driving two different deploys -- a normal "ensure installed" run and a
 patch-window run that upgrades the same packages.
 
 The inventory is read from the project root's ``inventory.json`` (validated
-up front with ``validate_inventory``), which holds hosts in the ``"centos"``
-group alongside hosts in other groups. Both composed deploys carry
-``when=is_centos`` on their ``sub_deploy`` wrapper, so the ``dnf`` steps are
-eligible only on the CentOS hosts; the driver skips them -- without reading
+up front with ``validate_inventory``), which holds hosts in the ``\"RedHat\"``
+family alongside hosts in other families. Both composed deploys carry
+``when=is_redhat`` on their ``sub_deploy`` wrapper, so the ``dnf`` steps are
+eligible only on the RedHat hosts; the driver skips them -- without reading
 the ``DnfPackages`` fact -- on the Alpine and Ubuntu hosts. The guard lives at
 the composition site, not inside ``package_role``, so the factory stays a
 pure package-list-to-deploy transform.
@@ -88,17 +88,17 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. The ``dnf``
-    operations below only make sense on a CentOS host, so the guard keeps
+    operations below only make sense on a RedHat host, so the guard keeps
     them (and the facts they read) off the Alpine and Ubuntu hosts.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def package_role(
@@ -124,16 +124,16 @@ def package_role(
 
 
 # Two intents over the same package list, each a composed deploy. The
-# ``is_centos`` guard sits on the wrapper, so the inner factory request needs
+# ``is_redhat`` guard sits on the wrapper, so the inner factory request needs
 # no guard of its own -- ``when`` composes down to every request it yields.
 install_deploy = compose(
-    sub_deploy(package_role(*WEB_PACKAGES), name_prefix="web", when=is_centos),
+    sub_deploy(package_role(*WEB_PACKAGES), name_prefix="web", when=is_redhat),
 )
 patch_deploy = compose(
     sub_deploy(
         package_role(*WEB_PACKAGES, latest=True),
         name_prefix="web-patch",
-        when=is_centos,
+        when=is_redhat,
     ),
 )
 
@@ -146,7 +146,7 @@ async def main() -> None:
 
         # --dry both intents: prepare phase only, facts gathered read-only
         # over SSH, so the plans show what each would do to the real hosts.
-        # On the non-CentOS hosts the step is [skipped: when guard is_centos].
+        # On the non-RedHat hosts the step is [skipped: when guard is_redhat].
         install_plans, _, _hosts = await run(inventory, install_deploy, dry=True)
         print("\n== Install plan (prepare phase, --dry) ==")
         print(format_plan(install_plans))

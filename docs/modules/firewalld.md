@@ -37,7 +37,7 @@
 <!---
 
 `reemote.modules.firewalld.firewalld` gives complete control over and
-visibility of the firewalld daemon — the default firewall on RHEL, CentOS,
+visibility of the firewalld daemon — the default firewall on RHEL, RedHat,
 Fedora, openSUSE and friends — through the `firewall-cmd` CLI. The baseline
 ships **no firewalld module at all**, so every fact and operation here is a
 reemote original: six facts (`FirewalldStatus`, `FirewalldDefaultZone`,
@@ -174,8 +174,8 @@ the scopes.
 
 The read-only fact-gathering scripts under
 [`examples/modules/firewalld/`](../examples/modules/firewalld.md) gather
-one fact each over `gather_fact` on the shared `inventory.json`'s CentOS
-hosts (the `is_centos` guard filters the host list before the fan-out):
+one fact each over `gather_fact` on the shared `inventory.json`'s RedHat
+hosts (the `is_redhat` guard filters the host list before the fan-out):
 `firewalld_firewalld_status.py`, `firewalld_firewalld_default_zone.py`,
 `firewalld_firewalld_zones.py` (both scopes side by side),
 `firewalld_firewalld_services.py`, `firewalld_firewalld_ipsets.py`

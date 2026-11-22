@@ -37,8 +37,8 @@ from tests.simulated_host import SimulatedHost
 
 # A ``when`` guard used to prove the factory forwards it verbatim: stable,
 # module-level, and reading only static inventory data.
-def is_centos(host: Host) -> bool:
-    return host.group == "centos"
+def is_redhat(host: Host) -> bool:
+    return host.family == "RedHat"
 
 
 # --- changed_hosts: the notification read ------------------------------------
@@ -78,7 +78,7 @@ def test_changed_hosts_never_queues_a_skipped_entry():
                 host="web1",
                 name="Write config",
                 changed=False,
-                reason="when guard is_centos",
+                reason="when guard is_redhat",
                 skipped=True,
             )
         ]
@@ -121,11 +121,11 @@ def test_restart_handler_defaults_to_sudo_on():
 
 
 def test_restart_handler_forwards_privilege_and_guard():
-    deploy = restart_handler({"web1"}, "nginx", sudo=False, when=is_centos)
+    deploy = restart_handler({"web1"}, "nginx", sudo=False, when=is_redhat)
     (request,) = _requests(deploy, Host(name="web1"))
 
     assert request.sudo is Privilege.OFF
-    assert request.when == (is_centos,)
+    assert request.when == (is_redhat,)
 
 
 def test_restart_handler_forwards_sleep():
@@ -228,11 +228,11 @@ def test_reload_handler_yields_a_reloaded_request():
 
 
 def test_reload_handler_forwards_privilege_and_guard():
-    deploy = reload_handler({"web1"}, "nginx", sudo=False, when=is_centos)
+    deploy = reload_handler({"web1"}, "nginx", sudo=False, when=is_redhat)
     (request,) = _requests(deploy, Host(name="web1"))
 
     assert request.sudo is Privilege.OFF
-    assert request.when == (is_centos,)
+    assert request.when == (is_redhat,)
 
 
 def test_reload_handler_yields_one_request_per_service():
@@ -318,7 +318,7 @@ def ensure_nginx_enabled(host: Host):
         service="nginx",
         enabled=True,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -331,7 +331,7 @@ async def test_restart_fires_only_on_the_changed_host():
     changed = changed_hosts(report, {"Ensure nginx enabled"})
     assert changed == frozenset({"web2"})
 
-    restart = restart_handler(changed, "nginx", when=is_centos)
+    restart = restart_handler(changed, "nginx", when=is_redhat)
     plans, handler_report, _hosts = await run(
         INVENTORY, restart, host_factory=host_factory
     )
@@ -356,7 +356,7 @@ async def test_reload_fires_only_on_the_changed_host():
     changed = changed_hosts(report, {"Ensure nginx enabled"})
     assert changed == frozenset({"web2"})
 
-    reload_ = reload_handler(changed, "nginx", when=is_centos)
+    reload_ = reload_handler(changed, "nginx", when=is_redhat)
     plans, handler_report, _hosts = await run(
         INVENTORY, reload_, host_factory=host_factory
     )
@@ -378,7 +378,7 @@ async def test_restart_handler_sleep_splits_the_logged_commands():
     assert report is not None
 
     changed = changed_hosts(report, {"Ensure nginx enabled"})
-    restart = restart_handler(changed, "nginx", sleep=5, when=is_centos)
+    restart = restart_handler(changed, "nginx", sleep=5, when=is_redhat)
     _plans, handler_report, _hosts = await run(
         INVENTORY, restart, host_factory=host_factory
     )

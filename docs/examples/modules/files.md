@@ -32,7 +32,7 @@ matching content" cleanup read),
 `files_find_files_info.py` reads the original `FindFilesInfo` for
 per-hit size/mode/owner/mtime metadata under `/var/log`, and
 `files_directory_entries.py` reads the original `DirectoryEntries` for the
-shallow name/type listing of `/etc/yum.repos.d` (the CentOS mirror of the
+shallow name/type listing of `/etc/yum.repos.d` (the RedHat mirror of the
 legacy apt `.list` cleanup question). They are not rendered here — each reads a
 single fact, and the facts themselves are documented on the
 [`files` module page](../../modules/files.md).

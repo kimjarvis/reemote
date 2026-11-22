@@ -41,7 +41,7 @@ file with a demo-side ``curl`` one-liner (a raw ``StringCommand``, the same
 pattern as ``server_op_sysctl.py``'s ``sysctl_set`` and ``apt_deb.py``'s
 ``download_deb``) yielded before the install, so the ``.rpm`` really exists on
 the host when ``dnf.rpm`` reads it. ``sl`` is deliberately small (~16 KB, and
-its only library dependency ``ncurses-libs`` is part of the CentOS base) so
+its only library dependency ``ncurses-libs`` is part of the RedHat base) so
 ``rpm -i`` installs it without resolving anything; point ``SL_URL`` at any
 standalone ``.rpm`` to install a different package.
 
@@ -55,7 +55,7 @@ both compare against the same pre-deployment state), while the apply phase
 installs on the first and reports the second as a no-op, because the fresh
 per-step fact cache now sees the package the first step installed. A final
 ``present=False`` request then removes ``sl`` again, so the example is
-*self-restoring*: it leaves the shared CentOS hosts as it found them and every
+*self-restoring*: it leaves the shared RedHat hosts as it found them and every
 run starts from the same not-installed state (the same cycle the apt examples
 use to avoid sweep-ordering pollution).
 
@@ -67,17 +67,17 @@ cache, the command is a plain ``rpm -i`` -- not the baseline's defensive
 keeps elevation correct (a ``sudo``-prefixed ``|| ...`` chain would leave its
 fallback arm unprivileged).
 
-Every request also carries ``when=is_centos``, the declarative eligibility
+Every request also carries ``when=is_redhat``, the declarative eligibility
 guard (see ``examples/demonstrations/composition/composed_when_guard.py``).
-The predicate reads only **static** inventory data -- ``host.group``, set by
-the ``"group"`` key of the inventory entry -- and is a stable module-level
+The predicate reads only **static** inventory data -- ``host.family``, set by
+the ``\"family\"`` key of the inventory entry -- and is a stable module-level
 function, so the prepare and apply phases reach the same skip decision. The
 driver skips a rejected request without materializing it, so on the Alpine
 and Ubuntu hosts neither the commands nor the ``RpmPackage`` fact reads
 behind them run, and plan and log render the step as
-``[skipped: when guard is_centos]`` in its lockstep slot. The shared
-``inventory.json`` holds two hosts in the ``"centos"`` group alongside hosts
-in other groups, so the run visibly installs on the CentOS hosts and skips
+``[skipped: when guard is_redhat]`` in its lockstep slot. The shared
+``inventory.json`` holds two hosts in the ``"RedHat"`` family alongside hosts
+in other groups, so the run visibly installs on the RedHat hosts and skips
 every other one.
 
 Run it with::
@@ -143,17 +143,17 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. ``rpm`` and
-    ``dnf`` only exist on the CentOS hosts, so the guard keeps the installs
+    ``dnf`` only exist on the RedHat hosts, so the guard keeps the installs
     (and the facts they read) off the Alpine and Ubuntu hosts.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 async def download_rpm(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
@@ -183,7 +183,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError),
     and identical on every host: eligibility is expressed with the
-    ``when=is_centos`` guard each request carries, not with an ``if``.
+    ``when=is_redhat`` guard each request carries, not with an ``if``.
     The first request stages the file on the host with a demo-side ``curl``
     (``dnf.rpm`` takes a remote path, and a ``.rpm`` is binary so
     ``files.download`` does not apply);
@@ -193,7 +193,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     in the apply phase, because the first install is already visible through
     the fresh per-step fact cache. The last request removes the package again
     (``present=False``), so the example is self-restoring and leaves the shared
-    CentOS hosts as it found them.
+    RedHat hosts as it found them.
 
     Installing and removing a package write to the root-owned rpm database, so
     the three ``dnf.rpm`` requests are flagged ``sudo=True`` and the driver
@@ -202,15 +202,15 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     yield op(
         download_rpm,
         name="Stage sl rpm on the host",
-        when=is_centos,
+        when=is_redhat,
     )
-    yield op(dnf.rpm, name="Install sl rpm", src=SL_RPM, sudo=True, when=is_centos)
+    yield op(dnf.rpm, name="Install sl rpm", src=SL_RPM, sudo=True, when=is_redhat)
     yield op(
         dnf.rpm,
         name="Re-install sl rpm (no-op)",
         src=SL_RPM,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
     yield op(
         dnf.rpm,
@@ -218,7 +218,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         src=SL_RPM,
         present=False,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -231,7 +231,7 @@ async def main() -> None:
         # --dry: prepare phase only. Facts are still gathered over SSH (read-only)
         # so the plan reflects each host's real pre-deployment state; no command
         # that mutates a host is sent. A request the ``when`` guard rejects is
-        # planned as [skipped: when guard is_centos] without materializing it,
+        # planned as [skipped: when guard is_redhat] without materializing it,
         # so its fact is not read on that host either.
         plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("\n== Plan (prepare phase, --dry) ==")

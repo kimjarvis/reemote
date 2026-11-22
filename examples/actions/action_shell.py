@@ -20,10 +20,10 @@ about -- driven through ``gather_action``, the action counterpart of
 3. Each ``Result`` is a tiny ``TypedDict`` -- ``exit_status``, ``stdout``,
    ``stderr``; success is ``exit_status == 0``.
 
-The fan-out is group-guarded: ``is_centos`` (``host.group == "centos"``)
+The fan-out is family-guarded: ``is_redhat`` (``host.family == "RedHat"``)
 filters the host list BEFORE ``gather_action``, because an action fan-out has
 no ``when`` meta-parameter -- the action counterpart of guarding facts by
-filtering before ``gather_fact``. Only the ``centos`` hosts are contacted;
+filtering before ``gather_fact``. Only the RedHat hosts are contacted;
 the ``alpine`` and ``ubuntu`` entries are reported as skipped.
 
 The key difference from a fact or an operation: an action interprets NOTHING.
@@ -79,14 +79,14 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """Group guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """Family guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only the host's static ``group`` field. Actions have no ``when``
+    Reads only the host's static ``family`` field. Actions have no ``when``
     meta-parameter, so the guard is applied by filtering the host list before
     the ``gather_action`` fan-out.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def report(label: str, results: dict) -> None:
@@ -114,14 +114,14 @@ async def main() -> None:
 
     print(f"== Inventory loaded from {INVENTORY_PATH} ==")
     all_hosts = [Host.from_inventory(entry) for entry in inventory]
-    # The group guard: gather_action has no `when`, so filter the host list
-    # before the fan-out -- only the centos hosts are ever contacted.
-    hosts = [host for host in all_hosts if is_centos(host)]
-    skipped = [host.name for host in all_hosts if not is_centos(host)]
-    print(f"== Skipped (group guard is_centos): {', '.join(skipped)} ==")
+    # The family guard: gather_action has no `when`, so filter the host list
+    # before the fan-out -- only the RedHat hosts are ever contacted.
+    hosts = [host for host in all_hosts if is_redhat(host)]
+    skipped = [host.name for host in all_hosts if not is_redhat(host)]
+    print(f"== Skipped (family guard is_redhat): {', '.join(skipped)} ==")
     try:
         # A command that succeeds: the kernel version, captured on stdout.
-        # gather_action runs it on the centos hosts concurrently and returns
+        # gather_action runs it on the RedHat hosts concurrently and returns
         # a {host.name: Result} mapping; the await is the barrier ensuring
         # both have finished before we move on.
         uname = await gather_action(hosts, Shell, command="uname -r")

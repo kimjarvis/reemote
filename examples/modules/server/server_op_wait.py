@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: start httpd on real CentOS hosts, then wait until port 80 is listening.
+"""Example: start httpd on real RedHat hosts, then wait until port 80 is listening.
 
 This is a *usage* example, not part of the library. It shows the port half of
 reemote's second kind of **non-shell** operation: ``server.wait`` runs no
@@ -65,14 +65,14 @@ touches the network -- this example uses the *default* factory
 connection, reads the unit state for real, runs ``systemctl`` under sudo, and
 polls the socket table until port 80 answers.
 
-Every request carries ``when=is_centos``, the declarative eligibility
+Every request carries ``when=is_redhat``, the declarative eligibility
 guard: the predicate reads only **static** inventory data --
-``host.group``, set by the ``"group"`` key of the inventory entry -- and
+``host.family``, set by the ``\"family\"`` key of the inventory entry -- and
 is a stable module-level function, so the prepare and apply phases reach
 the same skip decision. The driver skips a rejected request without
-materializing it, so on hosts outside the ``"centos"`` group neither the
+materializing it, so on hosts outside the ``"RedHat"`` family neither the
 commands nor the facts behind them run, and plan and log render the step
-as ``[skipped: when guard is_centos]`` in its lockstep slot. The path is
+as ``[skipped: when guard is_redhat]`` in its lockstep slot. The path is
 resolved from ``__file__``, so the example works from any working
 directory; point ``INVENTORY_PATH`` at your own file to target your
 machines.
@@ -129,15 +129,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
@@ -153,7 +153,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         service="httpd",
         running=True,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
     # The wait takes the port positionally (the baseline's only option) plus the
     # two bounds it does not have: "udp" would be the other protocol family,
@@ -165,7 +165,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         port=80,
         timeout=45.0,
         interval=1.0,
-        when=is_centos,
+        when=is_redhat,
     )
 
 

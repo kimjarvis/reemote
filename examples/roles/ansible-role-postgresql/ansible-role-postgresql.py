@@ -12,8 +12,8 @@ role variable is read from the inventory entry's extra keys (reemote's
 ``host_vars`` mechanism), so ``postgresql_users`` and friends live beside
 ``host``/``connection`` in ``inventory.json``.
 
-Target: hosts in the inventory group ``"centos"`` (CentOS Stream 9 or 10).
-Every request carries ``when=is_centos``; the Alpine and Ubuntu hosts in the
+Target: hosts in the ``\"RedHat\"`` OS family (CentOS Stream 9 or 10).
+Every request carries ``when=is_redhat``; the Alpine and Ubuntu hosts in the
 shared inventory are never contacted. The role's ``include_vars`` dispatch
 (``vars/RedHat-<major>.yml``, skipped for Fedora/Amazon) collapses to the
 frozen ``REDHAT_VARS`` table, resolved from a ``LinuxDistribution`` gather in
@@ -303,15 +303,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
     Reads only static inventory data and stays a stable module-level function,
     so both deploy phases reach the same eligibility decision. A skipped
     request is never materialized, so the Alpine and Ubuntu hosts in the shared
     inventory are not contacted at all.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def _ansible_bool(value: Any, key: str) -> bool:
@@ -824,7 +824,7 @@ def build_setup(
             exclude=("python-unversioned-command",),
             enable_repos=plan["enable_repos"],
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
         yield op(
             dnf.packages,
@@ -832,7 +832,7 @@ def build_setup(
             packages=(plan["python_library"],),
             enable_repos=plan["enable_repos"],
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
 
     return setup
@@ -861,7 +861,7 @@ def build_initialize(
             dest="/etc/profile.d/postgres.sh",
             mode="0644",
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
         yield op(
             files.directory,
@@ -871,7 +871,7 @@ def build_initialize(
             group=plan["pg_group"],
             mode="0700",
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
 
     return initialize
@@ -903,7 +903,7 @@ def build_configure(
             group=plan["pg_group"],
             mode="0700",
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
         for transform in plan["conf_transforms"]:
             yield op(
@@ -913,7 +913,7 @@ def build_configure(
                 transform=transform,
                 mode="0644",
                 sudo=True,
-                when=is_centos,
+                when=is_redhat,
             )
         if plan["hba_content"] is not None:
             yield op(
@@ -925,7 +925,7 @@ def build_configure(
                 user=plan["pg_user"],
                 group=plan["pg_group"],
                 sudo=True,
-                when=is_centos,
+                when=is_redhat,
             )
         for socket_dir in plan["socket_dirs"]:
             yield op(
@@ -936,7 +936,7 @@ def build_configure(
                 group=plan["pg_group"],
                 mode=plan["socket_mode"],
                 sudo=True,
-                when=is_centos,
+                when=is_redhat,
             )
 
     return configure
@@ -958,7 +958,7 @@ def build_service(
             running=plan["service_running"],
             enabled=plan["service_enabled"],
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
 
     return service
@@ -1003,7 +1003,7 @@ def build_users(
                 psql_host=user["psql_host"],
                 psql_port=user["psql_port"],
                 sudo=True,
-                when=is_centos,
+                when=is_redhat,
             )
 
     return users
@@ -1038,7 +1038,7 @@ def build_databases(
                 psql_host=database["psql_host"],
                 psql_port=database["psql_port"],
                 sudo=True,
-                when=is_centos,
+                when=is_redhat,
             )
 
     return databases
@@ -1078,7 +1078,7 @@ def build_users_props(
                     present=False,
                     **conn,
                     sudo=True,
-                    when=is_centos,
+                    when=is_redhat,
                 )
                 continue
             if not user["flags"]:
@@ -1101,7 +1101,7 @@ def build_users_props(
                 **attrs,
                 **conn,
                 sudo=True,
-                when=is_centos,
+                when=is_redhat,
             )
         for priv in plan["privs"]:
             yield op(
@@ -1121,7 +1121,7 @@ def build_users_props(
                 psql_port=priv["psql_port"],
                 psql_database=priv["psql_database"],
                 sudo=True,
-                when=is_centos,
+                when=is_redhat,
             )
 
     return users_props
@@ -1150,7 +1150,7 @@ def build_handler(
             (plan["daemon"],),
             action=plan["handler_action"],
             sleep=5,
-            when=is_centos,
+            when=is_redhat,
         )(host)
 
     return handler
@@ -1182,12 +1182,12 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         hosts = [Host.from_inventory(entry) for entry in inventory]
-        targets = [host for host in hosts if is_centos(host)]
-        skipped = [host.name for host in hosts if not is_centos(host)]
+        targets = [host for host in hosts if is_redhat(host)]
+        skipped = [host.name for host in hosts if not is_redhat(host)]
         if skipped:
-            print("\n== Skipped (when guard is_centos): " + ", ".join(skipped) + " ==")
+            print("\n== Skipped (when guard is_redhat): " + ", ".join(skipped) + " ==")
         if not targets:
-            print("\nNo host in the inventory group 'centos'; nothing to deploy.")
+            print("\nNo host in the RedHat family; nothing to deploy.")
             return
 
         # The role's variable resolution, before any host is contacted.
@@ -1208,7 +1208,7 @@ async def main() -> None:
                     ("Fedora", "Amazon")
                 ):
                     raise ValueError(
-                        f"{host.name}: group 'centos' but the distribution is "
+                        f"{host.name}: declared RedHat family but the distribution is "
                         f"{name!r} (family {info.get('family')!r}); the role's "
                         "RedHat vars dispatch excludes Fedora and Amazon"
                     )

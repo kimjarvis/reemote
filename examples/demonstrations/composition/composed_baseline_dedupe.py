@@ -10,9 +10,9 @@ isolation that each declare the same prerequisite.
 
 The inventory is read from the project root's ``inventory.json`` (validated
 up front with ``validate_inventory``), which holds one host in the
-``"centos"`` group alongside hosts in other groups. The whole composed deploy
-is wrapped with ``sub_deploy(..., when=is_centos)``, so the ``dnf`` steps are
-eligible only on the CentOS hosts: the driver skips them on the Alpine and
+``\"RedHat\"`` family alongside hosts in other families. The whole composed deploy
+is wrapped with ``sub_deploy(..., when=is_redhat)``, so the ``dnf`` steps are
+eligible only on the RedHat hosts: the driver skips them on the Alpine and
 Ubuntu hosts without materializing them, and neither the ``dnf`` commands nor
 the ``DnfPackages`` fact behind them runs there. Because ``when`` composes by
 conjunction and the wrapper prepends the *same* predicate tuple to every
@@ -92,17 +92,17 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. The ``dnf``
-    operations below only make sense on a CentOS host, so the guard keeps
+    operations below only make sense on a RedHat host, so the guard keeps
     them (and the facts they read) off the Alpine and Ubuntu hosts.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def role_baseline(host: Host) -> Generator[OperationRequest]:
@@ -152,7 +152,7 @@ def role_monitoring(host: Host) -> Generator[OperationRequest]:
 # Prefixed per role for readable plans; the shared baseline request still
 # collapses even though all three copies carry different names, because
 # the dedupe key ignores names (first name wins). The outer ``sub_deploy``
-# adds the ``is_centos`` eligibility guard to every request at once -- the
+# adds the ``is_redhat`` eligibility guard to every request at once -- the
 # same predicate tuple on each copy, so it does not disturb the dedupe.
 deploy = sub_deploy(
     compose(
@@ -161,7 +161,7 @@ deploy = sub_deploy(
         sub_deploy(role_monitoring, name_prefix="monitoring"),
         dedupe=True,
     ),
-    when=is_centos,
+    when=is_redhat,
 )
 
 
@@ -173,7 +173,7 @@ async def main() -> None:
 
         # --dry: prepare phase only. The deduplicated plan shows one baseline
         # entry despite three roles yielding it; no mutating command is sent.
-        # On the non-CentOS hosts every step is [skipped: when guard is_centos].
+        # On the non-RedHat hosts every step is [skipped: when guard is_redhat].
         plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("\n== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))

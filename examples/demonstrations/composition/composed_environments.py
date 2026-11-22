@@ -9,10 +9,10 @@ transport) and shows the second composition scenario: staging and
 production deploys differing only in *which* roles are assembled.
 
 The inventory is read from the project root's ``inventory.json`` (validated
-up front with ``validate_inventory``), which holds hosts in the ``"centos"``
-group alongside hosts in other groups. Each environment's composed deploy is
-wrapped with ``sub_deploy(..., when=is_centos)``, so the ``dnf`` steps are
-eligible only on the CentOS hosts and the driver skips them -- without
+up front with ``validate_inventory``), which holds hosts in the ``\"RedHat\"``
+family alongside hosts in other families. Each environment's composed deploy is
+wrapped with ``sub_deploy(..., when=is_redhat)``, so the ``dnf`` steps are
+eligible only on the RedHat hosts and the driver skips them -- without
 reading the ``DnfPackages`` fact -- on the Alpine and Ubuntu hosts.
 
 The deploy body must never branch on mutable facts -- the prepare and
@@ -81,17 +81,17 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. The ``dnf``
-    operations below only make sense on a CentOS host, so the guard keeps
+    operations below only make sense on a RedHat host, so the guard keeps
     them (and the facts they read) off the Alpine and Ubuntu hosts.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def role_baseline(host: Host) -> Generator[OperationRequest]:
@@ -145,8 +145,8 @@ ENVIRONMENTS: dict[str, tuple[Callable[[Host], Generator[OperationRequest]], ...
 def build_deploy(env: str) -> Callable[[Host], Generator[OperationRequest]]:
     """Assemble one environment's deploy from its role list.
 
-    The outer ``sub_deploy`` adds the ``is_centos`` eligibility guard to every
-    request the environment composes, so the whole deploy is centos-only
+    The outer ``sub_deploy`` adds the ``is_redhat`` eligibility guard to every
+    request the environment composes, so the whole deploy is RedHat-only
     without touching the individual roles.
     """
     return sub_deploy(
@@ -156,7 +156,7 @@ def build_deploy(env: str) -> Callable[[Host], Generator[OperationRequest]]:
                 for role in ENVIRONMENTS[env]
             )
         ),
-        when=is_centos,
+        when=is_redhat,
     )
 
 

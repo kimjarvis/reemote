@@ -70,8 +70,8 @@ decision. The project root's ``inventory.json`` holds an ``alpine`` host
 manages the Apache unit on the systemd hosts and skips the Alpine one.
 
 The unit name itself is chosen per OS family by ``web_server_unit``, which
-reads only static ``host.group`` (``apache2`` for the Debian-family ``ubuntu``
-group, ``httpd`` otherwise). Like the ``when`` guard, that branch is stable
+reads only static ``host.family`` (``apache2`` for the ``Ubuntu`` family,
+``httpd`` otherwise). Like the ``when`` guard, that branch is stable
 across both phases, so each host's request sequence stays deterministic even
 though the unit name differs between hosts -- the same shape the
 ``composed_per_host_roles`` demonstration uses for per-host variation.
@@ -139,21 +139,22 @@ def is_systemd(host: Host) -> bool:
 def web_server_unit(host: Host) -> str:
     """Return the Apache web server's unit name for the host's OS family.
 
-    RHEL-family hosts (the ``centos`` group) ship ``httpd``; Debian-family
-    hosts (the ``ubuntu`` group) ship the same server under ``apache2``. A
-    bare name gets ``.service`` appended by the operation; any other systemd
-    suffix (``logrotate.timer``) would be kept as is. The branch reads only
-    static inventory data (``host.group``), never a mutable fact, so the
+    RHEL-family hosts (``host.family == "RedHat"``) ship ``httpd``; the
+    Debian-family hosts (``host.family == "Ubuntu"``) ship the same server
+    under ``apache2``. A bare name gets ``.service`` appended by the
+    operation; any other systemd suffix (``logrotate.timer``) would be kept
+    as is. The branch reads only static inventory data (``host.family``),
+    never a mutable fact, so the
     choice is identical in the prepare and apply phases and the determinism
     guard holds even though the unit name differs per host.
     """
-    return "apache2" if host.group == "ubuntu" else "httpd"
+    return "apache2" if host.family == "Ubuntu" else "httpd"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
     """Start and enable the Apache unit -- twice, to show idempotence -- then soft-reload and re-assert boot state.
 
-    The only branch reads static ``host.group`` (via ``web_server_unit``), so
+    The only branch reads static ``host.family`` (via ``web_server_unit``), so
     the request sequence is identical in the prepare and apply phases (a
     branch on a mutable fact would raise DeterminismError). Eligibility is
     expressed with the ``when=is_systemd`` guard each request carries, not

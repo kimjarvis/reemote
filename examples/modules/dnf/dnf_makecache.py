@@ -34,10 +34,10 @@ convention -- a failing makecache raises ``CommandError`` at apply, which
 ``dnf.repo`` also accepts the role's ``yum_repository`` fields
 (``includepkgs``, ``repo_gpgcheck``, ``proxy``, ``proxy_username``,
 ``proxy_password``) as an extension beyond the baseline; this example keeps the
-same plain Docker CE arguments as ``dnf_repo.py`` so the shared CentOS
+same plain Docker CE arguments as ``dnf_repo.py`` so the shared RedHat
 hosts converge on one repo-file content no matter which example ran last.
 
-Both requests carry ``when=is_centos`` (static inventory data only) and
+Both requests carry ``when=is_redhat`` (static inventory data only) and
 ``sudo=True``: writing the repo file and the shared metadata cache needs
 root. The script reads the shared project-root ``inventory.json`` and
 validates it up front, runs the prepare phase (``dry=True``) to print the
@@ -100,22 +100,22 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``), never a mutable fact,
+    Reads only static inventory data (``host.family``), never a mutable fact,
     and stays a stable module-level function -- the two rules every ``when``
     predicate follows so both deploy phases reach the same eligibility
-    decision. ``dnf`` only exists on the CentOS hosts.
+    decision. ``dnf`` only exists on the RedHat hosts.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
     """Ensure the repo file, then refresh only that repo's metadata.
 
     Branch-free: the request sequence is identical in both phases and on
-    every host; eligibility rides the ``when=is_centos`` guard. The repo
+    every host; eligibility rides the ``when=is_redhat`` guard. The repo
     write is content-idempotent (a no-op once the file matches), while the
     scoped makecache is stateless and runs on every deploy -- the
     unconditional-refresh design, since gating on the same-deploy write
@@ -126,7 +126,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         dnf.repo,
         name="Ensure Docker CE repo",
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
         **DOCKER_REPO,
     )
     yield op(
@@ -134,7 +134,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Refresh Docker CE metadata",
         repos=("DockerCE",),
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -147,7 +147,7 @@ async def main() -> None:
         # --dry: prepare phase only. Facts are gathered over SSH (read-only)
         # so the plan reflects real pre-deployment state; nothing that
         # mutates a host is sent. The stateless makecache plans as a change
-        # on every CentOS host, every run.
+        # on every RedHat host, every run.
         plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("\n== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))

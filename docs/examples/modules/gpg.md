@@ -26,7 +26,7 @@ is one module-level `io.BytesIO` constant because `OperationRequest`
 compares it by identity across the phases. The stream embeds the **real**
 Docker Release (CE rpm) signing key, so the dearmor has valid material to
 convert. The install writes under `/etc/apt/keyrings/` (`etc_t`), which a
-CentOS host's SELinux `staff_t`-confined sudo can neither create nor
+RedHat host's SELinux `staff_t`-confined sudo can neither create nor
 unlink: on the demo hosts a keyring from an earlier unconfined run already
 exists, so the existence-idempotent request no-ops and the script exits 0,
 while a *fresh* install there is denied until the host's sudo is unconfined
@@ -51,7 +51,7 @@ the dearmor always finds valid material; the conversion runs
 repeated sweeps converge, while a `files.file` request with
 `present=False` still clears any stale `dest` first to demonstrate
 explicit removal. Both that cleanup and the dearmor's output write target
-`/etc/apt/keyrings/` (`etc_t`), which a CentOS host's SELinux
+`/etc/apt/keyrings/` (`etc_t`), which a RedHat host's SELinux
 `staff_t`-confined sudo can neither create nor unlink, so the apply is
 denied there until the host's sudo is unconfined (or SELinux is permissive)
 — the same confinement the `selinux`, `sysctl` and `dnf.key` examples
@@ -74,7 +74,7 @@ instead. The stream is one module-level `io.BytesIO` constant (identity
 across the phases) embedding the **real** Docker Release (CE rpm) signing
 key, so `gpg --import` accepts it. Unlike `gpg.key`/`gpg.dearmor`, the
 keychain import writes root's *keychain* (`~root/.gnupg`), not `/etc`, so
-it **applies for real even on the SELinux `staff_t`-confined CentOS
+it **applies for real even on the SELinux `staff_t`-confined RedHat
 hosts**: gpg reads the `/tmp` spool and imports into root's keychain, and
 the elevated `sh -c` removes the spool afterwards.
 

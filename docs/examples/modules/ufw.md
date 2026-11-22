@@ -11,9 +11,9 @@ The read-only fact-gathering examples (`ufw_ufw_status.py` reading
 `gather_fact`) are not rendered here — they read a single fact, and the
 facts themselves are documented on the
 [`ufw` module page](../../modules/ufw.md). Like the dnf examples they
-read the shared project-root `inventory.json` and guard on the `"centos"`
-group: `is_centos` filters the host list before the `gather_fact`
-fan-out, and the operation scripts below carry `when=is_centos` on every
+read the shared project-root `inventory.json` and guard on the `"RedHat"`
+family: `is_redhat` filters the host list before the `gather_fact`
+fan-out, and the operation scripts below carry `when=is_redhat` on every
 request. Every ufw read retries through passwordless `sudo -n` and reads
 the empty value on an unprivileged login (or a host without ufw) rather
 than failing, so every gather is safe on any Linux target — point

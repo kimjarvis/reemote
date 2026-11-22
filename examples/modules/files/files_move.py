@@ -38,14 +38,14 @@ move request would carry ``sudo=True`` (and ``user``/``group`` would name
 the owning account); for whole-content root-owned writes ``files.install``
 covers the same ground in one deploy (see ``files_install.py``).
 
-Every request carries ``when=is_centos``, the declarative eligibility
+Every request carries ``when=is_redhat``, the declarative eligibility
 guard: the predicate reads only **static** inventory data --
-``host.group``, set by the ``"group"`` key of the inventory entry -- and
+``host.family``, set by the ``\"family\"`` key of the inventory entry -- and
 is a stable module-level function, so the prepare and apply phases reach
 the same skip decision. The driver skips a rejected request without
-materializing it, so on hosts outside the ``"centos"`` group neither the
+materializing it, so on hosts outside the ``"RedHat"`` family neither the
 commands nor the facts behind them run, and plan and log render the step
-as ``[skipped: when guard is_centos]`` in its lockstep slot.
+as ``[skipped: when guard is_redhat]`` in its lockstep slot.
 
 The path is resolved from ``__file__``, so the example works from any
 working directory; point ``INVENTORY_PATH`` at your own file (or edit
@@ -112,20 +112,20 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def stage(host: Host) -> Generator[OperationRequest]:
     """Run 1: stage the payload into /tmp, unprivileged, branch-free."""
-    yield op(files.put, name="Stage payload", src=PAYLOAD, dest=STAGED, when=is_centos)
+    yield op(files.put, name="Stage payload", src=PAYLOAD, dest=STAGED, when=is_redhat)
 
 
 def install(host: Host) -> Generator[OperationRequest]:
@@ -142,7 +142,7 @@ def install(host: Host) -> Generator[OperationRequest]:
         dest=DEST,
         mode="0644",
         overwrite=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 

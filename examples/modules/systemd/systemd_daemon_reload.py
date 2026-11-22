@@ -34,7 +34,7 @@ Both requests are flagged ``sudo=True`` (a system manager's daemon-reload
 needs root) and carry ``when=is_systemd`` so the OpenRC ``alpine`` host --
 which has no ``systemctl`` -- is skipped rather than failed. The gated
 request's unit comes from ``web_server_unit``, a branch on static
-``host.group`` that stays identical across both phases, so the determinism
+``host.family`` that stays identical across both phases, so the determinism
 guard holds. The scope flags (``user_mode``/``machine``/``user_name``) stay
 at their system-scope defaults.
 
@@ -97,7 +97,7 @@ def web_server_unit(host: Host) -> str:
     ``httpd`` on the RHEL-family hosts, ``apache2`` on the Debian-family
     one -- the same static branch the ``systemd_service`` example makes.
     """
-    return "httpd" if host.group == "centos" else "apache2"
+    return "httpd" if host.family == "RedHat" else "apache2"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:

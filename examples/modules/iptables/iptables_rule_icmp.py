@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: allow ICMP/ICMPv6 with typed matchers on real CentOS hosts.
+"""Example: allow ICMP/ICMPv6 with typed matchers on real RedHat hosts.
 
 This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
@@ -42,9 +42,9 @@ facts are exit-masked, so the prepare phase reads them even before the
 binary is present; in apply the install runs first and the mutations that
 follow ride the freshly installed binary.
 
-Every request carries ``when=is_centos``, the declarative eligibility
+Every request carries ``when=is_redhat``, the declarative eligibility
 guard: the predicate reads only **static** inventory data --
-``host.group``, set by the ``"group"`` key of the inventory entry -- and
+``host.family``, set by the ``\"family\"`` key of the inventory entry -- and
 is a stable module-level function, so the prepare and apply phases reach
 the same skip decision. The path is resolved from ``__file__``, so the
 example works from any working directory; point ``INVENTORY_PATH`` at your
@@ -109,15 +109,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
@@ -134,7 +134,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Install iptables",
         packages=("iptables",),
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
     # IPv4 ping: -p icmp --icmp-type echo-request, normalized to 8.
     for _ in range(2):
@@ -146,7 +146,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
             protocol="icmp",
             icmp_type="echo-request",
             sudo=True,
-            when=is_centos,
+            when=is_redhat,
         )
     # IPv6: the echo plus neighbour-discovery/router types SLAAC needs.
     # -p ipv6-icmp loads the icmp6 match module, recorded so each rule
@@ -162,7 +162,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
                 protocol="ipv6-icmp",
                 icmpv6_type=icmpv6_type,
                 sudo=True,
-                when=is_centos,
+                when=is_redhat,
             )
 
 

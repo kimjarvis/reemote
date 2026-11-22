@@ -29,7 +29,7 @@ hosts: `mask` runs a full mask → no-op → unmask cycle that restores the unit
 before the deploy finishes, and `service`/`preset` converge an already-installed
 web server. The drop-in, tmpfiles and sysusers examples write root-owned
 configuration and are additionally compile-checked by the offline example
-harness; on the CentOS demo hosts their elevated install is blocked by SELinux
+harness; on the RedHat demo hosts their elevated install is blocked by SELinux
 `staff_t` confinement (see the host-policy note below). Point `INVENTORY_PATH`
 at your own throwaway machines to execute them for real.
 
@@ -49,7 +49,7 @@ unit's running state exactly as it is. The script also shows the reemote
 extensions: `reloaded=True` with `soft_reload=True`
 issues `systemctl reload-or-try-restart`, gated on the unit actually running.
 The managed unit is chosen per OS family by `web_server_unit` — `httpd` on the
-RHEL-family `centos` hosts, `apache2` on the Debian-family `ubuntu` host — a
+RHEL-family RedHat hosts, `apache2` on the Debian-family `ubuntu` host — a
 branch on static `host.group` that stays identical across both phases, so the
 determinism guard holds even though the unit name differs per host.
 
@@ -110,7 +110,7 @@ refuses to start.
 The drop-in, tmpfiles and sysusers operations spool their fragment into a
 dest-derived `/tmp` directory with an **unprivileged** scp transfer, then install
 it with an **elevated** `sh -c` (`mkdir` + `cp` + `chmod`). The scripts are correct —
-`sudo=True` is set and the transfer is never elevated — but on the CentOS demo
+`sudo=True` is set and the transfer is never elevated — but on the RedHat demo
 hosts (`web1`/`web2`) SELinux is `Enforcing` and `sudo` transitions to the
 confined `staff_t` domain, which blocks the install two ways:
 
@@ -125,7 +125,7 @@ confined `staff_t` domain, which blocks the install two ways:
   writable.
 
 These are host-policy limits, not script defects: the same examples converge on
-the unconfined `ubuntu` host. To run them on the CentOS hosts, give `sudo` an
+the unconfined `ubuntu` host. To run them on the RedHat hosts, give `sudo` an
 unconfined domain (e.g. `unconfined_t`) or set SELinux permissive, then re-run.
 
 ## Installing a drop-in override

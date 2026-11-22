@@ -253,7 +253,7 @@ def make_hosts(
     hosts: dict[str, SimulatedHost] = {}
     for entry in inventory:
         host = SimulatedHost.from_inventory(entry)
-        if epel.is_centos(host):
+        if epel.is_redhat(host):
             seed(
                 host,
                 repo_present=repo_present,
@@ -301,7 +301,7 @@ async def migrate(
     instead of opening SSH connections. ``apply=False`` stops after deploy 1's
     dry preview (reports is empty).
     """
-    targets = [host for host in hosts.values() if epel.is_centos(host)]
+    targets = [host for host in hosts.values() if epel.is_redhat(host)]
     settings = {host.name: epel.role_settings(host) for host in targets}
 
     plans: dict[str, Any] = {}
@@ -399,7 +399,7 @@ async def test_first_pass_installs_epel(canned_fetch):
     assert changed_entries(result)
 
 
-async def test_non_centos_host_is_never_touched(canned_fetch):
+async def test_non_redhat_host_is_never_touched(canned_fetch):
     inventory = make_inventory()
     hosts = make_hosts(inventory)
     result = await migrate(inventory, hosts)
@@ -599,8 +599,8 @@ def test_role_settings_rejects_bad_values():
         )
 
 
-def test_is_centos_reads_the_static_group():
-    centos = SimulatedHost.from_inventory(make_inventory()[0])
+def test_is_redhat_reads_the_static_family():
+    redhat = SimulatedHost.from_inventory(make_inventory()[0])
     ubuntu = SimulatedHost.from_inventory(make_inventory()[1])
-    assert epel.is_centos(centos)
-    assert not epel.is_centos(ubuntu)
+    assert epel.is_redhat(redhat)
+    assert not epel.is_redhat(ubuntu)

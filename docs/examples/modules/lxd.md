@@ -6,9 +6,9 @@ the [`lxd`](../../modules/lxd.md) module. See the
 warning and the error-reporting contract every script follows.
 
 Every script reads the shared project-root `inventory.json` and guards on
-the `"centos"` group (`is_centos` on every operation request, a host-list
-filter before each `gather_fact` fan-out), targeting the two hosts
-web1/web2, which the scripts assume run an initialized LXD daemon. The
+the `"ubuntu"` group (`is_ubuntu` on every operation request, a host-list
+filter before each `gather_fact` fan-out), targeting the demo host
+`ubuntu`, which the scripts provision themselves before deploying. The
 operation requests ride
 under `sudo=True`, so the `lxc` client talks to the daemon socket as root
 — no password travels through operation arguments, plans or logs. The
@@ -36,28 +36,20 @@ project read targets `default`, and the volume read targets the `fast`
 pool (create it with `lxd_storage_pool.py` first); a missing target
 reads as `None`/`[]` rather than failing the gather.
 
-**Host prerequisite.** None of these examples can run until LXD is
-installed and initialized on the target: the `lxc` CLI must be present,
-the daemon running (`lxd init` having created a storage pool and network),
-and the login user a member of the `lxd` group for the fact reads. The
-demo CentOS Stream 9 hosts (web1/web2) have **no LXD at all** — every
-script currently fails with `lxc: command not found` (exit 127). LXD is
-not packaged for EL9/EPEL; the only `lxc`-providing route is the snap
-(`sudo dnf install -y snapd`, `sudo systemctl enable --now snapd.socket`,
-`sudo ln -s /var/lib/snapd/snap /snap`, `sudo snap install lxd`, then
-`sudo lxd init --auto` and `sudo usermod -aG lxd <user>`). On the demo
-hosts that recipe is blocked by the same SELinux `staff_t`-confined sudo
-the `selinux`, `sysctl`, `systemd`, `dnf.key` and `gpg` examples document:
-snapd installs and its socket activates, but the confined sudo can
-neither create `/snap` (Permission denied) nor connect to
-`/run/snapd.socket` (`snap install lxd` fails with "dial unix
-/run/snapd.socket: connect: permission denied"). The scripts themselves
-are correct — `sudo=True` on every operation, the `lxc --format json` CLI
-throughout — so they are compile-checked and exercised by the offline
-example harness rather than run against the shared hosts. Relax the demo
-hosts' sudo to an unconfined domain (or set SELinux permissive) and
-install + initialize LXD, or point each script's `INVENTORY_PATH` at your
-own file of LXD-enabled machines, to execute them for real.
+**Host provisioning.** LXD is not set up out of the box on Ubuntu — it
+ships as a snap, not a default install — so each script first awaits
+`provision_lxd(inventory)` from the sibling `provision_lxd.py`, which
+installs the `lxd` snap (pinned to the `6/stable` channel) with
+`snap.package` and runs `lxd init --auto`. Both steps are idempotent —
+the install gated on the `SnapPackage` fact, the init on the daemon's own
+already-configured checks — so the examples run even on a host where LXD
+was never installed, and a re-run leaves an initialized daemon untouched.
+The one thing provisioning does not cover is socket access for the
+unprivileged fact reads: the login user must be a member of the `lxd`
+group (the demo Ubuntu host already is; the operations themselves ride
+`sudo=True` and need no group membership). Point each script's
+`INVENTORY_PATH` at your own file to run against your own machines, and
+provision their `lxd` group membership there yourself.
 
 ## Managing a container (baseline parity)
 

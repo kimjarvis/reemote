@@ -219,9 +219,9 @@ operation does not trigger.
 
 The read-only fact-gathering scripts under
 [`examples/modules/selinux/`](../examples/modules/selinux.md) gather one
-fact each over `gather_fact` on the shared `inventory.json`'s CentOS
+fact each over `gather_fact` on the shared `inventory.json`'s RedHat
 hosts (the dnf convention — every target is an SELinux host, and the
-`is_centos` guard filters the host list before the fan-out):
+`is_redhat` guard filters the host list before the fan-out):
 `selinux_se_boolean.py`, `selinux_booleans.py`,
 `selinux_file_context.py`, `selinux_file_context_mapping.py`,
 `selinux_se_ports.py` (full table plus a protocol/type-filtered gather),

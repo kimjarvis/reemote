@@ -36,7 +36,7 @@ two complete prepare/apply cycles.
    exit raises ``CommandError``), so it means the commands really ran.
    The apply-phase join of run 1 is the barrier -- every config write has
    landed before any restart is planned.
-3. ``restart_handler(changed, "nginx", when=is_centos)`` -- the library
+3. ``restart_handler(changed, "nginx", when=is_redhat)`` -- the library
    factory closing over that frozen set, returning the handler deploy. Its
    ``if`` consults the snapshot, never a live fact or report, so the
    generator is a pure function of static input and the determinism guard
@@ -59,7 +59,7 @@ against the frozen outcome of run 1.
 
 The inventory is read from the project root's ``inventory.json``
 (validated up front with ``validate_inventory``); every request carries
-``when=is_centos`` so the ``dnf``/``systemd`` work runs only on the CentOS
+``when=is_redhat`` so the ``dnf``/``systemd`` work runs only on the RedHat
 hosts, and the run-2 factory builds fresh hosts from the same inventory
 via the default factory.
 
@@ -125,14 +125,14 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
     Reads only static inventory data and stays a stable module-level
     function -- the two rules every ``when`` predicate follows so both
     deploy phases reach the same eligibility decision.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def configure_nginx(host: Host) -> Generator[OperationRequest]:
@@ -147,7 +147,7 @@ def configure_nginx(host: Host) -> Generator[OperationRequest]:
         name="Install nginx",
         packages=("nginx",),
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
     yield op(
         files.install,
@@ -155,7 +155,7 @@ def configure_nginx(host: Host) -> Generator[OperationRequest]:
         content=NGINX_CONF_CONTENT,
         dest=CONF_DEST,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -185,9 +185,9 @@ async def main() -> None:
 
         # Build the handler deploy ONCE, before either of its phases: the
         # dry run and the real run use the very same callable closing over
-        # the same frozen set -- determinism by construction. ``when=is_centos``
+        # the same frozen set -- determinism by construction. ``when=is_redhat``
         # keeps the shared schedule aligned across the whole inventory.
-        restart = restart_handler(changed, "nginx", when=is_centos)
+        restart = restart_handler(changed, "nginx", when=is_redhat)
 
         # --dry for the handler: an honest preview, because the branch
         # consults run 1's frozen outcome, not pre-deployment state.

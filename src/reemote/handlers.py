@@ -31,7 +31,7 @@ halves of that split so a role migration stops copy-pasting a bespoke
 They compose directly::
 
     changed = changed_hosts(report, {"Install nginx", "Write nginx config"})
-    reload = reload_handler(changed, "nginx", when=is_centos)
+    reload = reload_handler(changed, "nginx", when=is_redhat)
     await run(inventory, reload)
 
 ``changed`` is a fixed value by the time the factory builds the deploy, so the

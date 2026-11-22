@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: gather the ``server.LsbRelease`` fact on real CentOS hosts.
+"""Example: gather the ``server.LsbRelease`` fact on real RedHat hosts.
 
 This is a *usage* example, not part of the library. Like
 ``examples/modules/server/server_locales.py``, it reads a single **fact**
@@ -16,13 +16,13 @@ two-phase execution model:
 2. Materialize each entry into a plain ``Host`` with the default
    ``Host.from_inventory`` factory. Each ``Host`` lazily opens an asyncssh
    connection from its ``connection`` data when a fact is gathered.
-3. Guard the gather with a ``when`` predicate: ``is_centos`` reads only
-   **static** inventory data -- ``host.group`` -- and the fact is gathered
+3. Guard the gather with a ``when`` predicate: ``is_redhat`` reads only
+   **static** inventory data -- ``host.family`` -- and the fact is gathered
    on the hosts that pass it. ``gather_fact`` itself takes no ``when``
    parameter, so the predicate filters the host list before the fan-out --
    the direct equivalent of a driver-side skip. Hosts outside the
-   ``"centos"`` group are named on a
-   ``== Skipped (when guard is_centos): ... ==`` line and never connected.
+   ``\"RedHat\"`` family are named on a
+   ``== Skipped (when guard is_redhat): ... ==`` line and never connected.
 4. Gather ``LsbRelease`` on the guarded hosts at once with the driver's
    ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
    across the inventory with ``asyncio.gather`` and returns a
@@ -40,11 +40,11 @@ aggregates the per-host errors, so the guard below reports every host
 missing the command in one stderr message -- no traceback -- and a
 non-zero exit.
 
-The CentOS demo hosts do not ship ``lsb_release`` in their base repos, so
+The RedHat demo hosts do not ship ``lsb_release`` in their base repos, so
 the script first installs it: a short ``run(inventory, install)`` deploy
 yields ``dnf.packages`` for the ``lsb_release`` package (provided by EPEL,
 which the demo hosts already enable), flagged ``sudo=True`` and guarded by
-``when=is_centos`` so only the CentOS hosts are touched. The install is
+``when=is_redhat`` so only the RedHat hosts are touched. The install is
 idempotent -- a host that already has the binary plans no change -- and runs
 before the fact is gathered, so the read never hits the missing-command
 path. Point ``INVENTORY_PATH`` at a file of hosts whose package manager
@@ -106,15 +106,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def install(host: Host) -> Generator[OperationRequest]:
@@ -130,7 +130,7 @@ def install(host: Host) -> Generator[OperationRequest]:
         name="Install lsb_release",
         packages=("lsb_release",),
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 
@@ -152,10 +152,10 @@ async def main() -> None:
     print(f"== Inventory loaded from {INVENTORY_PATH} ==")
     print(", ".join(entry["host"] for entry in inventory))
 
-    # Install the prerequisite first: lsb_release is not in the CentOS base
+    # Install the prerequisite first: lsb_release is not in the RedHat base
     # repos (EPEL provides it), so a short deploy puts the binary in place
     # before the fact is gathered. Idempotent -- an already-installed host
-    # plans no change. The when guard skips the non-CentOS hosts entirely.
+    # plans no change. The when guard skips the non-RedHat hosts entirely.
     try:
         _plans, report, _hosts = await run(inventory, install)
         print("== Prerequisite: install lsb_release ==")
@@ -172,10 +172,10 @@ async def main() -> None:
     hosts: list[Host] = []
     try:
         all_hosts = [Host.from_inventory(entry) for entry in inventory]
-        hosts = [host for host in all_hosts if is_centos(host)]
+        hosts = [host for host in all_hosts if is_redhat(host)]
         skipped = [host.name for host in all_hosts if host not in hosts]
         if skipped:
-            print("\n== Skipped (when guard is_centos): " + ", ".join(skipped) + " ==")
+            print("\n== Skipped (when guard is_redhat): " + ", ".join(skipped) + " ==")
         # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans LsbRelease.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so both SSH round-trips overlap instead of

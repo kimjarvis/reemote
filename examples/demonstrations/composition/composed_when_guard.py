@@ -10,12 +10,12 @@ asyncssh transport) and shows the declarative alternative to that example's
 
 The inventory is read from the project root's ``inventory.json`` (validated
 up front with ``validate_inventory``), which holds one Alpine host, two
-CentOS hosts (web1, web2) and one Ubuntu host. Two guards at two levels
+RedHat hosts (web1, web2) and one Ubuntu host. Two guards at two levels
 select who runs what, and they compose by conjunction:
 
-- a **role-level** guard ``when=is_centos`` wraps the whole deploy at the
-  composition site (``sub_deploy(deploy, when=is_centos)``), the analogue of
-  Ansible's block-level ``when``. It makes every step centos-only, so the
+- a **role-level** guard ``when=is_redhat`` wraps the whole deploy at the
+  composition site (``sub_deploy(deploy, when=is_redhat)``), the analogue of
+  Ansible's block-level ``when``. It makes every step RedHat-only, so the
   Alpine and Ubuntu hosts skip the entire schedule -- and because a skipped
   request is never materialized, the ``DnfPackages`` fact behind the ``dnf``
   steps is not read on them either;
@@ -27,18 +27,18 @@ The difference from an ``if`` is the schedule. An ``if`` in the deploy body
 changes the request *sequence* per host. A ``when`` guard keeps every host's
 sequence identical -- all hosts share one schedule, and the driver skips the
 guarded request on ineligible hosts, rendering it as
-``[skipped: when guard is_centos]`` or ``[skipped: when guard is_canary]`` side
+``[skipped: when guard is_redhat]`` or ``[skipped: when guard is_canary]`` side
 by side with the hosts that run it. The request still consumes its lockstep
 slot, so the Nth operation on host A always pairs with the Nth operation on
 host B. Because the guards compose by conjunction (both must pass) and a
 wrapper can only *restrict* eligibility, never widen it, the skip reports the
 *outermost* failing predicate: on the Alpine and Ubuntu hosts that is
-``is_centos`` even for the canary step, while on web2 it is ``is_canary``.
+``is_redhat`` even for the canary step, while on web2 it is ``is_canary``.
 
 ``when`` is a meta-parameter like ``sudo``: captured on the request, never
 forwarded to the operation. Two rules keep it deterministic:
 
-- the predicate reads **static** inventory data only (here ``host.group``
+- the predicate reads **static** inventory data only (here ``host.family``
   and ``host.name``), never mutable facts, so prepare and apply reach the
   same skip decision;
 - the predicate is a **stable function object** defined at module level --
@@ -102,17 +102,17 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. Applied to the
     whole deploy, it keeps the ``dnf`` steps (and the facts they read) off the
     Alpine and Ubuntu hosts.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def is_canary(host: Host) -> bool:
@@ -120,7 +120,7 @@ def is_canary(host: Host) -> bool:
 
     Keys on ``host.name`` -- the canary is web1 -- so it reads only static
     inventory data and stays a stable module-level function, exactly like
-    ``is_centos``. It guards the canary tooling request alone.
+    ``is_redhat``. It guards the canary tooling request alone.
     """
     return host.name == CANARY_HOST
 
@@ -172,11 +172,11 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     yield from role_canary_extras(host)
 
 
-# The role-level guard: the whole schedule is centos-only. It composes by
+# The role-level guard: the whole schedule is RedHat-only. It composes by
 # conjunction with the request-level ``is_canary`` guard above -- both must
-# pass, and a skip reports the outermost failing predicate (``is_centos`` on
+# pass, and a skip reports the outermost failing predicate (``is_redhat`` on
 # the Alpine/Ubuntu hosts, ``is_canary`` on web2).
-deploy = sub_deploy(deploy, when=is_centos)
+deploy = sub_deploy(deploy, when=is_redhat)
 
 
 async def main() -> None:
@@ -187,7 +187,7 @@ async def main() -> None:
 
         # --dry: prepare phase only. Every plan holds the same four entries;
         # the Alpine/Ubuntu hosts skip all of them ([skipped: when guard
-        # is_centos]) and web2 skips the canary step ([skipped: when guard
+        # is_redhat]) and web2 skips the canary step ([skipped: when guard
         # is_canary]). No mutating command is sent -- and a skipped operation
         # was never even materialized, so no facts were read for it there.
         plans, _, _hosts = await run(inventory, deploy, dry=True)

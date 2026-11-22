@@ -10,10 +10,10 @@ EPEL-provided package fails unless ``epel-release`` is installed first, and
 ``compose`` makes that ordering explicit and reusable.
 
 The inventory is read from the project root's ``inventory.json`` (validated
-up front with ``validate_inventory``), which holds hosts in the ``"centos"``
-group alongside hosts in other groups. The composed deploy is wrapped with
-``sub_deploy(..., when=is_centos)``, so both roles are eligible only on the
-CentOS hosts; the driver skips them -- without reading the ``DnfPackages``
+up front with ``validate_inventory``), which holds hosts in the ``\"RedHat\"``
+family alongside hosts in other families. The composed deploy is wrapped with
+``sub_deploy(..., when=is_redhat)``, so both roles are eligible only on the
+RedHat hosts; the driver skips them -- without reading the ``DnfPackages``
 fact -- on the Alpine and Ubuntu hosts, where EPEL and ``dnf`` do not apply.
 
 Composition order *is* execution order, and the driver executes it in
@@ -78,17 +78,17 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision. EPEL and the
-    ``dnf`` operations below only make sense on a CentOS host, so the guard
+    ``dnf`` operations below only make sense on a RedHat host, so the guard
     keeps them (and the facts they read) off the Alpine and Ubuntu hosts.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def role_epel_repo(host: Host) -> Generator[OperationRequest]:
@@ -112,14 +112,14 @@ def role_monitoring(host: Host) -> Generator[OperationRequest]:
 
 
 # Argument order is the ordering statement: repos strictly before packages.
-# The outer ``sub_deploy`` adds the ``is_centos`` eligibility guard to both
-# roles at once, so the ordering only ever plays out on the CentOS hosts.
+# The outer ``sub_deploy`` adds the ``is_redhat`` eligibility guard to both
+# roles at once, so the ordering only ever plays out on the RedHat hosts.
 deploy = sub_deploy(
     compose(
         sub_deploy(role_epel_repo, name_prefix="repos"),
         sub_deploy(role_monitoring, name_prefix="monitoring"),
     ),
-    when=is_centos,
+    when=is_redhat,
 )
 
 
@@ -130,8 +130,8 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # --dry: prepare phase only. The plan lists the repo request first on
-        # each host; no mutating command is sent. On the non-CentOS hosts every
-        # step is [skipped: when guard is_centos].
+        # each host; no mutating command is sent. On the non-RedHat hosts every
+        # step is [skipped: when guard is_redhat].
         plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("\n== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))

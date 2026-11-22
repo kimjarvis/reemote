@@ -61,11 +61,11 @@ runs ``kill`` under sudo where needed.
 The hosts come from the shared ``inventory.json`` in the project root,
 read with ``load_inventory`` (parse + ``validate_inventory``) and resolved
 from ``__file__`` so the example works from any working directory. The
-snapshot gather is guarded by ``is_centos`` (``host.group == "centos"``):
+snapshot gather is guarded by ``is_redhat`` (``host.family == "RedHat"``):
 ``gather_fact`` takes no ``when`` parameter, so the predicate filters the
-host list before the fan-out and hosts outside the ``"centos"`` group are
-named on a ``== Skipped (when guard is_centos): ... ==`` line and never
-connected. Every kill request also carries ``when=is_centos``, and a
+host list before the fan-out and hosts outside the ``"RedHat"`` family are
+named on a ``== Skipped (when guard is_redhat): ... ==`` line and never
+connected. Every kill request also carries ``when=is_redhat``, and a
 skipped host has no snapshot entry, so its deploy yields nothing.
 
 Run it with::
@@ -121,15 +121,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def build_kill(
@@ -139,7 +139,7 @@ def build_kill(
 
     The returned generator loops over ``snapshot.get(host.name, {})`` --
     an ordinary dict taken BEFORE this deploy's prepare phase -- so both
-    phases resolve the loop identically, and a host the ``is_centos``
+    phases resolve the loop identically, and a host the ``is_redhat``
     guard kept out of the snapshot simply yields nothing. Reading the
     live ``Processes`` fact here instead is impossible (the generator is
     synchronous) and branching on live host state would re-introduce the
@@ -157,7 +157,7 @@ def build_kill(
                     pid=pid,
                     signal=SIGNAL,
                     sudo=True,
-                    when=is_centos,
+                    when=is_redhat,
                 )
 
     return deploy
@@ -171,15 +171,15 @@ async def main() -> None:
 
         # The snapshot: one concurrent Processes read across the guarded
         # hosts, keyed by host name, before any deploy runs. gather_fact has
-        # no ``when`` parameter, so the is_centos predicate filters the host
+        # no ``when`` parameter, so the is_redhat predicate filters the host
         # list before the fan-out -- a skipped host is never connected. These
         # hosts are ours to close; run() below builds fresh ones from the
         # same inventory.
         all_hosts = [Host.from_inventory(entry) for entry in inventory]
-        hosts = [host for host in all_hosts if is_centos(host)]
+        hosts = [host for host in all_hosts if is_redhat(host)]
         skipped = [host.name for host in all_hosts if host not in hosts]
         if skipped:
-            print("\n== Skipped (when guard is_centos): " + ", ".join(skipped) + " ==")
+            print("\n== Skipped (when guard is_redhat): " + ", ".join(skipped) + " ==")
         try:
             snapshot = await gather_fact(hosts, server.Processes)
         finally:

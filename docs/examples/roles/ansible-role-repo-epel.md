@@ -4,7 +4,7 @@
 | --- | --- |
 | Role | [`geerlingguy.repo-epel`](https://github.com/geerlingguy/ansible-role-repo-epel) |
 | Program | [`ansible-role-repo-epel.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/ansible-role-repo-epel/ansible-role-repo-epel.py) |
-| Target | **CentOS** — hosts in the inventory group `"centos"` (RHEL family) |
+| Target | **RedHat** — hosts in the `"RedHat"` OS family (RHEL family) |
 | Inventory | [`inventory.json`](https://github.com/kimjarvis/reemote/blob/main/inventory.json) at the project root |
 | Scope | the role's whole default path — all four tasks |
 | Offline test | [`tests/test_roles_ansible_role_repo_epel.py`](https://github.com/kimjarvis/reemote/blob/main/tests/test_roles_ansible_role_repo_epel.py) |
@@ -45,12 +45,12 @@ installed automatically.
 - **Outbound HTTPS to `dl.fedoraproject.org`.** The EPEL GPG key and the
   `epel-release` RPM are fetched **control-side** (see deviation D2); a
   network failure aborts the run before the corresponding host request.
-- **SSH access** to each `centos` host with the key named in its `connection`
+- **SSH access** to each RedHat host with the key named in its `connection`
   (`~/.ssh/id_ed25519` for the shipped `web1`/`web2` entries).
 
 ### 1.3 Target host
 
-- A RHEL-family distribution with `rpm`/`dnf` — the shipped `centos`-group
+- A RHEL-family distribution with `rpm`/`dnf` — the shipped RedHat-family
   hosts are CentOS Stream 9. `main()` verifies the gathered
   `LinuxDistribution` family is `RedHat` and fails fast otherwise.
 - **Elevation.** Every request carries `sudo=True`. The login user needs
@@ -68,11 +68,11 @@ installed automatically.
 ### 1.4 Inventory: what you must add
 
 **Nothing is mandatory.** The shipped `inventory.json` already has two
-`centos`-group hosts (`web1`, `web2`); the role defaults apply as-is. (Their
+RedHat-family hosts (`web1`, `web2`); the role defaults apply as-is. (Their
 `tags` still say `ubuntu_host`/`apt_package_manager` from an earlier demo —
-tags are irrelevant here: the `when` guard reads the **group**, not tags.)
+tags are irrelevant here: the `when` guard reads the **family**, not tags.)
 
-Role variables are optional extra keys on a `centos` entry, e.g. to disable
+Role variables are optional extra keys on a RedHat-family entry, e.g. to disable
 the repo after installing it:
 
 ```json
@@ -90,7 +90,7 @@ the repo after installing it:
 ```
 
 The other entries (`alpine`, `ubuntu`) need no changes. They are not in the
-`centos` group, so `when=is_centos` skips them and **they are never
+RedHat family, so `when=is_redhat` skips them and **they are never
 contacted** — a skipped request is not materialized at all.
 
 ---
@@ -115,7 +115,7 @@ What you get, per deploy:
 == Inventory loaded from /home/kim/reemote/inventory.json ==
 alpine, web1, web2, ubuntu
 
-== Skipped (when guard is_centos): alpine, ubuntu ==
+== Skipped (when guard is_redhat): alpine, ubuntu ==
 == Frozen EPEL plans ==
 web1: EPEL 9 -> /etc/yum.repos.d/epel.repo (present), enabled=1
 web2: EPEL 9 -> /etc/yum.repos.d/epel.repo (present), enabled=1
@@ -200,7 +200,7 @@ state) and both passes must yield the identical request sequence. The role's
 may not branch on, so it becomes **gather → snapshot → factory**.
 
 ```
-load_inventory + validate_inventory ──► Host.from_inventory ──► targets = group "centos"
+load_inventory + validate_inventory ──► Host.from_inventory ──► targets = family "RedHat"
 role_settings(host)                                   (no host contacted)
 │
 ├─ gather: LinuxDistribution (family/major guard + URL resolution)
@@ -212,7 +212,7 @@ role_settings(host)                                   (no host contacted)
 │                                 dnf.key(keyid=…) → files.download(RPM → /tmp spool)
 │                                 → dnf.rpm(spool) → files.file(spool, present=False)
 │
-└─ run 2  build_configure(plans)  every centos host, unconditional:
+└─ run 2  build_configure(plans)  every RedHat host, unconditional:
                                   files.ini_option([epel] enabled=<v>, create=False)
                                   → files.file(mode="0644")
 ```
@@ -271,7 +271,7 @@ Every one is recorded in a comment at its site in the program.
 
 | # | Deviation | Why |
 | --- | --- | --- |
-| D1 | Non-`centos`-group hosts are **skipped**, not failed | the migration targets one OS; the shared inventory holds Alpine and Ubuntu hosts that must not be touched |
+| D1 | Non-RedHat-family hosts are **skipped**, not failed | the migration targets one OS; the shared inventory holds Alpine and Ubuntu hosts that must not be touched |
 | D2 | The key and RPM are fetched **control-side** (`files.fetch_url` / `files.download`); `rpm_key`/`yum` download on the target | no controller filesystem paths inside a deploy; reemote's URL operations fetch control-side by design. The control machine needs egress to `dl.fedoraproject.org`; the host needs none |
 | D3 | `yum: name=<URL>.rpm` becomes download-to-spool + `dnf.rpm` + a spool-cleanup request | `dnf.rpm` installs a `.rpm` that already exists on the host (a URL `src` raises `ValueError`) — the documented staging boundary. The cleanup has no Ansible counterpart (yum leaves no local file) and keeps a later pass from installing a stale staged RPM |
 | D4 | `until`/`retries: 5`/`delay: 10` are dropped | reemote is fail-fast with no per-request retry wrapper; a transient failure aborts the run — re-run to retry |
@@ -289,7 +289,7 @@ Every one is recorded in a comment at its site in the program.
 imports the example by path and replays `main()` barrier-for-barrier against
 persistent `SimulatedHost`s — the real driver, prepare + apply, plus a
 `dry=True` preview per deploy. It proves: the first pass installs (key
-imported, RPM staged/installed, spool cleaned, repo file present), non-CentOS
+imported, RPM staged/installed, spool cleaned, repo file present), non-RedHat
 hosts are never touched, **the second pass reports `changed=False`
 everywhere and fetches nothing**, a converged host is a full no-op, a dry
 preview mutates nothing, the keyid gate skips an already-imported key, the
@@ -314,6 +314,6 @@ mutable-container literals in `op()`) and drains both factories with
 **Not yet run against a real host.** Doing so mutates the target and needs
 explicit approval; the recipe is [§2](#2-running-it-against-inventoryjson-with-uv)
 — run it, inspect the plans, then run it again and confirm
-`0 changed request(s)`. (Both shipped `centos` hosts already have
+`0 changed request(s)`. (Both shipped RedHat hosts already have
 `epel-release-9-11.el9` installed, so the expected outcome there is a full
 no-op.)

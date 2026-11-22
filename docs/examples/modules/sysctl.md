@@ -15,7 +15,7 @@ example relocated here from `examples/modules/server/server_sysctl.py` when
 the `Sysctl` fact moved to this namespace.
 
 Both operation examples read the shared project-root `inventory.json`,
-guard every request with `when=is_centos` (the web1/web2 hosts) and flag
+guard every request with `when=is_redhat` (the web1/web2 hosts) and flag
 their requests `sudo=True` — writing root-owned `/etc`
 configuration and applying kernel settings needs root, while the spool
 transfer itself stays unprivileged. They write kernel tuning and reload it,

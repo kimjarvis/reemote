@@ -10,14 +10,15 @@ This is a *usage* example, not part of the library. It demonstrates
 1. Load the target hosts from the shared ``inventory.json`` in the project
    root with ``load_inventory`` (parse + ``validate_inventory``), carrying
    ``group`` and ``tags`` classifiers, and materialize each entry with
-   ``Host.from_inventory``. The ``is_centos`` group guard
-   (``host.group == "centos"``) filters the host list before the fan-out --
+   ``Host.from_inventory``. The ``is_redhat`` family guard
+   (``host.family == "RedHat"``) filters the host list before the fan-out --
    an action has no ``when`` meta-parameter.
 2. ``gather_action(hosts, WaitForConnection, timeout=..., retry=...,
    group=..., tags=...)`` waits for every SELECTED host concurrently:
    ``group`` keeps hosts whose ``host.group`` matches, ``tags`` keeps hosts
    carrying every listed tag -- the fan-out's own selection keywords, here
-   narrowing the already-filtered list to the ``centos`` group. Each host is
+   narrowing the already family-filtered list to the ``"centos"`` group with
+   the ``web`` tag. Each host is
    polled -- a full SSH connect, retried every ``retry`` seconds -- until it
    succeeds or its ``timeout`` (seconds) is exhausted.
 3. The awaited call is the barrier: it returns only once every selected host
@@ -48,7 +49,7 @@ The purpose is the reboot sequence between deploys::
     plans, report, hosts = await run(INVENTORY, finish)
 
 This script deliberately does NOT reboot the shared demo hosts. Instead it
-runs the wait itself twice: once against the ``centos`` hosts of the shared
+runs the wait itself twice: once against the RedHat hosts of the shared
 inventory (they are up, so it succeeds at the first attempt), and once
 against a deliberately unreachable TEST-NET address with a short timeout, to
 show the fatal ``ConnectionTimeoutError`` being caught and reported -- the
@@ -105,15 +106,16 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """Group guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """Family guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only the host's static ``group`` field. Actions have no ``when``
+    Reads only the host's static ``family`` field. Actions have no ``when``
     meta-parameter, so the guard is applied by filtering the host list before
-    the ``gather_action`` fan-out; the fan-out's own ``group=`` keyword then
-    demonstrates the same selection natively.
+    the ``gather_action`` fan-out; the fan-out's own ``group=``/``tags=``
+    keywords then demonstrate further native selection on the inventory's
+    other static classifiers.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 async def main() -> None:
@@ -130,13 +132,13 @@ async def main() -> None:
 
     print(f"== Inventory loaded from {INVENTORY_PATH} ==")
     all_hosts = [Host.from_inventory(entry) for entry in inventory]
-    # The group guard: filter the host list before the fan-out -- only the
-    # centos hosts are ever contacted.
-    hosts = [host for host in all_hosts if is_centos(host)]
-    skipped = [host.name for host in all_hosts if not is_centos(host)]
-    print(f"== Skipped (group guard is_centos): {', '.join(skipped)} ==")
+    # The family guard: filter the host list before the fan-out -- only the
+    # RedHat hosts are ever contacted.
+    hosts = [host for host in all_hosts if is_redhat(host)]
+    skipped = [host.name for host in all_hosts if not is_redhat(host)]
+    print(f"== Skipped (family guard is_redhat): {', '.join(skipped)} ==")
     try:
-        # Wait for the centos hosts carrying the web tag. The hosts are up,
+        # Wait for the RedHat hosts carrying the web tag. The hosts are up,
         # so each connects at the first attempt; the await is the barrier --
         # every selected host is reachable before the next line runs, which
         # is exactly the guarantee the next deploy needs after a reboot.
@@ -155,7 +157,7 @@ async def main() -> None:
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
-    print("== wait for the centos hosts (all reachable) ==")
+    print("== wait for the RedHat hosts (all reachable) ==")
     for name in connected:
         print(f"{name}: connected")
 

@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: gather the ``files.FindInFiles`` fact on real CentOS hosts.
+"""Example: gather the ``files.FindInFiles`` fact on real RedHat hosts.
 
 This is a *usage* example, not part of the library. Like
 ``examples/modules/files/files_find_in_file.py``, it reads a single **fact**
@@ -16,15 +16,15 @@ two-phase execution model:
 2. Materialize each entry into a plain ``Host`` with the default
    ``Host.from_inventory`` factory. Each ``Host`` lazily opens an asyncssh
    connection from its ``connection`` data when a fact is gathered.
-3. Guard the gather with a ``when`` predicate: ``is_centos`` reads only
-   **static** inventory data -- ``host.group`` -- and the fact is gathered
+3. Guard the gather with a ``when`` predicate: ``is_redhat`` reads only
+   **static** inventory data -- ``host.family`` -- and the fact is gathered
    on the hosts that pass it. ``gather_fact`` itself takes no ``when``
    parameter, so the predicate filters the host list before the fan-out --
    the direct equivalent of a driver-side skip. Hosts outside the
-   ``"centos"`` group are named on a
-   ``== Skipped (when guard is_centos): ... ==`` line and never connected.
+   ``\"RedHat\"`` family are named on a
+   ``== Skipped (when guard is_redhat): ... ==`` line and never connected.
 4. Gather ``FindInFiles`` for the ``.repo`` files under ``/etc/yum.repos.d``
-   whose *content* still names the end-of-life CentOS mirror endpoint on the
+   whose *content* still names the end-of-life RedHat mirror endpoint on the
    guarded hosts at once with the driver's ``gather_fact`` helper -- it fans
    the fact's ``process`` coroutine out across the inventory with
    ``asyncio.gather`` and returns a host-name-keyed mapping -- then print
@@ -43,7 +43,7 @@ extended regex (``-E``); ``interpolate_variables=True`` lets the remote shell
 expand ``$VAR`` references in it instead of quoting it literally. Here the
 question is the "delete unmanaged files matching content" cleanup idiom:
 which repo files still point at ``mirrorlist.centos.org``, the endpoint retired
-when CentOS 8 reached end of life. This one-fact read feeds the gather side
+when RedHat 8 reached end of life. This one-fact read feeds the gather side
 of a two-deploy split -- gather the offending paths in one deploy, then remove
 the surplus with ``files.file`` in the next -- exactly the way ``FindFiles``
 backs the conf.d cleanup.
@@ -77,7 +77,7 @@ from reemote import (
     validate_inventory,
 )
 
-# The CentOS repository drop-in directory and the retired mirror endpoint the
+# The RedHat repository drop-in directory and the retired mirror endpoint the
 # read hunts for: every .repo file whose content still names it is a stale,
 # unmanaged source a cleanup deploy would remove. The pattern is an extended
 # regex (grep -E), so the dots are escaped to match literally.
@@ -104,15 +104,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 async def main() -> None:
@@ -130,10 +130,10 @@ async def main() -> None:
         # predicate is the equivalent of the driver skipping a guarded
         # request on ineligible hosts -- the skipped hosts are never
         # connected, exactly as a skipped request is never materialized.
-        hosts = [host for host in all_hosts if is_centos(host)]
+        hosts = [host for host in all_hosts if is_redhat(host)]
         skipped = [host.name for host in all_hosts if host not in hosts]
         if skipped:
-            print("\n== Skipped (when guard is_centos): " + ", ".join(skipped) + " ==")
+            print("\n== Skipped (when guard is_redhat): " + ", ".join(skipped) + " ==")
         # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans FindInFiles.process out with asyncio.gather and returns a
         # host-name-keyed mapping, so the SSH round-trips overlap instead of

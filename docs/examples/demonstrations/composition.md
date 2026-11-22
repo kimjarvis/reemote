@@ -10,7 +10,7 @@ across hosts, and three two-deploy scenarios that move a mutable read — a
 fact snapshot or the apply report — into the gap between two complete
 prepare/apply cycles. All read the shared
 project-root `inventory.json` (validated up front) and guard their `dnf` work
-to the `centos` group with a stable `is_centos` predicate, so the Alpine and
+to the RedHat family with a stable `is_redhat` predicate, so the Alpine and
 Ubuntu hosts are skipped without their facts being read; every one follows the
 same dry-run-then-apply flow, and
 `composed_group_tag_roles` runs in memory against `SimulatedHost` instead of
@@ -124,7 +124,7 @@ access to earlier outcomes) can condition it on a change. Deploy 1
 script's `NOTIFYING` set; between the runs, `changed_hosts(report, NOTIFYING)`
 freezes the hosts whose named entries report `changed` in run 1's
 `ApplyReport`; deploy 2 is built by
-`restart_handler(changed, "nginx", when=is_centos)` closing over that
+`restart_handler(changed, "nginx", when=is_redhat)` closing over that
 frozen set and yields `systemd.service(restarted=True)` only for those
 hosts. Deduplication and
 end-of-run flushing come free — at most one restart per host, after every

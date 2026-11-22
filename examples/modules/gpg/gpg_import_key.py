@@ -41,7 +41,7 @@ idempotence is decided against that file's ``GpgKeyrings`` entry. The two
 ``dest`` requests below import the same key into
 ``/tmp/docker-archive-keyring.gpg`` and then repeat it: the first changes,
 the second is a no-op in the apply log. ``/tmp`` is deliberate -- the demo
-CentOS hosts confine the login user to SELinux ``staff_t``, which denies
+RedHat hosts confine the login user to SELinux ``staff_t``, which denies
 writes under ``/etc`` but allows ``/tmp``; point ``dest`` at
 ``/etc/apt/keyrings/...`` (or ``/usr/share/keyrings/...``) on a host where
 that is permitted. ``dest`` cannot combine with ``secret``.
@@ -58,14 +58,14 @@ phases, so it is defined once at module level below -- building a fresh
 stream inside the deploy generator would diverge between the phases and
 raise ``DeterminismError``.
 
-Every request carries ``when=is_centos``, the declarative eligibility
+Every request carries ``when=is_redhat``, the declarative eligibility
 guard: the predicate reads only **static** inventory data --
-``host.group``, set by the ``"group"`` key of the inventory entry -- and
+``host.family``, set by the ``\"family\"`` key of the inventory entry -- and
 is a stable module-level function, so the prepare and apply phases reach
 the same skip decision. The driver skips a rejected request without
-materializing it, so on hosts outside the ``"centos"`` group neither the
+materializing it, so on hosts outside the ``"RedHat"`` family neither the
 commands nor the facts behind them run, and plan and log render the step
-as ``[skipped: when guard is_centos]`` in its lockstep slot. The path is
+as ``[skipped: when guard is_redhat]`` in its lockstep slot. The path is
 resolved from ``__file__``, so the example works from any working
 directory; point ``INVENTORY_PATH`` at your own file to target your
 machines.
@@ -161,15 +161,15 @@ def load_inventory(path: Path) -> list[dict[str, Any]]:
     return inventory
 
 
-def is_centos(host: Host) -> bool:
-    """``when`` guard: the host belongs to the inventory group ``"centos"``.
+def is_redhat(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
-    Reads only static inventory data (``host.group``, set by the ``"group"``
+    Reads only static inventory data (``host.family``, set by the ``"family"``
     key of the inventory entry), never a mutable fact, and stays a stable
     module-level function -- the two rules every ``when`` predicate follows
     so both deploy phases reach the same eligibility decision.
     """
-    return host.group == "centos"
+    return host.family == "RedHat"
 
 
 def deploy(host: Host) -> Generator[OperationRequest]:
@@ -189,14 +189,14 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Import demo GPG key",
         src=GPG_KEY,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
     yield op(
         gpg.import_key,
         name="Import demo GPG key (again)",
         src=GPG_KEY,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
     yield op(
         gpg.import_key,
@@ -205,7 +205,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         keyid=GPG_KEY_FINGERPRINT,
         dest=KEYRING_DEST,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
     yield op(
         gpg.import_key,
@@ -214,7 +214,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         keyid=GPG_KEY_FINGERPRINT,
         dest=KEYRING_DEST,
         sudo=True,
-        when=is_centos,
+        when=is_redhat,
     )
 
 

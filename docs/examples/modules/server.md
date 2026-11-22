@@ -38,15 +38,15 @@ the operation examples in
 fact, and the facts themselves are documented on the
 [`server` module page](../../modules/server.md).
 
-`server_lsb_release.py` first installs its prerequisite: the CentOS demo hosts
+`server_lsb_release.py` first installs its prerequisite: the RedHat demo hosts
 do not ship `lsb_release` in their base repos (EPEL provides it), so a short
 `dnf.packages` deploy flagged `sudo=True` puts the binary in place before the
 fact is gathered. The install is idempotent, and the read never hits the
 missing-command path.
 
 Like the dnf examples, every script reads the shared project-root
-`inventory.json` and guards on the `"centos"` group by default
-(`when=is_centos` on every request, a host-list filter before each
+`inventory.json` and guards on the `"RedHat"` family by default
+(`when=is_redhat` on every request, a host-list filter before each
 `gather_fact` fan-out) — the one exception is the locale example below,
 which guards on `is_ubuntu` because it is Debian-family only.
 
@@ -164,7 +164,7 @@ prerequisites before deploying: `main` first awaits `provision_mounts` from
 the sibling `provision.py`, which creates `/data` and `/scratch` with
 `files.directory` and attaches a 64M loop-backed ext4 image as `/dev/sdb1`
 (the demo hosts have no spare disk, only `/dev/sda`). Both steps are
-idempotent and scoped to the `centos` group; the loop attachment does not
+idempotent and scoped to the RedHat family; the loop attachment does not
 survive a reboot, but provisioning re-attaches the existing image without
 reformatting it. A `mount`/`umount` that still exits non-zero (a busy
 filesystem on unmount, for instance) fails the run with a typed
@@ -331,7 +331,7 @@ each guarded host's `/etc/fstab`, and re-running it is a no-op.
 under `sudo`, the baseline parity for `/etc/locale.gen`. It is a
 **Debian-family operation**: `/etc/locale.gen` and `locale-gen` exist only
 on Debian/Ubuntu (the `locales` package), so it targets the `ubuntu` host, not
-the CentOS `web1`/`web2` servers — RHEL-family hosts install locales through
+the RedHat `web1`/`web2` servers — RHEL-family hosts install locales through
 `glibc-langpack-*` and `localedef` and have no `/etc/locale.gen`, and a
 request there raises `OperationError` in the prepare phase.
 The operation is **spool-and-install**: in one request it reads the
@@ -414,8 +414,8 @@ line followed by `$ sudo sh -c '...'`. The `chmod 0644` reset matters —
 silently stop the limits applying. Re-running the script is a no-op once the
 file carries the line (the content-level fixpoint), and `value` accepts both
 an `int` and a symbolic string such as `"unlimited"`. Every request carries
-`when=is_centos`, the static-inventory guard, so hosts outside the `"centos"`
-group are skipped without connecting.
+`when=is_redhat`, the static-inventory guard, so hosts outside the RedHat
+family are skipped without connecting.
 
 ::: server_security_limit
     options:
@@ -446,7 +446,7 @@ ed25519 line in the log has no `-b` in it. No request passes a `passphrase`:
 passphrase-protected generation is out of scope — following `gpg.gen_key`, no
 secret may ride a plan, a log or a `/tmp` spool on the target — so a non-empty
 one raises `ValueError` while the request materializes, in the prepare phase,
-before a fact is read or a command sent. Every request carries `when=is_centos`, the
+before a fact is read or a command sent. Every request carries `when=is_redhat`, the
 static-inventory guard, applied by hand to the `gather_fact` fan-out too,
 which takes no `when` of its own. The script mutates the demo hosts for real —
 the key pairs stay in place — and re-running it is a no-op; `force=True` is the
