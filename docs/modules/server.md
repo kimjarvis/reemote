@@ -56,6 +56,7 @@ back as an error `Result` (exit 127), never an exception. See the
         - Hostname
         - HttpEndpoint
         - HttpEndpointInfo
+        - InitSystem
         - Kernel
         - KernelModules
         - KernelVersion
@@ -100,7 +101,7 @@ back as an error `Result` (exit 127), never an exception. See the
 `reemote.modules.server.server` combines the server facts and the server
 operations in a single source, so the read side (`Arch`, `AuthorizedKeys`,
 `AuthorizedKeysFile`,
-`Date`, `Env`, `EtcHosts`, `FipsEnabled`, `Fstab`, `GroupDetails`, `Groups`, `HasGui`, `Home`, `Hostname`, `Kernel`, `KernelModules`,
+`Date`, `Env`, `EtcHosts`, `FipsEnabled`, `Fstab`, `GroupDetails`, `Groups`, `HasGui`, `Home`, `Hostname`, `InitSystem`, `Kernel`, `KernelModules`,
 `KernelVersion`, `Last`, `LinuxDistribution`, `LinuxGui`, `LinuxName`,
 `Locales`, `LsbRelease`, `Mounts`, `Port`, `Processes`, `PythonVersion`,
 `SshKeyPair`, `Timezone`, `Uptime`, `User`, `Users`, `Which`)
@@ -223,7 +224,25 @@ maps it to `None` so a missing user never masquerades as a path. `Hostname`
 takes no arguments: it runs `uname -n` and returns the server's hostname
 string (e.g. `my-host.net`), mirroring the baseline's `server.Hostname`; the
 first non-blank line is the answer and empty output (the command failed)
-reads as `""`, just like `Arch`. `Kernel` takes no arguments: it runs
+reads as `""`, just like `Arch`. `InitSystem` takes no arguments: it runs a
+guarded PID 1 probe — the `/run/systemd/system` runtime marker systemd itself
+uses, the `/sbin/openrc` binary marker, `/proc/1/comm`, the resolved
+`/proc/1/exe` and the `initctl --version` banner — and returns which init
+system owns PID 1 as one of `"systemd"`, `"openrc"`, `"upstart"`,
+`"sysvinit"`, `"runit"`, `"dinit"` or `"unknown"`. An original reemote fact
+giving Ansible's `ansible_facts.service_mgr` parity, so a role that branches
+on the manager — `geerlingguy.firewall`'s mutually exclusive
+`firewall.unit.j2` → `/etc/systemd/system/firewall.service`
+(`service_mgr == 'systemd'`) and `firewall.init.j2` → `/etc/init.d/firewall`
+(`service_mgr != 'systemd'`) tasks — selects its branch in the program's
+gather-then-plan step from a frozen snapshot instead of a hard-coded target.
+The `/run/systemd/system` marker is what separates a real systemd PID 1 from a
+Devuan or Debian-systemV host that merely has the systemd *package* installed
+— a distinction `Which("systemctl")` cannot make — and `/sbin/openrc` names
+OpenRC, whose PID 1 is a SysVinit-compatible `/sbin/init`. It never raises on
+an unreadable `/proc`: every read is swallowed, so an unreadable PID 1 or an
+unrecognised manager reads as `"unknown"` (the `SystemdSystemState`
+empty-to-`unknown` precedent). `Kernel` takes no arguments: it runs
 `uname -s` and returns the kernel name string (e.g. `Linux`, `Darwin`,
 `FreeBSD`), mirroring the baseline's `server.Kernel`; the first non-blank line is
 the answer and empty output reads as `""`, just like `Arch`. The baseline's

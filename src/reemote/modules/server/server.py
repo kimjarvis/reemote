@@ -1268,6 +1268,135 @@ class Hostname:
         return cls.parse(stdout.splitlines())
 
 
+class InitSystem:
+    """The init system that owns PID 1 (e.g. ``systemd``, ``openrc``).
+
+    **Commands:**
+
+    ```bash
+    test -d /run/systemd/system && echo systemd=yes || echo systemd=no; test -x /sbin/openrc && echo openrc=yes || echo openrc=no; echo comm=$(cat /proc/1/comm 2>/dev/null); echo exe=$(readlink -f /proc/1/exe 2>/dev/null); initctl --version 2>/dev/null || true
+    ```
+
+    **Returns:**
+
+    ```python
+    str
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_init_system.py``.
+    """
+
+    # Original reemote fact giving Ansible's ``ansible_facts.service_mgr``
+    # parity (issue #51): which init system owns PID 1, so a role that
+    # branches on it -- ``geerlingguy.firewall``'s mutually exclusive
+    # ``firewall.init.j2`` -> ``/etc/init.d/firewall`` (``service_mgr !=
+    # 'systemd'``) and ``firewall.unit.j2`` -> ``/etc/systemd/system/
+    # firewall.service`` (``service_mgr == 'systemd'``) tasks -- can select
+    # its branch from a frozen snapshot instead of a hard-coded target.
+    #
+    # The evidence is gathered in one guarded shell and mapped to a closed
+    # vocabulary in ``parse``. ``/run/systemd/system`` is the marker systemd
+    # itself uses and only exists when a systemd manager owns PID 1 -- a
+    # Devuan or Debian-systemV host with the systemd *package* installed
+    # does not create it, which is exactly the distinction ``Which(
+    # "systemctl")`` cannot make. ``/sbin/openrc`` is checked as a marker
+    # because OpenRC does not replace PID 1 (its init is a SysVinit-compatible
+    # ``/sbin/init``), so PID 1 alone cannot name it. ``/proc/1/comm`` and
+    # ``readlink -f /proc/1/exe`` name the rest (runit, dinit, SysVinit's
+    # ``init``), and ``initctl --version`` distinguishes upstart, whose PID 1
+    # is also spelled ``init``, from SysVinit.
+    #
+    # The answer is one of ``"systemd"``, ``"openrc"``, ``"upstart"``,
+    # ``"sysvinit"``, ``"runit"``, ``"dinit"`` or ``"unknown"``. It never
+    # raises on an unreadable ``/proc``: every read is swallowed by
+    # ``2>/dev/null``/``|| true``, so an unreadable PID 1 or an unrecognised
+    # manager reads as ``"unknown"`` -- the ``SystemdSystemState``
+    # empty-to-``unknown`` precedent, applied to a fact that must be able to
+    # answer "no known init" rather than abort the gather.
+
+    #: Shell gathering PID 1's identity: the systemd runtime marker, the
+    #: OpenRC binary marker, ``/proc/1/comm``, the resolved ``/proc/1/exe``
+    #: and the upstart banner. Every external read is guarded, so a missing
+    #: binary or an unreadable ``/proc`` yields evidence, never an error.
+    COMMAND = (
+        "test -d /run/systemd/system && echo systemd=yes || echo systemd=no; "
+        "test -x /sbin/openrc && echo openrc=yes || echo openrc=no; "
+        "echo comm=$(cat /proc/1/comm 2>/dev/null); "
+        "echo exe=$(readlink -f /proc/1/exe 2>/dev/null); "
+        "initctl --version 2>/dev/null || true"
+    )
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> str:
+        """Map PID 1's gathered evidence onto the init-system vocabulary.
+
+        The ``systemd=``/``openrc=`` markers and the ``comm=``/``exe=``
+        identity lines are read out of the labeled rows; anything else is
+        the ``initctl`` banner. systemd wins first (its runtime marker, then
+        a ``systemd`` token in PID 1's identity), then OpenRC's marker, then
+        upstart's banner, then the remaining managers named by PID 1's
+        identity, then a bare ``init`` as SysVinit. An unreadable ``/proc``
+        or an unrecognised manager reads as ``"unknown"``. Pure and testable.
+        """
+        systemd = ""
+        openrc = ""
+        comm = ""
+        exe = ""
+        banner: list[str] = []
+        for line in output:
+            stripped = line.strip()
+            if stripped.startswith("systemd="):
+                systemd = stripped.split("=", 1)[1]
+            elif stripped.startswith("openrc="):
+                openrc = stripped.split("=", 1)[1]
+            elif stripped.startswith("comm="):
+                comm = stripped.split("=", 1)[1]
+            elif stripped.startswith("exe="):
+                exe = stripped.split("=", 1)[1]
+            elif stripped:
+                banner.append(stripped)
+        if systemd == "yes":
+            return "systemd"
+        exe_base = exe.rsplit("/", 1)[-1].lower()
+        comm_lower = comm.lower()
+        if "systemd" in comm_lower or "systemd" in exe_base:
+            return "systemd"
+        if openrc == "yes":
+            return "openrc"
+        if any("upstart" in row.lower() for row in banner):
+            return "upstart"
+        if "openrc" in comm_lower or "openrc" in exe_base:
+            return "openrc"
+        if "runit" in comm_lower or "runit" in exe_base:
+            return "runit"
+        if "dinit" in comm_lower or "dinit" in exe_base:
+            return "dinit"
+        # SysVinit's PID 1 is /sbin/init (comm "init"); upstart shares that
+        # spelling but is caught by its initctl banner above, so a bare init
+        # here is SysVinit.
+        if comm_lower == "init" or exe_base == "init":
+            return "sysvinit"
+        return "unknown"
+
+    @classmethod
+    async def process(cls, host: Host) -> str:
+        init_system = getattr(host, "init_system", None)
+        if init_system is not None:
+            # SimulatedHost seam: read the in-memory init name directly.
+            # str is immutable, so no copy is needed.
+            return init_system
+        # Real transport: the guarded PID 1 probe over asyncssh.
+        stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
 class Kernel:
     """The kernel name according to ``uname`` (e.g. ``Linux``).
 

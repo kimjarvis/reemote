@@ -55,6 +55,7 @@ a real asyncssh transport is missing:
   / ``iptables_chains`` / ``iptables_modules`` / ``iptables_ordered_rules``
   / ``iptables_persistence`` / ``iptables_rules`` / ``iptables_tables``
   / ``iptables_version`` / ``ipv4_addrs`` / ``ipv6_addrs``
+  / ``init_system``
   / ``os_kernel``
   / ``kernel_modules`` / ``os_kernel_version`` / ``login_records``
   / ``linux_distribution``
@@ -124,7 +125,7 @@ a real asyncssh transport is missing:
   ``Ip6tablesVersion``, ``IpSets``, ``IptablesChains``, ``IptablesRules``,
   ``IptablesRulesOrdered``, ``IptablesTables``, ``IptablesVersion``,
   ``IptablesModules``, ``IptablesPersistence``, ``Ip6tablesPersistence``,
-  ``Ipv4Addrs``, ``Ipv6Addrs``, ``Kernel``,
+  ``Ipv4Addrs``, ``Ipv6Addrs``, ``InitSystem``, ``Kernel``,
   ``KernelModules``, ``KernelVersion``, ``Last``,
   ``LinuxDistribution``, ``LinuxGui``, ``LinuxName``, ``Locales``,
   ``LsbRelease``, ``LsBlk``, ``LxdContainers``, ``LxdImageAliases``,
@@ -1583,6 +1584,17 @@ class SimulatedHost(Host):
     # simulated machine with no interfaces listed, like the baseline's
     # ``default = dict`` for a failed read.
     ipv6_addrs: dict[str, list[str]] = field(default_factory=dict)
+    # The init system that owns PID 1 (the ``InitSystem`` answer), backing
+    # ``InitSystem`` -- Ansible's ``ansible_facts.service_mgr`` parity. One of
+    # ``"systemd"``, ``"openrc"``, ``"upstart"``, ``"sysvinit"``, ``"runit"``,
+    # ``"dinit"`` or ``"unknown"``. Defaults to ``"systemd"`` -- the simulated
+    # fleet is modern Linux servers whose PID 1 is systemd, and a fixed real
+    # value (never ``None``) keeps the seam short-circuiting so a simulated
+    # read never falls through to the shell. A read-only seam: the init system
+    # is a boot-time property no operation changes, so a test simulating a
+    # non-systemd host sets it directly. str is immutable, so no copy is
+    # needed at the seam.
+    init_system: str = "systemd"
     # The kernel name (``uname -s``), backing ``Kernel``. Named ``os_kernel``
     # with the os_ prefix (like ``os_hostname``) so it stays clear of any
     # inventory field. Defaults to ``Linux`` -- a real machine always answers

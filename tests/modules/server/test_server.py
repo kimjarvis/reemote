@@ -31,7 +31,9 @@ the real-transport path, session-binary parsing edge cases, and the
 real-transport path, unexpanded-tilde handling, tilde-username validation,
 and the ``SimulatedHost`` seam), the ``Hostname`` fact (the baseline's own
 fixture over the real-transport path, parsing edge cases, and the
-``SimulatedHost`` seam), the ``Kernel`` fact (the baseline's own fixture over
+``SimulatedHost`` seam), the ``InitSystem`` fact (the guarded PID 1 probe over
+the real-transport path, the closed-vocabulary mapping and ``unknown``
+fallback edge cases, and the ``SimulatedHost`` seam), the ``Kernel`` fact (the baseline's own fixture over
 the real-transport path, parsing edge cases, and the ``SimulatedHost``
 seam), the ``KernelModules`` fact (the baseline's own Linux fixture over the
 real-transport path, the ``/proc/modules`` command and parser edge cases, and
@@ -199,6 +201,7 @@ from reemote.modules.server.server import (
     Hostname,
     HttpEndpoint,
     HttpEndpointInfo,
+    InitSystem,
     Kernel,
     KernelModules,
     KernelVersion,
@@ -964,6 +967,125 @@ async def test_hostname_gather_fact_across_hosts():
     assert await gather_fact(hosts, Hostname) == {
         "web1": "web1.example.net",
         "web2": "web2.example.net",
+    }
+
+
+# --- InitSystem ----------------------------------------------------------------
+
+
+async def test_init_system_reads_the_systemd_marker():
+    # A systemd host: /run/systemd/system exists, PID 1 resolves to systemd.
+    host = CannedShellHost(
+        "systemd=yes\nopenrc=no\ncomm=systemd\nexe=/usr/lib/systemd/systemd\n"
+    )
+    assert await InitSystem.process(host) == "systemd"
+    assert host.shells == [InitSystem.COMMAND]
+
+
+async def test_init_system_reads_openrc_from_the_binary_marker():
+    # OpenRC does not own PID 1 (its init is a SysVinit-compatible
+    # /sbin/init), so the /sbin/openrc marker names it, not comm/exe.
+    host = CannedShellHost("systemd=no\nopenrc=yes\ncomm=init\nexe=/sbin/init\n")
+    assert await InitSystem.process(host) == "openrc"
+
+
+async def test_init_system_reads_sysvinit_from_a_bare_init():
+    # No systemd marker, no OpenRC binary, no upstart banner: a PID 1
+    # spelled ``init`` is SysVinit.
+    host = CannedShellHost("systemd=no\nopenrc=no\ncomm=init\nexe=/sbin/init\n")
+    assert await InitSystem.process(host) == "sysvinit"
+
+
+async def test_init_system_reads_upstart_from_the_initctl_banner():
+    # upstart's PID 1 is also spelled ``init``; the initctl banner is what
+    # separates it from SysVinit.
+    host = CannedShellHost(
+        "systemd=no\nopenrc=no\ncomm=init\nexe=/sbin/init\n"
+        "init (upstart 1.13.2)\n"
+    )
+    assert await InitSystem.process(host) == "upstart"
+
+
+async def test_init_system_is_unknown_on_an_unreadable_proc():
+    # An unreadable /proc/1: every read is swallowed, so no evidence at all
+    # maps to "unknown" rather than raising (the SystemdSystemState
+    # empty-to-unknown precedent).
+    assert await InitSystem.process(CannedShellHost("")) == "unknown"
+    host = CannedShellHost("systemd=no\nopenrc=no\ncomm=\nexe=\n")
+    assert await InitSystem.process(host) == "unknown"
+
+
+def test_init_system_parse_maps_the_closed_vocabulary():
+    # systemd's runtime marker wins over everything, then a systemd token in
+    # PID 1's identity, then OpenRC's marker, then the remaining managers
+    # named by comm/exe, then a bare init as SysVinit.
+    assert InitSystem.parse(["systemd=yes"]) == "systemd"
+    assert InitSystem.parse(["systemd=no", "comm=systemd"]) == "systemd"
+    assert InitSystem.parse(["systemd=no", "exe=/lib/systemd/systemd"]) == "systemd"
+    assert InitSystem.parse(["systemd=no", "openrc=yes"]) == "openrc"
+    assert InitSystem.parse(["systemd=no", "comm=openrc"]) == "openrc"
+    assert InitSystem.parse(["systemd=no", "comm=runit", "exe=/sbin/runit"]) == "runit"
+    assert InitSystem.parse(["systemd=no", "comm=dinit"]) == "dinit"
+    assert InitSystem.parse(["systemd=no", "comm=init"]) == "sysvinit"
+    assert InitSystem.parse(["systemd=no", "exe=/sbin/init"]) == "sysvinit"
+    assert InitSystem.parse([]) == "unknown"
+    assert InitSystem.parse(["systemd=no", "comm=something-else"]) == "unknown"
+
+
+def test_init_system_command_is_the_guarded_pid1_probe():
+    # The probe reads only guarded evidence: the systemd runtime marker, the
+    # OpenRC binary marker, /proc/1/comm, the resolved /proc/1/exe and the
+    # upstart banner, so a missing binary or unreadable /proc never errors.
+    assert InitSystem.COMMAND.startswith("test -d /run/systemd/system")
+    assert "/proc/1/comm" in InitSystem.COMMAND
+    assert "readlink -f /proc/1/exe" in InitSystem.COMMAND
+    assert InitSystem.COMMAND.endswith("|| true")
+
+
+async def test_init_system_reads_the_simulated_seam():
+    assert (
+        await InitSystem.process(SimulatedHost(name="h", init_system="openrc"))
+        == "openrc"
+    )
+    assert (
+        await InitSystem.process(SimulatedHost(name="h", init_system="sysvinit"))
+        == "sysvinit"
+    )
+    # The seam defaults to systemd: the simulated fleet is modern Linux.
+    assert await InitSystem.process(SimulatedHost(name="h")) == "systemd"
+
+
+async def test_init_system_gather_fact_across_hosts():
+    hosts = [
+        SimulatedHost(name="web1", init_system="systemd"),
+        SimulatedHost(name="web2", init_system="openrc"),
+    ]
+    assert await gather_fact(hosts, InitSystem) == {
+        "web1": "systemd",
+        "web2": "openrc",
+    }
+
+
+async def test_init_system_selects_the_firewall_service_branch():
+    # The issue's motivating recipe: geerlingguy.firewall's mutually
+    # exclusive service_mgr branches resolve from the gathered snapshot --
+    # a unit file on systemd, an init script otherwise.
+    hosts = [
+        SimulatedHost(name="web1", init_system="systemd"),
+        SimulatedHost(name="web2", init_system="sysvinit"),
+    ]
+    init = await gather_fact(hosts, InitSystem)
+    dest = {
+        name: (
+            "/etc/systemd/system/firewall.service"
+            if mgr == "systemd"
+            else "/etc/init.d/firewall"
+        )
+        for name, mgr in init.items()
+    }
+    assert dest == {
+        "web1": "/etc/systemd/system/firewall.service",
+        "web2": "/etc/init.d/firewall",
     }
 
 

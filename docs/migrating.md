@@ -435,6 +435,16 @@ identical gather → snapshot → factory sequence.
   release files reports `family=None` — neither matches a family key, so it
   queues nothing. See the [server reference](modules/server.md) for the full
   return shape.
+- **An init-system dispatch gathers `InitSystem`.** A role that branches on
+  `ansible_facts.service_mgr` — `geerlingguy.firewall`'s mutually exclusive
+  `service_mgr == 'systemd'` (a unit file) and `service_mgr != 'systemd'` (an
+  init script) tasks — has the same shape: gather
+  [`server.InitSystem`][reemote.modules.server.server.InitSystem] up front with
+  `gather_fact`, freeze the per-host choice, and close the deploy over it.
+  `InitSystem` returns which init system owns PID 1 — `"systemd"`, `"openrc"`,
+  `"upstart"`, `"sysvinit"`, `"runit"`, `"dinit"` or `"unknown"` — the direct
+  equivalent of `service_mgr`, keyed beside `family` when a role splits on both
+  the OS family and the service manager.
 
 ## Migrating Jinja2 templates
 

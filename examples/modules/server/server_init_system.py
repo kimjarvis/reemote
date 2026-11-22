@@ -1,0 +1,150 @@
+# Copyright (c) 2026 Kim Jarvis.
+# SPDX-License-Identifier: EPL-2.0
+
+"""Example: gather the ``server.InitSystem`` fact on real Debian hosts.
+
+This is a *usage* example, not part of the library. Like
+``examples/modules/server/server_fips_enabled.py``, it reads a single **fact**
+directly over the *real SSH transport* (asyncssh) instead of driving the
+two-phase execution model:
+
+1. Read ``inventory.json`` from the current working directory and parse it as JSON -- an
+   inventory is just a list of dictionaries, which is exactly what JSON expresses --
+   then validate it up front with ``validate_inventory`` so a malformed file fails with
+   an ``InventoryError`` naming the offending entry, *before* any host is materialized
+   or connected.
+2. Materialize each entry into a plain ``Host`` with the default
+   ``Host.from_inventory`` factory. Each ``Host`` lazily opens an asyncssh
+   connection from its ``connection`` data when a fact is gathered.
+3. Guard the gather with a ``when`` predicate: ``is_debian`` reads only
+   **static** inventory data -- ``host.family`` -- and the fact is gathered
+   on the hosts that pass it. ``gather_fact`` itself takes no ``when``
+   parameter, so the predicate filters the host list before the fan-out --
+   the direct equivalent of a driver-side skip. Hosts outside the
+   ``\"Debian\"`` family are named on a
+   ``== Skipped (when guard is_debian): ... ==`` line and never connected.
+4. Gather ``InitSystem`` on the guarded hosts at once with the driver's
+   ``gather_fact`` helper -- it fans the fact's ``process`` coroutine out
+   across the inventory with ``asyncio.gather`` and returns a
+   host-name-keyed mapping -- then print each host's init-system name with
+   ``json.dumps(..., indent=2)``.
+
+``InitSystem`` is Ansible's ``ansible_facts.service_mgr`` parity: it resolves
+which init system owns PID 1 and returns one of ``"systemd"``, ``"openrc"``,
+``"upstart"``, ``"sysvinit"``, ``"runit"``, ``"dinit"`` or ``"unknown"``. A
+deploy branches on it in the gather-then-plan step exactly where a role
+branches on the Ansible fact -- ``geerlingguy.firewall``'s two mutually
+exclusive tasks
+
+    when: ansible_facts.service_mgr != 'systemd'   # -> /etc/init.d/firewall
+    when: ansible_facts.service_mgr == 'systemd'   # -> /etc/systemd/system/firewall.service
+
+become the plain Python selection below, so the destination is chosen from the
+frozen snapshot instead of a hard-coded target. This example prints the
+resolved service path next to each manager to show the recipe; a real
+migration would feed it into the ``files.install`` write instead.
+
+Every host's connection is closed with ``aclose`` once the facts are gathered.
+``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven
+by ``asyncio.run``.
+
+The inventory is read from ``inventory.json`` in the current working directory; edit it
+there to target your machines.
+
+Run it with::
+
+    uv run python examples/modules/server/server_init_system.py
+"""
+
+import asyncio
+import json
+import sys
+from pathlib import Path
+
+from reemote import (
+    CommandError,
+    Host,
+    HostConnectionError,
+    InitSystem,
+    InventoryError,
+    gather_fact,
+    validate_inventory,
+)
+
+
+def is_debian(host: Host) -> bool:
+    """``when`` guard: the host belongs to the ``"Debian"`` OS family.
+
+    Reads only static inventory data (``host.family``, set by the ``"family"``
+    key of the inventory entry), never a mutable fact, and stays a stable
+    module-level function -- the two rules every ``when`` predicate follows
+    so both deploy phases reach the same eligibility decision.
+    """
+    return host.family == "Debian"
+
+
+async def main() -> None:
+    hosts: list[Host] = []
+    try:
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
+        print(", ".join(entry["host"] for entry in inventory))
+
+        # Materialize every inventory entry up front, then guard the gather
+        # below -- a skipped host never reaches the fan-out at all.
+        all_hosts = [Host.from_inventory(entry) for entry in inventory]
+        # Apply the ``when`` guard before the fan-out: gather_fact has no
+        # ``when`` parameter of its own, so filtering the host list with the
+        # predicate is the equivalent of the driver skipping a guarded
+        # request on ineligible hosts -- the skipped hosts are never
+        # connected, exactly as a skipped request is never materialized.
+        hosts = [host for host in all_hosts if is_debian(host)]
+        skipped = [host.name for host in all_hosts if host not in hosts]
+        if skipped:
+            print("\n== Skipped (when guard is_debian): " + ", ".join(skipped) + " ==")
+        # Gather the fact across the guarded hosts concurrently: gather_fact
+        # fans InitSystem.process out with asyncio.gather and returns a
+        # host-name-keyed mapping, so both SSH round-trips overlap instead of
+        # running one host at a time. process resolves PID 1 and returns the
+        # init-system name that owns it.
+        init_system = await gather_fact(hosts, InitSystem)
+    except (OSError, json.JSONDecodeError) as exc:
+        # The inventory file is missing, unreadable or not valid JSON. Python's
+        # own message already names the file and the reason, so print just that
+        # -- no host was contacted and there is no traceback worth showing.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except InventoryError as exc:
+        # The document parsed but did not match the inventory schema. The
+        # message names the offending entry by its list index, which is the
+        # whole report -- and it fails before any host is materialized.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except (CommandError, HostConnectionError) as exc:
+        # The library reports an unreachable host or a failed fact command as a
+        # typed error whose message already names the host. Print that message
+        # -- no traceback -- and exit non-zero so the failure stays
+        # script-visible.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    finally:
+        # Close every connection gather_fact may have opened, concurrently.
+        await asyncio.gather(*(host.aclose() for host in hosts))
+    # Print in inventory order (gather_fact keys the results by host name).
+    for host in hosts:
+        print(f"== {host.name}: server.InitSystem ==")
+        print(json.dumps(init_system[host.name], indent=2))
+        # geerlingguy.firewall's two mutually exclusive service_mgr tasks,
+        # resolved from the gathered snapshot: a unit file on systemd, an
+        # init script on every other manager.
+        service_path = (
+            "/etc/systemd/system/firewall.service"
+            if init_system[host.name] == "systemd"
+            else "/etc/init.d/firewall"
+        )
+        print(f"firewall service path: {service_path}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
