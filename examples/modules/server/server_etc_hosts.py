@@ -64,9 +64,8 @@ materializing it, so on hosts outside the ``"RedHat"`` family neither the
 commands nor the facts behind them run, and plan and log render the step
 as ``[skipped: when guard is_redhat]`` in its lockstep slot.
 
-The path is resolved from ``__file__``, so the example works from any
-working directory; point ``INVENTORY_PATH`` at your own file (or edit
-``inventory.json``) to target your machines.
+The inventory is read from ``inventory.json`` in the current working directory; edit it
+there to target your machines.
 
 Run it with::
 
@@ -78,7 +77,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -95,32 +93,15 @@ from reemote import (
     validate_inventory,
 )
 
-# examples/modules/server/server_etc_hosts.py -> the project root, so the
-# inventory is found whatever the current working directory is. No
+# No
 # ``privilege`` entry is needed: the elevated install assumes passwordless
 # sudo for the login user; a password would come from ``privilege`` in the
 # inventory, never the op.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
 # The entry to ensure, keyed by IP exactly like the baseline's server.etc_hosts.
 # A tuple, because ``op()`` arguments must stay hashable.
 DB_IP = "10.0.0.5"
 DB_HOSTNAMES = ("db.internal", "db")
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to materialize into hosts; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -169,8 +150,9 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # --dry: prepare phase only. The hosts file is still gathered over

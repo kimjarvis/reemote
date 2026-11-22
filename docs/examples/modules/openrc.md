@@ -47,8 +47,8 @@ than `sudo` because the Alpine host ships no `sudo` (a `sudo rc-service`
 would fail with exit 127 before reaching OpenRC), and `doas` is
 passwordless, so the host needs a `permit nopass` rule in `/etc/doas.conf`.
 
-The inventory is read from the project root's `inventory.json` (validated
-up front with `validate_inventory`), and every request carries
+The inventory is read from `inventory.json` in the current working directory
+(validated up front with `validate_inventory`), and every request carries
 `when=is_alpine` — the request-level counterpart of the host-list filter
 the fact scripts apply. The predicate reads only static inventory data
 (`host.family`) and is a stable module-level function, so both phases reach

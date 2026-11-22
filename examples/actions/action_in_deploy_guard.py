@@ -25,16 +25,16 @@ afterwards. ``op(Shell, ...)`` -- wrapping the action class as if it were an
 operation -- is refused too: ``materialize`` requires an async-generator
 operation and raises ``OperationError`` for anything else.
 
-This script needs NO real host: the guard fires during prepare, before any
-fact is gathered or any connection opened, so it runs offline. The inventory
-is still read from the shared ``inventory.json`` with ``load_inventory``, and
-the ``is_redhat`` family guard is composed onto the deploy with
-``sub_deploy(..., when=is_redhat)`` like every other example -- but the
-in-deploy guard fires while the generator is drained, before any ``when``
-skip is even considered, so the demonstration is unchanged. ``main`` treats
-the ``ActionInDeployError`` as the EXPECTED outcome (the demonstration
-succeeded) and exits zero. The correct pattern -- calling ``gather_action``
-before, between or after deploys -- is shown in ``deploy_action_deploy.py``.
+This script needs NO real host: the guard fires during prepare, before any fact is
+gathered or any connection opened, so it runs offline. The inventory is still read from
+``inventory.json`` in the current working directory and validated with
+``validate_inventory``, and the ``is_redhat`` family guard is composed onto the deploy
+with ``sub_deploy(..., when=is_redhat)`` like every other example -- but the in-deploy
+guard fires while the generator is drained, before any ``when`` skip is even considered,
+so the demonstration is unchanged. ``main`` treats the ``ActionInDeployError`` as the
+EXPECTED outcome (the demonstration succeeded) and exits zero. The correct pattern --
+calling ``gather_action`` before, between or after deploys -- is shown in
+``deploy_action_deploy.py``.
 
 Run it with::
 
@@ -46,7 +46,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     ActionInDeployError,
@@ -62,25 +61,10 @@ from reemote import (
     validate_inventory,
 )
 
-# The shared inventory in the project root. No connection is ever opened: the
-# guard fires in the prepare phase before any fact read, so this example runs
-# offline.
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    ``json.loads`` parses the file into a list of entry dicts, and
-    ``validate_inventory`` checks every entry against the inventory schema --
-    a malformed file raises before any connection is attempted.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
-
-
+# The shared inventory in the current working directory. No connection is ever
+# opened: the guard fires in the prepare phase before any fact read, so this
+# example runs offline.
 def is_redhat(host: Host) -> bool:
     """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
@@ -109,7 +93,8 @@ illegal_deploy = sub_deploy(illegal_deploy, when=is_redhat)
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file itself is missing or not valid JSON.
         print(f"\nERROR: {exc}", file=sys.stderr)

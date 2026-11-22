@@ -44,8 +44,8 @@ commands — `doas` rather than `sudo` because the Alpine host ships no `sudo`
 `doas` is passwordless, so the host needs a `permit nopass` rule in
 `/etc/doas.conf`.
 
-The inventory is read from the project root's `inventory.json` (validated up
-front with `validate_inventory`), and every request carries
+The inventory is read from `inventory.json` in the current working directory
+(validated up front with `validate_inventory`), and every request carries
 `when=is_alpine` — the request-level counterpart of the `when` guard the
 [`composed_when_guard`](../demonstrations/composition.md) demonstration shows
 for the RedHat family. The predicate reads only static inventory data

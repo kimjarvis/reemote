@@ -5,7 +5,7 @@
 | Role | [`geerlingguy.postgresql`](https://github.com/geerlingguy/ansible-role-postgresql) |
 | Program | [`ansible-role-postgresql.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/ansible-role-postgresql/ansible-role-postgresql.py) |
 | Target | **RedHat** — hosts in the `"RedHat"` OS family (CentOS Stream 9 or 10) |
-| Inventory | [`inventory.json`](https://github.com/kimjarvis/reemote/blob/main/inventory.json) at the project root |
+| Inventory | [`inventory.json`](https://github.com/kimjarvis/reemote/blob/main/inventory.json) in the current working directory |
 | Scope | the role's whole default RedHat path — setup, initialize, configure, service, users, databases, privileges, handler |
 | Offline test | [`tests/test_roles_ansible_role_postgresql.py`](https://github.com/kimjarvis/reemote/blob/main/tests/test_roles_ansible_role_postgresql.py) |
 
@@ -118,9 +118,9 @@ uv run --with jinja2 python examples/roles/ansible-role-postgresql/ansible-role-
 `uv run` builds/refreshes the project environment (reemote from source);
 `--with jinja2` layers the template renderer on top (in a checkout synced
 with the `dev` group, plain `uv run python …` also works). The program reads
-`inventory.json` from the project root by path resolution
-(`Path(__file__).resolve().parents[3]`), so it works from any working
-directory as long as the file lives in the repository.
+`inventory.json` from the current working directory, so run it from the
+repository root (where the shared file lives) or put your own `inventory.json`
+in whatever directory you run it from.
 
 What you get, per deploy:
 
@@ -218,7 +218,7 @@ state) and both passes must yield the identical request sequence. The role's
 and its handler all read mutable state, so they move into the barriers:
 
 ```
-load_inventory + validate ──► targets = family "RedHat" ──► role_settings (no host contacted)
+read + validate inventory.json ──► targets = family "RedHat" ──► role_settings (no host contacted)
 │
 ├─ gather: LinuxDistribution (vars dispatch + family guard)
 │          FipsEnabled (auth-method ternary, #30)

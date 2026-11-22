@@ -7,7 +7,7 @@ This is a *usage* example, not part of the library. It shows both halves of
 systemd daemon-reload control over a **real SSH transport** (asyncssh), using
 reemote's two-phase execution model:
 
-1. Read the target hosts from ``inventory.json`` in the project root and
+1. Read the target hosts from ``inventory.json`` in the current working directory and
    validate it with ``validate_inventory``.
 2. Build a branch-free deploy generator yielding two ``OperationRequest``s,
    guarded by a ``when`` predicate.
@@ -39,9 +39,9 @@ guard holds. The scope flags (``user_mode``/``machine``/``user_name``) stay
 at their system-scope defaults.
 
 Unlike the pytest suite -- which injects ``SimulatedHost`` via ``run``'s
-``host_factory`` -- this example uses the default ``Host.from_inventory``
-factory and connects for real. The inventory path is resolved from
-``__file__`` so it works from any working directory.
+``host_factory`` -- this example uses the default ``Host.from_inventory`` factory and
+connects for real. The inventory is read from ``inventory.json`` in the current working
+directory.
 
 Run it with::
 
@@ -53,7 +53,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -69,17 +68,6 @@ from reemote import (
     systemd,
     validate_inventory,
 )
-
-# examples/modules/systemd/systemd_daemon_reload.py -> the project root.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it."""
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_systemd(host: Host) -> bool:
@@ -122,8 +110,9 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # --dry: prepare phase only; the reloads are planned, nothing is sent.

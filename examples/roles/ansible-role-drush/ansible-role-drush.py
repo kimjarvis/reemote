@@ -115,10 +115,6 @@ from reemote import (
 
 # --- role constants (defaults/main.yml, launcher path only) ------------------
 
-#: examples/roles/ansible-role-drush/ansible-role-drush.py -> project root.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
 #: The role defaults this migration honours (``defaults/main.yml``). The
 #: ``drush_launcher_`` prefix is kept so an inventory entry reads like the
 #: role's ``host_vars``. ``drush_launcher_phar_url`` defaults to None -- the
@@ -135,17 +131,6 @@ ROLE_DEFAULTS: dict[str, Any] = {
 
 # --- pure helpers ------------------------------------------------------------
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of entries, each carrying at least ``host``
-    and ``connection``; every other key is preserved and reaches the deploy as
-    ``host.extra`` -- the role variables live there.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_ubuntu(host: Host) -> bool:
@@ -320,8 +305,9 @@ async def execute(inventory: list[dict[str, Any]], deploy: Any, title: str) -> A
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         hosts = [Host.from_inventory(entry) for entry in inventory]

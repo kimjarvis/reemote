@@ -10,14 +10,14 @@ elsewhere -- here, as if by a colleague targeting a root login -- that carry
 no ``sudo`` flags at all, adopted under a site policy that connects as an
 ordinary user and elevates everywhere.
 
-The inventory is read from the project root's ``inventory.json`` (validated
-up front with ``validate_inventory``), which holds RedHat-family hosts
-alongside hosts in other families. The same ``sub_deploy`` wrapper that
-sets the elevation policy also carries ``when=is_redhat``, so the redis role
-is eligible only on the RedHat hosts; the driver skips it -- without reading
-the ``DnfPackages`` fact -- on the Alpine and Ubuntu hosts. Privilege and
-eligibility are independent axes: ``sudo`` fills the unflagged requests
-(inner-wins), while ``when`` restricts who may run them at all (conjunction).
+The inventory is read from the ``inventory.json`` in the current working directory
+(validated up front with ``validate_inventory``), which holds RedHat-family hosts
+alongside hosts in other families. The same ``sub_deploy`` wrapper that sets the
+elevation policy also carries ``when=is_redhat``, so the redis role is eligible only on
+the RedHat hosts; the driver skips it -- without reading the ``DnfPackages`` fact -- on
+the Alpine and Ubuntu hosts. Privilege and eligibility are independent axes: ``sudo``
+fills the unflagged requests (inner-wins), while ``when`` restricts who may run them at
+all (conjunction).
 
 ``sub_deploy(role_redis, sudo=True)`` retro-fits the policy without editing
 the role: ``sudo=True`` is a *forced-elevation* policy that fills in every
@@ -51,7 +51,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -73,26 +72,6 @@ from reemote import (
 
 REDIS_UNIT = "/usr/lib/systemd/system/redis.service"
 REDIS_WANTS_LINK = "/etc/systemd/system/multi-user.target.wants/redis.service"
-
-# examples/demonstrations/composition/composed_sudo_policy.py -> the project
-# root, so the inventory is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to hand to ``run``, which materializes it with the default
-    ``Host.from_inventory`` factory; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -142,8 +121,9 @@ deploy = compose(sub_deploy(role_redis, name_prefix="redis", sudo=True, when=is_
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # --dry: prepare phase only. The plan already carries the wrapper's

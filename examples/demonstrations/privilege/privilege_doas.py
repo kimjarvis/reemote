@@ -32,13 +32,13 @@ Combining escalations. An operation may be flagged ``doas=True`` together with
 and ``su`` the innermost (``doas -n ... sudo ... su <user> -c ...``). This
 example uses ``doas`` alone.
 
-The hosts come from the shared ``inventory.json`` in the project root, read by
-``load_inventory`` and validated. ``is_redhat`` (``host.family == "RedHat"``) is
-composed onto the deploy with ``sub_deploy(..., when=is_redhat)``, so the
-``dnf`` work runs only on the RedHat hosts and is skipped -- facts included
--- on the rest; the inner operations carry no ``when`` of their own. The
-``privilege`` section this demo needs is not in the shared file, so ``main``
-attaches it to the loaded RedHat entries: privilege stays an *inventory*
+The hosts come from ``inventory.json`` in the current working directory, parsed as
+JSON and validated with ``validate_inventory``. ``is_redhat``
+(``host.family == "RedHat"``) is composed onto the deploy with
+``sub_deploy(..., when=is_redhat)``, so the ``dnf`` work runs only on the RedHat hosts
+and is skipped -- facts included -- on the rest; the inner operations carry no ``when``
+of their own. The ``privilege`` section this demo needs is not in the shared file, so
+``main`` attaches it to the loaded RedHat entries: privilege stays an *inventory*
 parameter, never a deploy-script one.
 
 The rendered log shows the credential-free ``$ doas -n dnf install -y httpd``:
@@ -65,7 +65,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -86,11 +85,6 @@ from reemote import (
 
 HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
 
-# The shared inventory in the project root -- the same inventory.json the
-# library's other examples read.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
 # The privilege section this demo attaches to the loaded RedHat inventory
 # entries (the shared file carries none). ``doas_user`` is the ``doas`` target
 # -- ``root`` here, because installing packages needs superuser. ``root`` is
@@ -102,17 +96,6 @@ INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 # for ``doas=True``.
 PRIVILEGE = {"doas_user": "root"}
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    ``json.loads`` parses the file into a list of entry dicts, and
-    ``validate_inventory`` checks every entry against the inventory schema --
-    a malformed file raises before any connection is attempted.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -154,7 +137,8 @@ deploy = sub_deploy(deploy, when=is_redhat)
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file itself is missing or not valid JSON.
         print(f"\nERROR: {exc}", file=sys.stderr)
@@ -171,7 +155,7 @@ async def main() -> None:
         if entry.get("family") == "RedHat":
             entry["privilege"] = dict(PRIVILEGE)
 
-    print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+    print("== Inventory loaded from inventory.json ==")
     try:
         # --dry: prepare phase only. Facts are still gathered over SSH
         # (read-only) so the plan reflects the host's real pre-deployment state;

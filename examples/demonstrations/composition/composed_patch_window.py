@@ -9,14 +9,13 @@ transport) and shows the sixth composition scenario: one package list
 driving two different deploys -- a normal "ensure installed" run and a
 patch-window run that upgrades the same packages.
 
-The inventory is read from the project root's ``inventory.json`` (validated
-up front with ``validate_inventory``), which holds hosts in the ``\"RedHat\"``
-family alongside hosts in other families. Both composed deploys carry
-``when=is_redhat`` on their ``sub_deploy`` wrapper, so the ``dnf`` steps are
-eligible only on the RedHat hosts; the driver skips them -- without reading
-the ``DnfPackages`` fact -- on the Alpine and Ubuntu hosts. The guard lives at
-the composition site, not inside ``package_role``, so the factory stays a
-pure package-list-to-deploy transform.
+The inventory is read from the ``inventory.json`` in the current working directory
+(validated up front with ``validate_inventory``), which holds hosts in the
+``\"RedHat\"`` family alongside hosts in other families. Both composed deploys carry
+``when=is_redhat`` on their ``sub_deploy`` wrapper, so the ``dnf`` steps are eligible
+only on the RedHat hosts; the driver skips them -- without reading the ``DnfPackages``
+fact -- on the Alpine and Ubuntu hosts. The guard lives at the composition site, not
+inside ``package_role``, so the factory stays a pure package-list-to-deploy transform.
 
 ``package_role`` is a *factory*: it takes a package set (as ``*packages``,
 which naturally yields the tuple ``OperationRequest`` kwargs must stay
@@ -46,7 +45,6 @@ import json
 import sys
 from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -66,26 +64,6 @@ from reemote import (
 )
 
 WEB_PACKAGES = ("httpd", "mod_ssl")
-
-# examples/demonstrations/composition/composed_patch_window.py -> the project
-# root, so the inventory is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to hand to ``run``, which materializes it with the default
-    ``Host.from_inventory`` factory; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -140,8 +118,9 @@ patch_deploy = compose(
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # --dry both intents: prepare phase only, facts gathered read-only

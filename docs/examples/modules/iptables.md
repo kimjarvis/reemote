@@ -26,8 +26,8 @@ the `"RedHat"` family: `is_redhat` filters the host list before the
 `gather_fact` fan-out, and the operation scripts below carry
 `when=is_redhat` on every request. The table-reading facts retry through
 passwordless `sudo -n` and read the empty value on an unprivileged login
-rather than failing, so every gather is safe on any Linux target — point
-`INVENTORY_PATH` at your own file of machines before executing.
+rather than failing, so every gather is safe on any Linux target — name your
+own machines in `inventory.json` in your working directory before executing.
 
 The nine operation scripts below open with an idempotent `dnf.packages`
 install (`iptables`, plus `ipset` where the script manages sets) under

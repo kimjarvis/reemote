@@ -9,15 +9,14 @@ per host -- and shows the same idea driven by the inventory's static
 classifiers: a single ``deploy`` generator that branches on ``host.name``,
 ``host.family``/``host.group`` and ``host.tags`` to select which roles each machine gets.
 
-The inventory is read from the project root's ``inventory.json`` (validated
-up front with ``validate_inventory``), the same file the other composition
-examples use. Its four hosts carry the classifiers the deploy branches on:
-``web1`` and ``web2`` are in the ``"RedHat"`` family, ``ubuntu`` is in the
-``"ubuntu"`` group, and ``alpine`` is in the ``"alpine"`` group and carries the
-``apk_package_manager`` tag. Each branch selects the package manager that
-matches its family or group -- ``dnf`` for the RedHat web role, ``apt`` for the Ubuntu
-database role, ``apk`` for the tag-selected Alpine tooling -- so the example
-also crosses module boundaries.
+The inventory is read from the ``inventory.json`` in the current working directory
+(validated up front with ``validate_inventory``), the same file the other composition
+examples use. Its four hosts carry the classifiers the deploy branches on: ``web1`` and
+``web2`` are in the ``"RedHat"`` family, ``ubuntu`` is in the ``"ubuntu"`` group, and
+``alpine`` is in the ``"alpine"`` group and carries the ``apk_package_manager`` tag.
+Each branch selects the package manager that matches its family or group -- ``dnf`` for
+the RedHat web role, ``apt`` for the Ubuntu database role, ``apk`` for the tag-selected
+Alpine tooling -- so the example also crosses module boundaries.
 
 The rule that makes this safe is the one ``composed_per_host_roles.py``
 states: never branch on a *mutable* fact inside a deploy body (the prepare and
@@ -55,7 +54,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     Host,
@@ -72,30 +70,13 @@ from reemote import (
 )
 
 # examples/demonstrations/composition/composed_group_tag_roles.py -> the
-# project root, so ``tests`` is importable and the inventory is found whatever
-# the working directory is (running a script by path puts its own folder, not
-# the root, on sys.path).
+# project root, so ``tests`` is importable (running a script by path puts
+# its own folder, not the root, on sys.path).
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from tests.simulated_host import SimulatedHost
-
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to hand to ``run`` (here materialized by the simulated
-    factory); raises ``InventoryError`` (via ``validate_inventory``) when the
-    document is not an array or an entry does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -188,7 +169,8 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's
         # own message already names the file and the reason; no host is
@@ -200,7 +182,7 @@ async def main() -> None:
         # message names the offending entry by its list index.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+    print("== Inventory loaded from inventory.json ==")
     print(", ".join(entry["host"] for entry in inventory))
 
     # --dry: prepare phase only. web1 plans two operations (web + backup),

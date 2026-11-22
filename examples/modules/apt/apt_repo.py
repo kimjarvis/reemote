@@ -7,25 +7,23 @@ This is a *usage* example, not part of the library. It shows how an
 application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
-1. Read the target hosts from ``inventory.json`` in the project root -- an
-   inventory is just a list of dictionaries, each holding a host's name plus
-   its SSH ``connection`` information (address, username and client key),
-   which is exactly what JSON expresses -- and validate it up front with
-   ``validate_inventory``, so a malformed file fails with an
-   ``InventoryError`` naming the offending entry before any host is
-   materialized or connected.
+1. Read the target hosts from ``inventory.json`` in the current working directory -- an
+   inventory is just a list of dictionaries, each holding a host's name plus its SSH
+   ``connection`` information (address, username and client key), which is exactly what
+   JSON expresses -- and validate it up front with ``validate_inventory``, so a
+   malformed file fails with an ``InventoryError`` naming the offending entry before any
+   host is materialized or connected.
 2. Build the deploy script as a generator yielding ``OperationRequest``
    objects, each guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
-via ``run``'s ``host_factory`` and never touches the network -- this example
-uses the *default* factory (``Host.from_inventory``). Each plain ``Host``
-lazily opens an asyncssh connection from its ``connection`` data, gathers
-facts and runs commands for real, and ``run`` closes those connections when
-it finishes. The path is resolved from ``__file__``, so the example works
-from any working directory; point ``INVENTORY_PATH`` at your own file to
-target your machines.
+Unlike the pytest suite -- which injects the test framework's ``SimulatedHost`` via
+``run``'s ``host_factory`` and never touches the network -- this example uses the
+*default* factory (``Host.from_inventory``). Each plain ``Host`` lazily opens an
+asyncssh connection from its ``connection`` data, gathers facts and runs commands for
+real, and ``run`` closes those connections when it finishes. The inventory is read from
+``inventory.json`` in the current working directory; edit it there to target your
+machines.
 
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
@@ -102,7 +100,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -119,11 +116,6 @@ from reemote import (
     validate_inventory,
 )
 
-# examples/modules/apt/apt_repo.py -> the project root, so the inventory is
-# found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
 # The source line to add: the Canonical partner repository for Ubuntu
 # noble, managed in its own /etc/apt/sources.list.d/canonical-partner.list.
 # Shared by the add requests below so they carry identical operation kwargs
@@ -133,20 +125,6 @@ PARTNER_REPO = {
     "filename": "canonical-partner",
 }
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to hand to ``run``, which materializes it with the default
-    ``Host.from_inventory`` factory; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_ubuntu(host: Host) -> bool:
@@ -212,8 +190,9 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # --dry: prepare phase only. Facts are still gathered over SSH (read-only)

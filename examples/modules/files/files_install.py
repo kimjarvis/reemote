@@ -72,21 +72,18 @@ The script installs a demo config, an owned demo config and a demo binary,
 then runs the very same deploy a second time: the first run writes, the
 second reports no change on every host.
 
-Every request carries ``when=is_redhat``, the declarative eligibility
-guard: the predicate reads only **static** inventory data --
-``host.family``, set by the ``\"family\"`` key of the inventory entry -- and
-is a stable module-level function, so the prepare and apply phases reach
-the same skip decision. The driver skips a rejected request without
-materializing it, so on hosts outside the ``"RedHat"`` family neither the
-commands nor the facts behind them run, and plan and log render the step
-as ``[skipped: when guard is_redhat]`` in its lockstep slot. The path is
-resolved from ``__file__``, so the example works from any working
-directory; point ``INVENTORY_PATH`` at your own file to target your
+Every request carries ``when=is_redhat``, the declarative eligibility guard: the
+predicate reads only **static** inventory data -- ``host.family``, set by the
+``\"family\"`` key of the inventory entry -- and is a stable module-level function, so
+the prepare and apply phases reach the same skip decision. The driver skips a rejected
+request without materializing it, so on hosts outside the ``"RedHat"`` family neither
+the commands nor the facts behind them run, and plan and log render the step as
+``[skipped: when guard is_redhat]`` in its lockstep slot. The inventory is read from
+``inventory.json`` in the current working directory; edit it there to target your
 machines.
 
-The path is resolved from ``__file__``, so the example works from any
-working directory; point ``INVENTORY_PATH`` at your own file (or edit
-``inventory.json``) to target your machines.
+The inventory is read from ``inventory.json`` in the current working directory; edit it
+there to target your machines.
 
 Run it with::
 
@@ -98,7 +95,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -134,26 +130,6 @@ OWNED_CONTENT = "# Installed by reemote files.install, owned by www\nmanaged = t
 # phases, so like a str they can be built at module level or inline.
 BINARY_DEST = "/usr/local/bin/reemote-install-demo-bin"
 BINARY_CONTENT = b"\xff\xfe\x00reemote demo binary\n"
-
-# examples/modules/files/files_install.py -> the project root, so the inventory
-# is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to materialize into hosts; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
-
 
 def is_redhat(host: Host) -> bool:
     """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
@@ -236,8 +212,9 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # Dry run: the plan materializes against pre-deployment state.

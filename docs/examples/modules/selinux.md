@@ -22,8 +22,8 @@ they read the shared project-root `inventory.json` and guard on the
 `gather_fact` fan-out, and the operation scripts below carry
 `when=is_redhat` on every request. Every target is an SELinux
 (RHEL-family) host, so the `semanage`/`semodule`/`sestatus` shells are
-meant to run on all of them — point `INVENTORY_PATH` at your own file of
-machines before executing.
+meant to run on all of them — name your own machines in `inventory.json` in
+your working directory before executing.
 
 **Host-policy prerequisite for the mutating operations.** The tools these
 scripts drive (`semanage`, `semodule`, `setsebool`, `chcon`, `restorecon`

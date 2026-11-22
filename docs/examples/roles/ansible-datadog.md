@@ -5,7 +5,7 @@
 | Role | [`datadog.datadog`](https://github.com/DataDog/ansible-datadog) 5.6.0 |
 | Program | [`ansible-datadog.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/ansible-datadog/ansible-datadog.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Inventory | [`inventory.json`](https://github.com/kimjarvis/reemote/blob/main/inventory.json) at the project root |
+| Inventory | [`inventory.json`](https://github.com/kimjarvis/reemote/blob/main/inventory.json) in the current working directory |
 | Scope | the role's Debian/Ubuntu **default path** (see [§8](#8-scoped-out)) |
 | Offline test | [`tests/test_roles_ansible_datadog.py`](https://github.com/kimjarvis/reemote/blob/main/tests/test_roles_ansible_datadog.py) |
 
@@ -120,10 +120,10 @@ uv run --with pyyaml python examples/roles/ansible-datadog/ansible-datadog.py
 ```
 
 `uv run` builds/refreshes the project environment (reemote from source) and
-`--with pyyaml` adds the YAML emitter for this invocation only. The program reads
-`inventory.json` from the project root by path resolution
-(`Path(__file__).resolve().parents[3]`), so it works from any working directory as
-long as the file lives in the repository.
+`--with pyyaml` adds the YAML emitter for this invocation only. The program
+reads `inventory.json` from the current working directory, so run it from the
+repository root (where the shared file lives) or put your own `inventory.json`
+in whatever directory you run it from.
 
 What you get, per deploy:
 
@@ -228,7 +228,7 @@ freeze the answer into a per-host dict, close a deploy factory over it. The
 barriers are load-bearing, not stylistic.
 
 ```
-load_inventory + validate_inventory ──► Host.from_inventory ──► targets = family "Ubuntu"
+read + validate inventory.json ──► Host.from_inventory ──► targets = family "Ubuntu"
 role_settings(host)  ──► API-key / custom-repo / removed-variable gates   (no host contacted)
 fetch_keys(5 URLs)                                                        (control-side HTTPS)
 │

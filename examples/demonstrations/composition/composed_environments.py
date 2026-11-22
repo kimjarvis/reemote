@@ -8,12 +8,12 @@ This is a *usage* example, not part of the library. It builds on
 transport) and shows the second composition scenario: staging and
 production deploys differing only in *which* roles are assembled.
 
-The inventory is read from the project root's ``inventory.json`` (validated
-up front with ``validate_inventory``), which holds hosts in the ``\"RedHat\"``
-family alongside hosts in other families. Each environment's composed deploy is
-wrapped with ``sub_deploy(..., when=is_redhat)``, so the ``dnf`` steps are
-eligible only on the RedHat hosts and the driver skips them -- without
-reading the ``DnfPackages`` fact -- on the Alpine and Ubuntu hosts.
+The inventory is read from the ``inventory.json`` in the current working directory
+(validated up front with ``validate_inventory``), which holds hosts in the
+``\"RedHat\"`` family alongside hosts in other families. Each environment's composed
+deploy is wrapped with ``sub_deploy(..., when=is_redhat)``, so the ``dnf`` steps are
+eligible only on the RedHat hosts and the driver skips them -- without reading the
+``DnfPackages`` fact -- on the Alpine and Ubuntu hosts.
 
 The deploy body must never branch on mutable facts -- the prepare and
 apply phases would flatten differently and ``run_apply`` would raise
@@ -38,7 +38,6 @@ import json
 import sys
 from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -59,26 +58,6 @@ from reemote import (
 )
 
 HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
-
-# examples/demonstrations/composition/composed_environments.py -> the project
-# root, so the inventory is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to hand to ``run``, which materializes it with the default
-    ``Host.from_inventory`` factory; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -162,8 +141,9 @@ def build_deploy(env: str) -> Callable[[Host], Generator[OperationRequest]]:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # The branch happens here, once, before either phase: both the dry run

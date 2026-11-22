@@ -7,20 +7,20 @@ This is a *usage* example, not part of the library. It shows how an
 application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
-1. Read the target hosts from ``inventory.json`` in the project root and
-   validate it up front with ``validate_inventory``, so a malformed file
-   fails with an ``InventoryError`` naming the offending entry before any
-   host is materialized or connected.
+1. Read the target hosts from ``inventory.json`` in the current working directory and
+   validate it up front with ``validate_inventory``, so a malformed file fails with an
+   ``InventoryError`` naming the offending entry before any host is materialized or
+   connected.
 2. Build the deploy script as a generator yielding ``OperationRequest``
    objects, each guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
-via ``run``'s ``host_factory`` and never touches the network -- this example
-uses the *default* factory (``Host.from_inventory``). Each plain ``Host``
-lazily opens an asyncssh connection, gathers facts and runs commands for real,
-and ``run`` closes those connections when it finishes. The path is resolved
-from ``__file__``, so the example works from any working directory.
+Unlike the pytest suite -- which injects the test framework's ``SimulatedHost`` via
+``run``'s ``host_factory`` and never touches the network -- this example uses the
+*default* factory (``Host.from_inventory``). Each plain ``Host`` lazily opens an
+asyncssh connection, gathers facts and runs commands for real, and ``run`` closes those
+connections when it finishes. The inventory is read from ``inventory.json`` in the
+current working directory.
 
 ``systemd.mask`` is a reemote original (the baseline has no ``systemd.mask``). It
 is bidirectional and idempotent through one present-flagged path: it reads the
@@ -43,10 +43,10 @@ blocked by a lingering mask -- in the prepare phase it plans as a no-op
 against the unmasked pre-deployment state, while the apply log sees the mask
 the first step added and removes it.
 
-Masking httpd momentarily prevents it from starting, but the cycle restores
-the unit before the deploy finishes, so the script is safe to run live; it is
-also compile-checked and exercised by the offline example harness. Point
-``INVENTORY_PATH`` at your own machines to target them.
+Masking httpd momentarily prevents it from starting, but the cycle restores the unit
+before the deploy finishes, so the script is safe to run live; it is also compile-
+checked and exercised by the offline example harness. Replace ``inventory.json`` in
+the current working directory with your own list of machines to target them.
 
 ``systemctl mask`` writes root-owned state, so the requests are flagged
 ``sudo=True``. The scope flags (``user_mode``/``machine``/``user_name``) stay at
@@ -64,7 +64,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -81,19 +80,9 @@ from reemote import (
     validate_inventory,
 )
 
-# examples/modules/systemd/systemd_mask.py -> the project root.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
 # The unit to mask. A bare name gets ``.service`` appended.
 UNIT = "httpd"
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it."""
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_systemd(host: Host) -> bool:
@@ -143,8 +132,9 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # --dry: prepare phase only. Facts are gathered over SSH (read-only) so

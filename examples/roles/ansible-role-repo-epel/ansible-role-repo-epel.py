@@ -123,10 +123,6 @@ from reemote import (
 
 # --- role constants (defaults/main.yml) ---------------------------------------
 
-#: examples/roles/ansible-role-repo-epel/ansible-role-repo-epel.py -> project root.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
 #: The role defaults this migration honours (``defaults/main.yml``). The two
 #: URL defaults are Jinja2 interpolations of
 #: ``ansible_facts.distribution_major_version``, so they are None here and
@@ -161,17 +157,6 @@ EPEL_KEY_IDS: dict[int, str] = {
 
 # --- pure helpers -------------------------------------------------------------
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of entries, each carrying at least ``host``
-    and ``connection``; every other key is preserved and reaches the deploy as
-    ``host.extra`` -- the role variables live there.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -384,8 +369,9 @@ async def execute(inventory: list[dict[str, Any]], deploy: Any, title: str) -> A
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         hosts = [Host.from_inventory(entry) for entry in inventory]

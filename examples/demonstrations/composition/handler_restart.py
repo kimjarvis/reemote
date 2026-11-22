@@ -57,11 +57,10 @@ whether the handler will fire (Ansible check mode skips handlers for the
 same reason). The dry preview of run 2 below IS honest -- it is computed
 against the frozen outcome of run 1.
 
-The inventory is read from the project root's ``inventory.json``
+The inventory is read from the ``inventory.json`` in the current working directory
 (validated up front with ``validate_inventory``); every request carries
-``when=is_redhat`` so the ``dnf``/``systemd`` work runs only on the RedHat
-hosts, and the run-2 factory builds fresh hosts from the same inventory
-via the default factory.
+``when=is_redhat`` so the ``dnf``/``systemd`` work runs only on the RedHat hosts, and
+the run-2 factory builds fresh hosts from the same inventory via the default factory.
 
 Run it with::
 
@@ -73,7 +72,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -105,24 +103,6 @@ CONF_DEST = "/etc/nginx/conf.d/reemote-handler-demo.conf"
 # The notification channel: request names whose `changed` outcome queues
 # the restart handler -- the analogue of Ansible's `notify:` list.
 NOTIFYING = frozenset({"Install nginx", "Install demo config"})
-
-# examples/demonstrations/composition/handler_restart.py -> the project
-# root, so the inventory is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to hand to ``run``; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -161,8 +141,9 @@ def configure_nginx(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # Run 1: the notifying tasks. Its apply-phase join is the barrier

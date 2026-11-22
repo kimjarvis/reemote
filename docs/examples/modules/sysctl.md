@@ -20,8 +20,8 @@ their requests `sudo=True` — writing root-owned `/etc`
 configuration and applying kernel settings needs root, while the spool
 transfer itself stays unprivileged. They write kernel tuning and reload it,
 so they are compile-checked and exercised by the offline example harness
-rather than run against shared hosts; point `INVENTORY_PATH` at your own
-file of throwaway machines to execute them for real.
+rather than run against shared hosts; name your own throwaway machines in
+`inventory.json` in your working directory to execute them for real.
 
 **Host-policy prerequisite.** `sysctl` (from `procps-ng`) is already
 installed and the requests are correctly flagged `sudo=True`, but applying

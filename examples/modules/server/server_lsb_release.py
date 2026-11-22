@@ -8,11 +8,11 @@ This is a *usage* example, not part of the library. Like
 directly over the *real SSH transport* (asyncssh) instead of driving the
 two-phase execution model:
 
-1. Read ``inventory.json`` in the project root and parse it as JSON
-   -- an inventory is just a list of dictionaries, which is exactly what
-   JSON expresses -- then validate it up front with ``validate_inventory``
-   so a malformed file fails with an ``InventoryError`` naming the
-   offending entry, *before* any host is materialized or connected.
+1. Read ``inventory.json`` from the current working directory and parse it as JSON -- an
+   inventory is just a list of dictionaries, which is exactly what JSON expresses --
+   then validate it up front with ``validate_inventory`` so a malformed file fails with
+   an ``InventoryError`` naming the offending entry, *before* any host is materialized
+   or connected.
 2. Materialize each entry into a plain ``Host`` with the default
    ``Host.from_inventory`` factory. Each ``Host`` lazily opens an asyncssh
    connection from its ``connection`` data when a fact is gathered.
@@ -40,23 +40,22 @@ aggregates the per-host errors, so the guard below reports every host
 missing the command in one stderr message -- no traceback -- and a
 non-zero exit.
 
-The RedHat demo hosts do not ship ``lsb_release`` in their base repos, so
-the script first installs it: a short ``run(inventory, install)`` deploy
-yields ``dnf.packages`` for the ``lsb_release`` package (provided by EPEL,
-which the demo hosts already enable), flagged ``sudo=True`` and guarded by
-``when=is_redhat`` so only the RedHat hosts are touched. The install is
-idempotent -- a host that already has the binary plans no change -- and runs
-before the fact is gathered, so the read never hits the missing-command
-path. Point ``INVENTORY_PATH`` at a file of hosts whose package manager
-provides ``lsb_release`` (or pre-install it) to target your own machines.
+The RedHat demo hosts do not ship ``lsb_release`` in their base repos, so the script
+first installs it: a short ``run(inventory, install)`` deploy yields ``dnf.packages``
+for the ``lsb_release`` package (provided by EPEL, which the demo hosts already enable),
+flagged ``sudo=True`` and guarded by ``when=is_redhat`` so only the RedHat hosts are
+touched. The install is idempotent -- a host that already has the binary plans no change
+-- and runs before the fact is gathered, so the read never hits the missing-command
+path. To target your own machines, put a file of hosts whose package manager provides
+``lsb_release`` (or pre-install it) at ``inventory.json`` in the current working
+directory.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
 ``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven
 by ``asyncio.run``.
 
-The path is resolved from ``__file__``, so the example works from any
-working directory; point ``INVENTORY_PATH`` at your own file (or edit
-``inventory.json``) to target your machines.
+The inventory is read from ``inventory.json`` in the current working directory; edit it
+there to target your machines.
 
 Run it with::
 
@@ -68,7 +67,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -85,25 +83,6 @@ from reemote import (
     run,
     validate_inventory,
 )
-
-# examples/modules/server/server_lsb_release.py -> the project root, so the
-# inventory is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to materialize into hosts; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -136,7 +115,8 @@ def install(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON. Python's
         # own message already names the file and the reason, so print just that
@@ -149,7 +129,7 @@ async def main() -> None:
         # whole report -- and it fails before any host is materialized.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+    print("== Inventory loaded from inventory.json ==")
     print(", ".join(entry["host"] for entry in inventory))
 
     # Install the prerequisite first: lsb_release is not in the RedHat base

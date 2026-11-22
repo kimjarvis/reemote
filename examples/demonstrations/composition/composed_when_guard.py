@@ -8,10 +8,10 @@ This is a *usage* example, not part of the library. It builds on
 asyncssh transport) and shows the declarative alternative to that example's
 ``if host.name == ...`` branching: a ``when`` guard on the request itself.
 
-The inventory is read from the project root's ``inventory.json`` (validated
-up front with ``validate_inventory``), which holds one Alpine host, two
-RedHat hosts (web1, web2) and one Ubuntu host. Two guards at two levels
-select who runs what, and they compose by conjunction:
+The inventory is read from the ``inventory.json`` in the current working directory
+(validated up front with ``validate_inventory``), which holds one Alpine host, two
+RedHat hosts (web1, web2) and one Ubuntu host. Two guards at two levels select who runs
+what, and they compose by conjunction:
 
 - a **role-level** guard ``when=is_redhat`` wraps the whole deploy at the
   composition site (``sub_deploy(deploy, when=is_redhat)``), the analogue of
@@ -56,7 +56,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -80,26 +79,6 @@ HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
 # The canary host is inventory data, not a gathered fact: web1 opts into the
 # extra tooling, web2 does not.
 CANARY_HOST = "web1"
-
-# examples/demonstrations/composition/composed_when_guard.py -> the project
-# root, so the inventory is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to hand to ``run``, which materializes it with the default
-    ``Host.from_inventory`` factory; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -181,8 +160,9 @@ deploy = sub_deploy(deploy, when=is_redhat)
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # --dry: prepare phase only. Every plan holds the same four entries;

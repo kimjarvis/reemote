@@ -52,7 +52,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -84,24 +83,8 @@ SCRIPT_BODY = io.StringIO(
 # as the login user, and the action can run it from there.
 STAGED_SCRIPT = "/tmp/reemote-script-demo.sh"
 
-# The shared inventory in the project root -- the same inventory.json the
+# The shared inventory in the current working directory -- the same inventory.json the
 # library's other examples read.
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    ``json.loads`` parses the file into a list of entry dicts, and
-    ``validate_inventory`` checks every entry against the inventory schema --
-    a malformed file raises before any connection is attempted.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
-
-
 def is_redhat(host: Host) -> bool:
     """Family guard: the host belongs to the ``"RedHat"`` OS family.
 
@@ -136,7 +119,8 @@ def report(label: str, results: dict) -> None:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file itself is missing or not valid JSON.
         print(f"\nERROR: {exc}", file=sys.stderr)
@@ -146,7 +130,7 @@ async def main() -> None:
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
-    print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+    print("== Inventory loaded from inventory.json ==")
     try:
         # The deploy: files.put stages the script on the RedHat hosts. Its
         # apply-phase join is the barrier -- every host has the file before

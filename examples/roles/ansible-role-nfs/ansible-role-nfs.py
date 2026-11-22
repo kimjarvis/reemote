@@ -95,10 +95,6 @@ from reemote import (
 
 # --- role constants (defaults/main.yml + vars/Debian.yml, Ubuntu path) --------
 
-#: examples/roles/ansible-role-nfs/ansible-role-nfs.py -> the project root.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
 #: ``vars/Debian.yml``: the service the ``service`` task manages. The
 #: include_vars OS dispatch collapses to this frozen constant (Ubuntu is in
 #: the Debian family); the RedHat/Fedora vars files are out of scope.
@@ -149,17 +145,6 @@ ROLE_DEFAULTS: dict[str, Any] = {"nfs_exports": ()}
 
 # --- pure helpers ------------------------------------------------------------
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of entries, each carrying at least
-    ``host`` and ``connection``; every other key is preserved and reaches
-    the deploy as ``host.extra`` -- the role variables live there.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_ubuntu(host: Host) -> bool:
@@ -402,8 +387,9 @@ async def execute(inventory: list[dict[str, Any]], deploy: Any, title: str) -> A
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         hosts = [Host.from_inventory(entry) for entry in inventory]

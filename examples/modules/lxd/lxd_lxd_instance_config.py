@@ -7,11 +7,11 @@ This is a *usage* example, not part of the library. It reads a single
 **fact** directly over the *real SSH transport* (asyncssh) instead of
 driving the two-phase execution model:
 
-1. Read ``inventory.json`` in the project root and parse it as JSON
-   -- an inventory is just a list of dictionaries, which is exactly what
-   JSON expresses -- then validate it up front with ``validate_inventory``
-   so a malformed file fails with an ``InventoryError`` naming the
-   offending entry, *before* any host is materialized or connected.
+1. Read ``inventory.json`` from the current working directory and parse it as JSON -- an
+   inventory is just a list of dictionaries, which is exactly what JSON expresses --
+   then validate it up front with ``validate_inventory`` so a malformed file fails with
+   an ``InventoryError`` naming the offending entry, *before* any host is materialized
+   or connected.
 2. Materialize each entry into a plain ``Host`` with the default
    ``Host.from_inventory`` factory. Each ``Host`` lazily opens an asyncssh
    connection from its ``connection`` data when a fact is gathered.
@@ -56,9 +56,8 @@ socket access for the fact reads: they run unprivileged as the login
 user, who must be a member of the ``lxd`` group (the demo Ubuntu host
 already is).
 
-The path is resolved from ``__file__``, so the example works from any
-working directory; point ``INVENTORY_PATH`` at your own file (or edit
-``inventory.json``) to target your machines.
+The inventory is read from ``inventory.json`` in the current working directory; edit it
+there to target your machines.
 
 Run it with::
 
@@ -69,7 +68,6 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -90,25 +88,6 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 from provision_lxd import provision_lxd
 
-# examples/modules/lxd/lxd_lxd_instance_config.py -> the project root, so the inventory
-# is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to materialize into hosts; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
-
 
 def is_ubuntu(host: Host) -> bool:
     """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
@@ -126,8 +105,9 @@ def is_ubuntu(host: Host) -> bool:
 async def main() -> None:
     hosts: list[Host] = []
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # Provision LXD (the snap + ``lxd init --auto``) on the Ubuntu hosts

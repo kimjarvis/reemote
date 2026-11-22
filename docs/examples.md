@@ -55,8 +55,8 @@ sub-directory. Pick a page from the navigation, or start from this table:
 
     Every script on these pages uses the *default* `Host.from_inventory`
     factory and an inventory of real machines — read from the shared
-    `inventory.json` in the project root (each script loads it with
-    `load_inventory`, validated up front with `validate_inventory`). The
+    `inventory.json` in the current working directory (each script parses it
+    and validates it up front with `validate_inventory`). The
     default guard is `is_redhat` (`host.family == "RedHat"`), keeping every
     gather and request on the two RedHat hosts (`web1`, `web2`) and
     skipping hosts in other families with a visible reason. The

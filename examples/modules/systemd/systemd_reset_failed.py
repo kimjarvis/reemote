@@ -7,18 +7,18 @@ This is a *usage* example, not part of the library. It shows how an
 application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
-1. Read the target hosts from ``inventory.json`` in the project root and
-   validate it up front with ``validate_inventory``, so a malformed file
-   fails with an ``InventoryError`` before any host is connected.
+1. Read the target hosts from ``inventory.json`` in the current working directory and
+   validate it up front with ``validate_inventory``, so a malformed file fails with an
+   ``InventoryError`` before any host is connected.
 2. Build the deploy script as a generator yielding ``OperationRequest``
    objects, each guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
-via ``run``'s ``host_factory`` and never touches the network -- this example
-uses the *default* factory (``Host.from_inventory``), opening real asyncssh
-connections that ``run`` closes when it finishes. The path is resolved from
-``__file__``, so the example works from any working directory.
+Unlike the pytest suite -- which injects the test framework's ``SimulatedHost`` via
+``run``'s ``host_factory`` and never touches the network -- this example uses the
+*default* factory (``Host.from_inventory``), opening real asyncssh connections that
+``run`` closes when it finishes. The inventory is read from ``inventory.json`` in the
+current working directory.
 
 ``systemd.reset_failed`` is a reemote original. The baseline folds reset-failed
 into ``systemd.service`` (the enhanced ``service`` keeps a ``reset_failed``
@@ -50,7 +50,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -67,19 +66,9 @@ from reemote import (
     validate_inventory,
 )
 
-# examples/modules/systemd/systemd_reset_failed.py -> the project root.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
 # The unit whose failed state to clear. A bare name gets ``.service`` appended.
 UNIT = "httpd"
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it."""
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_systemd(host: Host) -> bool:
@@ -116,8 +105,9 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # --dry: prepare phase only. Facts are gathered over SSH (read-only) so

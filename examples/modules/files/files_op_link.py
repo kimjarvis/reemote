@@ -6,11 +6,11 @@
 This is a *usage* example, not part of the library. It drives the
 ``files.link`` operation through reemote's two-phase execution model:
 
-1. Read ``inventory.json`` in the project root and parse it as JSON
-   -- an inventory is just a list of dictionaries, which is exactly what
-   JSON expresses -- then validate it up front with ``validate_inventory``
-   so a malformed file fails with an ``InventoryError`` naming the
-   offending entry, *before* any host is materialized or connected.
+1. Read ``inventory.json`` from the current working directory and parse it as JSON -- an
+   inventory is just a list of dictionaries, which is exactly what JSON expresses --
+   then validate it up front with ``validate_inventory`` so a malformed file fails with
+   an ``InventoryError`` naming the offending entry, *before* any host is materialized
+   or connected.
 2. Write a *deploy generator* that yields ``op(files.link, ...)`` requests.
    The generator is plain sync code -- it only describes work, it never
    touches a host.
@@ -56,16 +56,14 @@ network -- this example uses the *default* factory
 connection, reads the link for real, and runs ``ln -s`` (or the
 ``rm -f`` + ``ln -s`` relink pair) when it differs.
 
-Every request carries ``when=is_redhat``, the declarative eligibility
-guard: the predicate reads only **static** inventory data --
-``host.family``, set by the ``\"family\"`` key of the inventory entry -- and
-is a stable module-level function, so the prepare and apply phases reach
-the same skip decision. The driver skips a rejected request without
-materializing it, so on hosts outside the ``"RedHat"`` family neither the
-commands nor the facts behind them run, and plan and log render the step
-as ``[skipped: when guard is_redhat]`` in its lockstep slot. The path is
-resolved from ``__file__``, so the example works from any working
-directory; point ``INVENTORY_PATH`` at your own file to target your
+Every request carries ``when=is_redhat``, the declarative eligibility guard: the
+predicate reads only **static** inventory data -- ``host.family``, set by the
+``\"family\"`` key of the inventory entry -- and is a stable module-level function, so
+the prepare and apply phases reach the same skip decision. The driver skips a rejected
+request without materializing it, so on hosts outside the ``"RedHat"`` family neither
+the commands nor the facts behind them run, and plan and log render the step as
+``[skipped: when guard is_redhat]`` in its lockstep slot. The inventory is read from
+``inventory.json`` in the current working directory; edit it there to target your
 machines.
 
 Run it with::
@@ -78,7 +76,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -100,26 +97,6 @@ from reemote import (
 # timezone symlink target.
 LINK_PATH = "/tmp/reemote-link"
 LINK_TARGET = "/etc/localtime"
-
-# examples/modules/files/files_op_link.py -> the project root, so the inventory
-# is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to materialize into hosts; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
-
 
 def is_redhat(host: Host) -> bool:
     """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
@@ -157,8 +134,9 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # --dry: prepare phase only. The current link target is still read

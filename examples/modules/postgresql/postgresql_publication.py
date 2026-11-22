@@ -7,11 +7,11 @@ This is a *usage* example, not part of the library. It drives reemote's
 two-phase execution model end to end over a **real SSH transport**
 (asyncssh):
 
-1. Read ``inventory.json`` in the project root and parse it as JSON
-   -- an inventory is just a list of dictionaries, which is exactly what
-   JSON expresses -- then validate it up front with ``validate_inventory``
-   so a malformed file fails with an ``InventoryError`` naming the
-   offending entry, *before* any host is materialized or connected.
+1. Read ``inventory.json`` from the current working directory and parse it as JSON -- an
+   inventory is just a list of dictionaries, which is exactly what JSON expresses --
+   then validate it up front with ``validate_inventory`` so a malformed file fails with
+   an ``InventoryError`` naming the offending entry, *before* any host is materialized
+   or connected.
 2. Build the deploy script as a generator yielding ``OperationRequest``
    objects, each guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
@@ -35,28 +35,25 @@ the prepare phase (where nothing is sent) both plan as changes, but in
 the apply phase the second request's fresh per-step fact cache sees the
 first CREATE PUBLICATION and reports nothing to update.
 
-**Host prerequisite.** This example needs a running PostgreSQL server. The
-demo Ubuntu host runs PostgreSQL 18.6 as a snap whose local socket uses
-``trust`` authentication, so the ``postgres`` superuser role is reachable
-without a password -- but there is no ``postgres`` OS user. The ``sudo=True``
-operations ride under root and connect as that role through
-``psql_user="postgres"``; the login-user fact reads need a role for the login
-user (created out of band) or ``psql_user="postgres"`` on ``gather_fact``. A
-stock apt install uses peer authentication instead, where root reaches the
-``postgres`` role only if ``pg_hba.conf`` allows it (or the inventory
-privilege sets ``sudo_user="postgres"``). Point ``INVENTORY_PATH`` at your
-own PostgreSQL machines to run live.
+**Host prerequisite.** This example needs a running PostgreSQL server. The demo Ubuntu
+host runs PostgreSQL 18.6 as a snap whose local socket uses ``trust`` authentication, so
+the ``postgres`` superuser role is reachable without a password -- but there is no
+``postgres`` OS user. The ``sudo=True`` operations ride under root and connect as that
+role through ``psql_user="postgres"``; the login-user fact reads need a role for the
+login user (created out of band) or ``psql_user="postgres"`` on ``gather_fact``. A stock
+apt install uses peer authentication instead, where root reaches the ``postgres`` role
+only if ``pg_hba.conf`` allows it (or the inventory privilege sets
+``sudo_user="postgres"``). Replace ``inventory.json`` in the current working directory
+with your own file of PostgreSQL machines to run live.
 
-Every request carries ``when=is_ubuntu``, the declarative eligibility
-guard: the predicate reads only **static** inventory data --
-``host.family``, set by the ``"family"`` key of the inventory entry -- and
-is a stable module-level function, so the prepare and apply phases reach
-the same skip decision. The driver skips a rejected request without
-materializing it, so on hosts outside the ``"Ubuntu"`` family neither the
-commands nor the facts behind them run, and plan and log render the step
-as ``[skipped: when guard is_ubuntu]`` in its lockstep slot. The path is
-resolved from ``__file__``, so the example works from any working
-directory; point ``INVENTORY_PATH`` at your own file to target your
+Every request carries ``when=is_ubuntu``, the declarative eligibility guard: the
+predicate reads only **static** inventory data -- ``host.family``, set by the
+``"family"`` key of the inventory entry -- and is a stable module-level function, so the
+prepare and apply phases reach the same skip decision. The driver skips a rejected
+request without materializing it, so on hosts outside the ``"Ubuntu"`` family neither
+the commands nor the facts behind them run, and plan and log render the step as
+``[skipped: when guard is_ubuntu]`` in its lockstep slot. The inventory is read from
+``inventory.json`` in the current working directory; edit it there to target your
 machines.
 
 The ``sudo=True`` requests ride under root, and every request passes
@@ -76,7 +73,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -93,29 +89,10 @@ from reemote import (
     validate_inventory,
 )
 
-# examples/modules/postgresql/postgresql_publication.py -> the project root, so the inventory
-# is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
 # The table the publication publishes, created through the sql escape hatch
 # with a naturally idempotent statement (no typed table operation exists).
 USERS_SQL = "CREATE TABLE IF NOT EXISTS public.users (id integer, email text)"
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to materialize into hosts; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_ubuntu(host: Host) -> bool:
@@ -180,8 +157,9 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # --dry: prepare phase only. Facts are still gathered over SSH (read-only)

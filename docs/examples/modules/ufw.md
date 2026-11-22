@@ -16,8 +16,8 @@ family: `is_redhat` filters the host list before the `gather_fact`
 fan-out, and the operation scripts below carry `when=is_redhat` on every
 request. Every ufw read retries through passwordless `sudo -n` and reads
 the empty value on an unprivileged login (or a host without ufw) rather
-than failing, so every gather is safe on any Linux target — point
-`INVENTORY_PATH` at your own file of machines before executing.
+than failing, so every gather is safe on any Linux target — name your own
+machines in `inventory.json` in your working directory before executing.
 
 ufw is a Debian-family frontend that RHEL-family ships only through EPEL,
 so every operation script below first installs `epel-release` and `ufw`

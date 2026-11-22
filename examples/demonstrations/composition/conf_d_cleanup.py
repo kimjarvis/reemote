@@ -53,11 +53,11 @@ connection and ``connect`` is lazy, so ``gather_fact`` on the returned
 hosts transparently re-opens them; the script closes them again
 afterwards. Run 2 builds fresh hosts from the same inventory.
 
-The inventory is read from the project root's ``inventory.json``
-(validated up front with ``validate_inventory``). Both deploys carry
-``when=is_redhat`` and the snapshot filters the host list the same way
-(``gather_fact`` takes no ``when`` parameter), so the work stays on the
-RedHat hosts and deploy 2's lookup defaults to empty for the others.
+The inventory is read from the ``inventory.json`` in the current working directory
+(validated up front with ``validate_inventory``). Both deploys carry ``when=is_redhat``
+and the snapshot filters the host list the same way (``gather_fact`` takes no ``when``
+parameter), so the work stays on the RedHat hosts and deploy 2's lookup defaults to
+empty for the others.
 
 Run it with::
 
@@ -69,7 +69,6 @@ import json
 import sys
 from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -112,26 +111,6 @@ CHECK_CONF = {
     )
     for check in TRACKED_CHECKS
 }
-
-# examples/demonstrations/composition/conf_d_cleanup.py -> the project
-# root, so the inventory is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to hand to ``run``, which materializes it with the default
-    ``Host.from_inventory`` factory; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -199,8 +178,9 @@ def build_cleanup_conf_d(
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # Run 1: prepare + apply the tracked-check installs. Its apply-phase

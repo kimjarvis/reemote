@@ -7,25 +7,23 @@ This is a *usage* example, not part of the library. It shows how an
 application drives reemote's two-phase execution model end to end over a
 **real SSH transport** (asyncssh):
 
-1. Read the target hosts from ``inventory.json`` in the project root -- an
-   inventory is just a list of dictionaries, each holding a host's name plus
-   its SSH ``connection`` information (address, username and client key),
-   which is exactly what JSON expresses -- and validate it up front with
-   ``validate_inventory``, so a malformed file fails with an
-   ``InventoryError`` naming the offending entry before any host is
-   materialized or connected.
+1. Read the target hosts from ``inventory.json`` in the current working directory -- an
+   inventory is just a list of dictionaries, each holding a host's name plus its SSH
+   ``connection`` information (address, username and client key), which is exactly what
+   JSON expresses -- and validate it up front with ``validate_inventory``, so a
+   malformed file fails with an ``InventoryError`` naming the offending entry before any
+   host is materialized or connected.
 2. Build the deploy script as a generator yielding ``OperationRequest``
    objects, each guarded by a ``when`` predicate.
 3. Run the prepare phase to get a plan, and the apply phase to execute it.
 
-Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
-via ``run``'s ``host_factory`` and never touches the network -- this example
-uses the *default* factory (``Host.from_inventory``). Each plain ``Host``
-lazily opens an asyncssh connection from its ``connection`` data, gathers
-facts and runs commands for real, and ``run`` closes those connections when
-it finishes. The path is resolved from ``__file__``, so the example works from
-any working directory; point ``INVENTORY_PATH`` at your own file to target
-your machines.
+Unlike the pytest suite -- which injects the test framework's ``SimulatedHost`` via
+``run``'s ``host_factory`` and never touches the network -- this example uses the
+*default* factory (``Host.from_inventory``). Each plain ``Host`` lazily opens an
+asyncssh connection from its ``connection`` data, gathers facts and runs commands for
+real, and ``run`` closes those connections when it finishes. The inventory is read from
+``inventory.json`` in the current working directory; edit it there to target your
+machines.
 
 ``run`` is a coroutine (both phases are async), so ``main`` is async and
 driven by ``asyncio.run``.
@@ -71,23 +69,21 @@ driver raises ``PrivilegeError``. No target user is named, so the command
 sent is a bare ``doas -n apk add ...`` (doas already targets root, so there
 is no ``-u``).
 
-Every request also carries ``when=is_alpine``, the declarative eligibility
-guard (see
-``examples/demonstrations/composition/composed_when_guard.py``). Two rules
-make it deterministic: the predicate reads only **static** inventory data --
-``host.family``, set by the ``"family"`` key of the inventory entry -- never a
-mutable fact, and it is a stable module-level function, so the prepare and
-apply phases reach the same skip decision. ``when`` is a meta-parameter like
-``doas``: captured on the request, never forwarded to the operation, and
-skipped by the *driver*, so every host keeps the identical three-request
-schedule (no ``if`` in the deploy body) and each request still consumes its
-lockstep slot. On a host the guard rejects, the plan and the run log render
-the step as ``[skipped: when guard is_alpine]`` and none of its commands --
-nor the ``ApkInstalledPackages`` fact behind it -- is materialized at all, which is
-exactly why a package manager's operations must be guarded rather than run
-blind on a host without ``apk``. The project root's ``inventory.json`` holds
-one host in the ``"Alpine"`` family alongside hosts in other families, so the
-run visibly installs on the Alpine host and skips every other one.
+Every request also carries ``when=is_alpine``, the declarative eligibility guard (see
+``examples/demonstrations/composition/composed_when_guard.py``). Two rules make it
+deterministic: the predicate reads only **static** inventory data -- ``host.family``,
+set by the ``"family"`` key of the inventory entry -- never a mutable fact, and it is a
+stable module-level function, so the prepare and apply phases reach the same skip
+decision. ``when`` is a meta-parameter like ``doas``: captured on the request, never
+forwarded to the operation, and skipped by the *driver*, so every host keeps the
+identical three-request schedule (no ``if`` in the deploy body) and each request still
+consumes its lockstep slot. On a host the guard rejects, the plan and the run log render
+the step as ``[skipped: when guard is_alpine]`` and none of its commands -- nor the
+``ApkInstalledPackages`` fact behind it -- is materialized at all, which is exactly why
+a package manager's operations must be guarded rather than run blind on a host without
+``apk``. The shared ``inventory.json`` in the current working directory holds one host
+in the ``"Alpine"`` family alongside hosts in other families, so the run visibly
+installs on the Alpine host and skips every other one.
 
 Guarding per request is the operation-side counterpart of what the read-only
 fact example ``apk_apk_packages.py`` does for a gather: ``gather_fact`` takes
@@ -105,7 +101,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -122,11 +117,6 @@ from reemote import (
     validate_inventory,
 )
 
-# examples/modules/apk/apk_packages.py -> the project root, so the
-# inventory is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
 # The packages to ensure, as a tuple -- OperationRequest kwargs must stay
 # hashable. Shared by both baseline requests below so they carry identical
 # operation kwargs (only the log ``name`` differs).
@@ -136,20 +126,6 @@ BASELINE_PACKAGES = ("htop", "tree")
 # ``no_cache`` and ``no_scripts``.
 MODIFIER_PACKAGE = ("curl",)
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to hand to ``run``, which materializes it with the default
-    ``Host.from_inventory`` factory; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_alpine(host: Host) -> bool:
@@ -211,8 +187,9 @@ def deploy(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # --dry: prepare phase only. Facts are still gathered over SSH (read-only)

@@ -67,11 +67,6 @@ from reemote import (
     validate_inventory,
 )
 
-# examples/modules/flatpak/install.py -> the project root, so the inventory is
-# found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
 # The package that provides the flatpak tool itself. A module-level tuple, so
 # the request kwargs stay hashable and identical in the prepare and apply
 # phases.
@@ -86,18 +81,6 @@ FLATHUB_URL = "https://flathub.org/repo/flathub.flatpakrepo"
 # remote is left untouched. Elevated, because a system remote is root-owned.
 REMOTE_ADD_COMMAND = f"flatpak remote-add --if-not-exists {FLATHUB_REMOTE} {FLATHUB_URL}"
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries each
-    carrying at least ``host`` and ``connection``. Returns the parsed list;
-    raises ``InventoryError`` (via ``validate_inventory``) when the document is
-    not an array or an entry does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_ubuntu(host: Host) -> bool:
@@ -174,7 +157,8 @@ async def provision_flatpak(inventory: list[dict[str, Any]]) -> None:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON.
         print(f"\nERROR: {exc}", file=sys.stderr)
@@ -184,7 +168,7 @@ async def main() -> None:
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
-    print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+    print("== Inventory loaded from inventory.json ==")
     print(", ".join(entry["host"] for entry in inventory))
 
     ubuntu = [entry["host"] for entry in inventory if entry.get("family") == "Ubuntu"]

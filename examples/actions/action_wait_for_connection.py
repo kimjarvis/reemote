@@ -7,12 +7,11 @@ This is a *usage* example, not part of the library. It demonstrates
 ``WaitForConnection`` -- the action that waits for SSH connections to be
 (re-)established, driven through ``gather_action`` exactly like ``Shell``:
 
-1. Load the target hosts from the shared ``inventory.json`` in the project
-   root with ``load_inventory`` (parse + ``validate_inventory``), carrying
-   ``group`` and ``tags`` classifiers, and materialize each entry with
-   ``Host.from_inventory``. The ``is_redhat`` family guard
-   (``host.family == "RedHat"``) filters the host list before the fan-out --
-   an action has no ``when`` meta-parameter.
+1. Load the target hosts from ``inventory.json`` in the current working directory
+   (validated with ``validate_inventory``), carrying ``group`` and ``tags``
+   classifiers, and materialize each entry with ``Host.from_inventory``. The
+   ``is_redhat`` family guard (``host.family == "RedHat"``) filters the host list
+   before the fan-out -- an action has no ``when`` meta-parameter.
 2. ``gather_action(hosts, WaitForConnection, timeout=..., retry=...,
    group=..., tags=...)`` waits for every SELECTED host concurrently:
    ``group`` keeps hosts whose ``host.group`` matches, ``tags`` keeps hosts
@@ -64,7 +63,6 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     ConnectionTimeoutError,
@@ -76,12 +74,9 @@ from reemote import (
     validate_inventory,
 )
 
-# The shared inventory in the project root -- the same inventory.json the
+# The shared inventory in the current working directory -- the same inventory.json the
 # library's other examples read. Its group/tags classifiers are what the
 # wait's `group=`/`tags=` keywords select on.
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
 # A TEST-NET-1 address (RFC 5737): guaranteed unroutable, so the wait below
 # demonstrates the timeout path without touching any real machine. A synthetic
 # fixture, deliberately not read from an inventory file.
@@ -93,17 +88,6 @@ DEAD_INVENTORY = [
     },
 ]
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    ``json.loads`` parses the file into a list of entry dicts, and
-    ``validate_inventory`` checks every entry against the inventory schema --
-    a malformed file raises before any connection is attempted.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -120,7 +104,8 @@ def is_redhat(host: Host) -> bool:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file itself is missing or not valid JSON.
         print(f"\nERROR: {exc}", file=sys.stderr)
@@ -130,7 +115,7 @@ async def main() -> None:
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
-    print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+    print("== Inventory loaded from inventory.json ==")
     all_hosts = [Host.from_inventory(entry) for entry in inventory]
     # The family guard: filter the host list before the fan-out -- only the
     # RedHat hosts are ever contacted.

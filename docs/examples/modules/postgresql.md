@@ -59,9 +59,9 @@ The scripts are compile-checked and exercised by the offline harness
 (`tests/test_examples.py`), not run against the shared demo hosts. To run them
 live, relax the demo hosts' sudo confinement (permissive/unconfined, then
 `sudo postgresql-setup --initdb` and `sudo systemctl start postgresql`), or
-point `INVENTORY_PATH` at your own file of PostgreSQL machines whose
-`pg_hba.conf` admits
-the login user (facts) and the `postgres` OS user (operations).
+replace `inventory.json` in your working directory with your own file of
+PostgreSQL machines whose `pg_hba.conf` admits the login user (facts) and the
+`postgres` OS user (operations).
 
 ## Managing a database
 

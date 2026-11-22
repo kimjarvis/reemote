@@ -3,12 +3,11 @@
 
 """Example: manage an LXD image alias on real Ubuntu hosts.
 
-This is a *usage* example, not part of the library. It drives reemote's
-two-phase execution model end to end over a **real SSH transport**
-(asyncssh): the inventory is read from the project root's
-``inventory.json`` and validated up front with ``validate_inventory``,
-so a malformed file fails with an ``InventoryError`` naming the
-offending entry before any host is materialized or connected.
+This is a *usage* example, not part of the library. It drives reemote's two-phase
+execution model end to end over a **real SSH transport** (asyncssh): the inventory is
+read from ``inventory.json`` in the current working directory and validated up front
+with ``validate_inventory``, so a malformed file fails with an ``InventoryError`` naming
+the offending entry before any host is materialized or connected.
 
 ``lxd.image_alias`` reads the ``LxdImageAliases`` fact: an alias already
 targeting ``fingerprint`` is a no-op, one pointing elsewhere is REPOINTED
@@ -53,19 +52,17 @@ socket access for the unprivileged fact reads: the login user must be a
 member of the ``lxd`` group (the demo Ubuntu host already is); the
 operations themselves ride ``sudo=True`` and need no group membership.
 
-Every request carries ``when=is_ubuntu``, the declarative eligibility
-guard: the predicate reads only **static** inventory data --
-``host.family``, set by the ``"family"`` key of the inventory entry -- and
-is a stable module-level function, so the prepare and apply phases reach
-the same skip decision. The driver skips a rejected request without
-materializing it, so on hosts outside the ``"Ubuntu"`` family neither the
-commands nor the facts behind them run, and plan and log render the step
-as ``[skipped: when guard is_ubuntu]`` in its lockstep slot. The snapshot
-is guarded the same way: ``gather_fact`` takes no ``when`` parameter, so
-the script filters the host list to the ``"Ubuntu"`` family before the
-fan-out. The path is resolved from ``__file__``, so the example works
-from any working directory; point ``INVENTORY_PATH`` at your own file to
-target your machines.
+Every request carries ``when=is_ubuntu``, the declarative eligibility guard: the
+predicate reads only **static** inventory data -- ``host.family``, set by the
+``"family"`` key of the inventory entry -- and is a stable module-level function, so the
+prepare and apply phases reach the same skip decision. The driver skips a rejected
+request without materializing it, so on hosts outside the ``"Ubuntu"`` family neither
+the commands nor the facts behind them run, and plan and log render the step as
+``[skipped: when guard is_ubuntu]`` in its lockstep slot. The snapshot is guarded the
+same way: ``gather_fact`` takes no ``when`` parameter, so the script filters the host
+list to the ``"Ubuntu"`` family before the fan-out. The inventory is read from
+``inventory.json`` in the current working directory; edit it there to target your
+machines.
 
 Run it with::
 
@@ -77,7 +74,6 @@ import json
 import sys
 from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -108,26 +104,6 @@ from provision_lxd import provision_lxd
 # reference under this alias (an already-cached image is a no-op).
 CACHED_IMAGE = "ubuntu/24.04"
 IMAGE_SOURCE = "ubuntu:24.04"
-
-# examples/modules/lxd/lxd_image_alias.py -> the project root, so the inventory
-# is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to materialize into hosts; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
-
 
 def is_ubuntu(host: Host) -> bool:
     """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
@@ -201,8 +177,9 @@ def build_alias_image(
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # Provision LXD (the snap + ``lxd init --auto``) on the Ubuntu hosts

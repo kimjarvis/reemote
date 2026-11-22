@@ -18,8 +18,9 @@ The read-only fact-gathering examples (`systemd_systemd_status.py` reading
 themselves are documented on the
 [`systemd` module page](../../modules/systemd.md).
 
-Every operation example reads the project root's `inventory.json` (validated
-up front with `validate_inventory`) and guards each request with
+Every operation example reads `inventory.json` in the current working
+directory (validated up front with `validate_inventory`) and guards each
+request with
 `when=is_systemd`, a stable module-level predicate reading only static `host.family` so the OpenRC `alpine` host is skipped rather than failing on a
 missing `systemctl`. The `systemctl` and file-writing operations need root, so
 their requests are flagged `sudo=True`. `run_examples.py` runs every script
@@ -29,8 +30,9 @@ before the deploy finishes, and `service`/`preset` converge an already-installed
 web server. The drop-in, tmpfiles and sysusers examples write root-owned
 configuration and are additionally compile-checked by the offline example
 harness; on the RedHat demo hosts their elevated install is blocked by SELinux
-`staff_t` confinement (see the host-policy note below). Point `INVENTORY_PATH`
-at your own throwaway machines to execute them for real.
+`staff_t` confinement (see the host-policy note below). Name your own
+throwaway machines in `inventory.json` in your working directory to execute
+them for real.
 
 ## Managing a service
 

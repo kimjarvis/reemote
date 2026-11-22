@@ -8,16 +8,15 @@ This is a *usage* example, not part of the library. It builds on
 transport) and shows the first composition scenario: roles written in
 isolation that each declare the same prerequisite.
 
-The inventory is read from the project root's ``inventory.json`` (validated
-up front with ``validate_inventory``), which holds one host in the
-``\"RedHat\"`` family alongside hosts in other families. The whole composed deploy
-is wrapped with ``sub_deploy(..., when=is_redhat)``, so the ``dnf`` steps are
-eligible only on the RedHat hosts: the driver skips them on the Alpine and
-Ubuntu hosts without materializing them, and neither the ``dnf`` commands nor
-the ``DnfPackages`` fact behind them runs there. Because ``when`` composes by
-conjunction and the wrapper prepends the *same* predicate tuple to every
-request, the three baseline copies still share an effective identity and
-dedupe collapses them exactly as before.
+The inventory is read from the ``inventory.json`` in the current working directory
+(validated up front with ``validate_inventory``), which holds one host in the
+``\"RedHat\"`` family alongside hosts in other families. The whole composed deploy is
+wrapped with ``sub_deploy(..., when=is_redhat)``, so the ``dnf`` steps are eligible only
+on the RedHat hosts: the driver skips them on the Alpine and Ubuntu hosts without
+materializing them, and neither the ``dnf`` commands nor the ``DnfPackages`` fact behind
+them runs there. Because ``when`` composes by conjunction and the wrapper prepends the
+*same* predicate tuple to every request, the three baseline copies still share an
+effective identity and dedupe collapses them exactly as before.
 
 ``role_httpd`` and ``role_monitoring`` both re-declare ``role_baseline``'s
 request -- each under its *own* name ("Install baseline tools", "Install
@@ -48,7 +47,6 @@ import json
 import sys
 from collections.abc import Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -69,27 +67,6 @@ from reemote import (
 )
 
 HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
-
-# examples/demonstrations/composition/composed_baseline_dedupe.py -> the
-# project root, so the inventory is found whatever the current working
-# directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to hand to ``run``, which materializes it with the default
-    ``Host.from_inventory`` factory; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -167,8 +144,9 @@ deploy = sub_deploy(
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # --dry: prepare phase only. The deduplicated plan shows one baseline

@@ -48,15 +48,15 @@ connection and ``connect`` is lazy, so ``gather_fact`` on the returned hosts
 transparently re-opens them; the script closes them again afterwards. Run 2
 builds fresh hosts from the same inventory via the default factory.
 
-The inventory is read from the project root's ``inventory.json`` (validated
-up front with ``validate_inventory``), which holds hosts in the ``\"RedHat\"``
-family alongside hosts in other families. Both deploys carry ``when=is_redhat``
-so the ``dnf``/``files`` steps run only on the RedHat hosts, and the fact
-snapshot is guarded the same way: ``gather_fact`` takes no ``when`` parameter,
-so the script filters the materialized host list to the RedHat family
-before the fan-out -- the ``DnfPackages`` read would fail on the Alpine and
-Ubuntu hosts, which have no ``dnf``. The snapshot is therefore keyed by RedHat
-host only, and deploy 2's lookup uses a default for the hosts it never covers.
+The inventory is read from the ``inventory.json`` in the current working directory
+(validated up front with ``validate_inventory``), which holds hosts in the
+``\"RedHat\"`` family alongside hosts in other families. Both deploys carry
+``when=is_redhat`` so the ``dnf``/``files`` steps run only on the RedHat hosts, and the
+fact snapshot is guarded the same way: ``gather_fact`` takes no ``when`` parameter, so
+the script filters the materialized host list to the RedHat family before the fan-out --
+the ``DnfPackages`` read would fail on the Alpine and Ubuntu hosts, which have no
+``dnf``. The snapshot is therefore keyed by RedHat host only, and deploy 2's lookup uses
+a default for the hosts it never covers.
 
 Run it with::
 
@@ -69,7 +69,6 @@ import json
 import sys
 from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -99,26 +98,6 @@ NGINX_CONF = io.StringIO(
 # Staging destination under /tmp: the unprivileged scp transfer can write it
 # as the login user. Moving it into /etc/nginx would need an elevated op.
 STAGED_CONF = "/tmp/nginx.conf"
-
-# examples/demonstrations/composition/two_deploy_split.py -> the project
-# root, so the inventory is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to hand to ``run``, which materializes it with the default
-    ``Host.from_inventory`` factory; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -174,8 +153,9 @@ def build_configure_nginx(
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # Run 1: prepare + apply the install. Its apply-phase join is the

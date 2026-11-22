@@ -85,14 +85,12 @@ line both match: the snapshot gates skip every run. Reading the settings
 back without changing anything is the companion
 ``examples/modules/sysctl/sysctl_sysctl.py`` example's job.
 
-The hosts come from the shared ``inventory.json`` in the project root,
-read with ``load_inventory`` (parse + ``validate_inventory``) and resolved
-from ``__file__`` so the example works from any working directory. The
-snapshot gathers are guarded by ``is_redhat`` (``host.family == "RedHat"``):
-``gather_fact`` takes no ``when`` parameter, so the predicate filters the
-host list before the fan-out and hosts outside the ``"RedHat"`` family are
-named on a ``== Skipped (when guard is_redhat): ... ==`` line and never
-connected. Every deploy request also carries ``when=is_redhat``, and only
+The hosts come from ``inventory.json`` in the current working directory, parsed as JSON
+and validated with ``validate_inventory``. The snapshot gathers are guarded by
+``is_redhat`` (``host.family == "RedHat"``): ``gather_fact`` takes no ``when``
+parameter, so the predicate filters the host list before the fan-out and hosts outside
+the ``"RedHat"`` family are named on a ``== Skipped (when guard is_redhat): ... ==``
+line and never connected. Every deploy request also carries ``when=is_redhat``, and only
 hosts with a snapshot entry can become pending.
 
 Run it with::
@@ -147,29 +145,10 @@ SPOOL_PATH = "/tmp/sysctl.conf"
 # the transform by value; a fresh closure per phase raises DeterminismError).
 SPOOL_TRANSFORMS: dict[str, Callable[[str | None], str]] = {}
 
-# examples/modules/server/server_op_sysctl.py -> the project root, so the
-# inventory is found whatever the current working directory is. No
+# No
 # ``privilege`` entry is needed: the elevated steps assume passwordless
 # sudo for the login user; a password would come from ``privilege`` in the
 # inventory, never the op.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to materialize into hosts; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
-
-
 def is_redhat(host: Host) -> bool:
     """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
 
@@ -336,8 +315,9 @@ def install(host: Host) -> Generator[OperationRequest]:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # The snapshots: read every guarded host's live value for the key

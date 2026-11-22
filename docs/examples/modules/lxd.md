@@ -47,9 +47,9 @@ was never installed, and a re-run leaves an initialized daemon untouched.
 The one thing provisioning does not cover is socket access for the
 unprivileged fact reads: the login user must be a member of the `lxd`
 group (the demo Ubuntu host already is; the operations themselves ride
-`sudo=True` and need no group membership). Point each script's
-`INVENTORY_PATH` at your own file to run against your own machines, and
-provision their `lxd` group membership there yourself.
+`sudo=True` and need no group membership). Name your own machines in
+`inventory.json` in your working directory to run against them, and provision
+their `lxd` group membership there yourself.
 
 ## Managing a container (baseline parity)
 

@@ -6,10 +6,10 @@ Scripts under `examples/actions/` — runnable demonstrations of
 [`WaitForConnection`][reemote.actions.WaitForConnection] and
 `gather_action`, the escape hatch for acting
 on servers outside the deploy model. Each reads the shared `inventory.json`
-with `load_inventory` and guards the RedHat family with `is_redhat`
-(`host.family == "RedHat"`) — composed via `sub_deploy(..., when=...)` on
-deploys, or as a host-list filter before the fan-out, since an action has no
-`when` meta-parameter. See the [Examples overview](../examples.md)
+from the current working directory and guards the RedHat family with
+`is_redhat` (`host.family == "RedHat"`) — composed via `sub_deploy(...,
+when=...)` on deploys, or as a host-list filter before the fan-out, since an
+action has no `when` meta-parameter. See the [Examples overview](../examples.md)
 for the shared "connects for real" warning and the error-reporting contract,
 and the [Actions reference](../actions/actions.md) for the feature itself.
 

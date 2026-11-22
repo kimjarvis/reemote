@@ -5,7 +5,7 @@
 | Role | [`geerlingguy.repo-epel`](https://github.com/geerlingguy/ansible-role-repo-epel) |
 | Program | [`ansible-role-repo-epel.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/ansible-role-repo-epel/ansible-role-repo-epel.py) |
 | Target | **RedHat** — hosts in the `"RedHat"` OS family (RHEL family) |
-| Inventory | [`inventory.json`](https://github.com/kimjarvis/reemote/blob/main/inventory.json) at the project root |
+| Inventory | [`inventory.json`](https://github.com/kimjarvis/reemote/blob/main/inventory.json) in the current working directory |
 | Scope | the role's whole default path — all four tasks |
 | Offline test | [`tests/test_roles_ansible_role_repo_epel.py`](https://github.com/kimjarvis/reemote/blob/main/tests/test_roles_ansible_role_repo_epel.py) |
 
@@ -105,9 +105,9 @@ uv run python examples/roles/ansible-role-repo-epel/ansible-role-repo-epel.py
 
 `uv run` builds/refreshes the project environment (reemote from source); no
 `--with` flag is needed because the program has no extra dependencies. The
-program reads `inventory.json` from the project root by path resolution
-(`Path(__file__).resolve().parents[3]`), so it works from any working
-directory as long as the file lives in the repository.
+program reads `inventory.json` from the current working directory, so run it
+from the repository root (where the shared file lives) or put your own
+`inventory.json` in whatever directory you run it from.
 
 What you get, per deploy:
 
@@ -200,7 +200,7 @@ state) and both passes must yield the identical request sequence. The role's
 may not branch on, so it becomes **gather → snapshot → factory**.
 
 ```
-load_inventory + validate_inventory ──► Host.from_inventory ──► targets = family "RedHat"
+read + validate inventory.json ──► Host.from_inventory ──► targets = family "RedHat"
 role_settings(host)                                   (no host contacted)
 │
 ├─ gather: LinuxDistribution (family/major guard + URL resolution)

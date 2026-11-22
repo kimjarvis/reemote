@@ -21,8 +21,8 @@ the `"RedHat"` family: `is_redhat` filters the host list before the
 `when=is_redhat` on every request. Every firewalld read retries through
 passwordless `sudo -n` and reads the empty value on an unprivileged login
 (or a stopped daemon, or a host without firewalld) rather than failing, so
-every gather is safe on any Linux target — point `INVENTORY_PATH` at your
-own file of machines before executing.
+every gather is safe on any Linux target — name your own machines in
+`inventory.json` in your working directory before executing.
 
 The demo hosts ship without firewalld, so every operation script below
 first drives a small idempotent *install deploy* (`dnf.packages` for

@@ -58,14 +58,12 @@ uses the *default* factory (``Host.from_inventory``): each plain ``Host``
 lazily opens an asyncssh connection, reads the process table for real, and
 runs ``kill`` under sudo where needed.
 
-The hosts come from the shared ``inventory.json`` in the project root,
-read with ``load_inventory`` (parse + ``validate_inventory``) and resolved
-from ``__file__`` so the example works from any working directory. The
-snapshot gather is guarded by ``is_redhat`` (``host.family == "RedHat"``):
-``gather_fact`` takes no ``when`` parameter, so the predicate filters the
-host list before the fan-out and hosts outside the ``"RedHat"`` family are
-named on a ``== Skipped (when guard is_redhat): ... ==`` line and never
-connected. Every kill request also carries ``when=is_redhat``, and a
+The hosts come from ``inventory.json`` in the current working directory, parsed as JSON
+and validated with ``validate_inventory``. The snapshot gather is guarded by
+``is_redhat`` (``host.family == "RedHat"``): ``gather_fact`` takes no ``when``
+parameter, so the predicate filters the host list before the fan-out and hosts outside
+the ``"RedHat"`` family are named on a ``== Skipped (when guard is_redhat): ... ==``
+line and never connected. Every kill request also carries ``when=is_redhat``, and a
 skipped host has no snapshot entry, so its deploy yields nothing.
 
 Run it with::
@@ -78,7 +76,6 @@ import json
 import sys
 from collections.abc import Callable, Generator
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     CommandError,
@@ -100,26 +97,6 @@ from reemote import (
 # ``Processes`` fact (the ps ``comm`` field), and the signal to send.
 PROCESS_NAME = "nginx"
 SIGNAL = "TERM"
-
-# examples/modules/server/server_kill.py -> the project root, so the
-# inventory is found whatever the current working directory is.
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    The file must hold a JSON array of inventory entries -- dictionaries
-    each carrying at least ``host`` and ``connection``. Returns the parsed
-    list, ready to materialize into hosts; raises ``InventoryError`` (via
-    ``validate_inventory``) when the document is not an array or an entry
-    does not match the schema.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
-
 
 def is_redhat(host: Host) -> bool:
     """``when`` guard: the host belongs to the ``"RedHat"`` OS family.
@@ -165,8 +142,9 @@ def build_kill(
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
-        print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
         # The snapshot: one concurrent Processes read across the guarded

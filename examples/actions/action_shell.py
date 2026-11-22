@@ -8,10 +8,9 @@ This is a *usage* example, not part of the library. It demonstrates
 about -- driven through ``gather_action``, the action counterpart of
 ``gather_fact``:
 
-1. Load the target hosts from the shared ``inventory.json`` in the project
-   root with ``load_inventory`` (parse + ``validate_inventory``) and
-   materialize each entry into a plain ``Host`` with the default
-   ``Host.from_inventory`` factory.
+1. Load the target hosts from ``inventory.json`` in the current working directory
+   (validated with ``validate_inventory``) and materialize each entry into a plain
+   ``Host`` with the default ``Host.from_inventory`` factory.
 2. ``gather_action(hosts, Shell, command=...)`` fans ``Shell.process`` out
    across the inventory with ``asyncio.gather`` and returns a host-name-keyed
    mapping of ``Result`` objects -- one per host -- in input order. The awaited
@@ -49,7 +48,6 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     Host,
@@ -61,24 +59,9 @@ from reemote import (
     validate_inventory,
 )
 
-# The shared inventory in the project root -- the same inventory.json the
+
+# The shared inventory in the current working directory -- the same inventory.json the
 # library's other examples read.
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    ``json.loads`` parses the file into a list of entry dicts, and
-    ``validate_inventory`` checks every entry against the inventory schema --
-    a malformed file raises before any connection is attempted.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
-
-
 def is_redhat(host: Host) -> bool:
     """Family guard: the host belongs to the ``"RedHat"`` OS family.
 
@@ -102,7 +85,8 @@ def report(label: str, results: dict) -> None:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file itself is missing or not valid JSON.
         print(f"\nERROR: {exc}", file=sys.stderr)
@@ -112,7 +96,7 @@ async def main() -> None:
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
-    print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+    print("== Inventory loaded from inventory.json ==")
     all_hosts = [Host.from_inventory(entry) for entry in inventory]
     # The family guard: gather_action has no `when`, so filter the host list
     # before the fan-out -- only the RedHat hosts are ever contacted.

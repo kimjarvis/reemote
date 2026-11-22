@@ -2,7 +2,8 @@
 
 Scripts under `examples/demonstrations/privilege/` — scenarios that cross
 module boundaries to show privilege escalation. Each reads the shared
-`inventory.json` with `load_inventory`, composes an `is_redhat`
+`inventory.json` from the current working directory (parsed and validated
+with `validate_inventory`), composes an `is_redhat`
 (`host.family == "RedHat"`) guard onto its deploy with `sub_deploy(..., when=...)`
 so the `dnf` work — facts included — stays on the RedHat hosts, and attaches
 its own `privilege` section to the loaded RedHat entries (the shared file

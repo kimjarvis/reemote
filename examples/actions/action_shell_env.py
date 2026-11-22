@@ -23,11 +23,11 @@ sets the variables for the elevated command.
 Actions bypass ``op()`` and the plan layer's hashing, so a plain ``dict`` is
 legal here -- no ``UnhashableArgumentError`` concern.
 
-The script runs ``printenv`` on each RedHat host with ``DD_SERVICE`` and
-``DD_ENV`` set, then reads the captured stdout from the ``Result``. The hosts
-come from the shared ``inventory.json`` in the project root; ``is_redhat``
-filters the host list before the ``gather_action`` fan-out -- an action has no
-``when`` meta-parameter -- so only the RedHat hosts are contacted.
+The script runs ``printenv`` on each RedHat host with ``DD_SERVICE`` and ``DD_ENV`` set,
+then reads the captured stdout from the ``Result``. The hosts come from
+``inventory.json`` in the current working directory; ``is_redhat`` filters the host list
+before the ``gather_action`` fan-out -- an action has no ``when`` meta-parameter -- so
+only the RedHat hosts are contacted.
 
 Run it with::
 
@@ -38,7 +38,6 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     Host,
@@ -50,11 +49,8 @@ from reemote import (
     validate_inventory,
 )
 
-# The shared inventory in the project root -- the same inventory.json the
+# The shared inventory in the current working directory -- the same inventory.json the
 # library's other examples read.
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
 # The environment variables this demo sets. In a real migration these would be
 # the DataDog APM instrumentation knobs; here we use two simple ones to prove
 # the mechanism.
@@ -63,17 +59,6 @@ DD_ENV_VARS = {
     "DD_ENV": "production",
 }
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    ``json.loads`` parses the file into a list of entry dicts, and
-    ``validate_inventory`` checks every entry against the inventory schema --
-    a malformed file raises before any connection is attempted.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -99,7 +84,8 @@ def report(label: str, results: dict) -> None:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file itself is missing or not valid JSON.
         print(f"\nERROR: {exc}", file=sys.stderr)
@@ -109,7 +95,7 @@ async def main() -> None:
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 
-    print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+    print("== Inventory loaded from inventory.json ==")
     all_hosts = [Host.from_inventory(entry) for entry in inventory]
     # The family guard: gather_action has no `when`, so filter the host list
     # before the fan-out -- only the RedHat hosts are ever contacted.

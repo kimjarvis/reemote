@@ -30,12 +30,12 @@ raises ``PrivilegeError`` (the privilege counterpart of ``HostConnectionError``)
 rather than travelling back as an exit status. ``main`` catches it and prints
 one line naming the host, keeping the exit status and stderr as ``__cause__``.
 
-The hosts come from the shared ``inventory.json`` in the project root, read by
-``load_inventory`` and validated. ``is_redhat`` (``host.family == "RedHat"``)
-filters the host list before the ``gather_action`` fan-out -- an action has no
-``when`` meta-parameter -- so only the RedHat hosts are contacted. The
-``privilege`` section this demo needs is not in the shared file, so ``main``
-attaches it to the loaded RedHat entries: privilege stays an *inventory*
+The hosts come from ``inventory.json`` in the current working directory, parsed as
+JSON and validated with ``validate_inventory``. ``is_redhat``
+(``host.family == "RedHat"``) filters the host list before the ``gather_action``
+fan-out -- an action has no ``when`` meta-parameter -- so only the RedHat hosts are
+contacted. The ``privilege`` section this demo needs is not in the shared file, so
+``main`` attaches it to the loaded RedHat entries: privilege stays an *inventory*
 parameter, never a caller one.
 
 The password is plain text in the inventory -- the only supported form -- and
@@ -52,7 +52,6 @@ import asyncio
 import json
 import sys
 from pathlib import Path
-from typing import Any
 
 from reemote import (
     Host,
@@ -64,11 +63,8 @@ from reemote import (
     validate_inventory,
 )
 
-# The shared inventory in the project root -- the same inventory.json the
+# The shared inventory in the current working directory -- the same inventory.json the
 # library's other examples read.
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
-
 # The privilege section this demo attaches to the loaded RedHat inventory
 # entries (the shared file carries none). The login user's ``sudo_password``
 # authenticates elevation; ``sudo_user`` is the run-AS target -- ``root`` here,
@@ -77,17 +73,6 @@ INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 # call supplies neither user nor password.
 PRIVILEGE = {"sudo_user": "root", "sudo_password": "qsefth*4"}
 
-
-def load_inventory(path: Path) -> list[dict[str, Any]]:
-    """Read an inventory from a JSON file and validate it.
-
-    ``json.loads`` parses the file into a list of entry dicts, and
-    ``validate_inventory`` checks every entry against the inventory schema --
-    a malformed file raises before any connection is attempted.
-    """
-    inventory = json.loads(path.read_text(encoding="utf-8"))
-    validate_inventory(inventory)
-    return inventory
 
 
 def is_redhat(host: Host) -> bool:
@@ -102,7 +87,8 @@ def is_redhat(host: Host) -> bool:
 
 async def main() -> None:
     try:
-        inventory = load_inventory(INVENTORY_PATH)
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file itself is missing or not valid JSON.
         print(f"\nERROR: {exc}", file=sys.stderr)
@@ -119,7 +105,7 @@ async def main() -> None:
         if entry.get("family") == "RedHat":
             entry["privilege"] = dict(PRIVILEGE)
 
-    print(f"== Inventory loaded from {INVENTORY_PATH} ==")
+    print("== Inventory loaded from inventory.json ==")
     all_hosts = [Host.from_inventory(entry) for entry in inventory]
     # The family guard: gather_action has no `when`, so filter the host list
     # before the fan-out -- only the RedHat hosts are ever contacted.
