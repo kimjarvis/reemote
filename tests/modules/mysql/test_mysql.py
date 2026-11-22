@@ -2216,7 +2216,7 @@ async def test_mysql_database_end_to_end_create_then_noop():
         return host  # reuse ONE host so the second run sees the first's create
 
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], deploy, host_factory=factory
     )
     assert plans["h"][0].changed
     (entry,) = report.log
@@ -2225,7 +2225,7 @@ async def test_mysql_database_end_to_end_create_then_noop():
     assert "$ sudo mysql -Be 'CREATE DATABASE `shop`'" in format_log(report)
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -2238,7 +2238,7 @@ async def test_mysql_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         deploy,
         dry=True,
         host_factory=lambda entry: host,

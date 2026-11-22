@@ -57,7 +57,7 @@ Each entry documents its arguments, what it returns, the exceptions it raises, a
 
 Four words carry almost the whole model. Learn them once and the rest of the guide is detail.
 
-- **Inventory** — a list of dictionaries naming the servers and how to reach them. This is what you hand to the runner. A minimal entry needs a `host` label and a `connection` mapping; groups, tags and privilege settings are optional and covered later in [Hosts and the inventory](#hosts-and-the-inventory).
+- **Inventory** — a list of dictionaries naming the servers and how to reach them. This is what you hand to the runner. A minimal entry needs a `host` label, a `family` (the OS family: `RedHat`, `Ubuntu` or `Alpine`) and a `connection` mapping; groups, tags and privilege settings are optional and covered later in [Hosts and the inventory](#hosts-and-the-inventory).
 - **Fact** — a read of some server state: a hostname, the set of installed packages, a file's current text. Facts are gathered over the connection and are cached during a run. You usually do not call them yourself; operations read the facts they need.
 - **Operation** — a request to converge the server toward a described state: "ensure these packages are installed", "make this file contain this text", "ensure this service is running". An operation reads facts, decides whether anything must change, and produces the commands to make the change. Operations are **idempotent** wherever that is meaningful: running one twice leaves the same state and reports *no change* the second time.
 - **Action** — something that runs *immediately*, outside a deployment, and hands back its result. Actions are the escape hatch for one-off commands reemote has no operation for, and for connectivity itself. They come last in this guide because they are defined by contrast with the deploy model — see [Actions](#actions).
@@ -82,6 +82,7 @@ Create `inventory.json`:
 [
   {
     "host": "demo",
+    "family": "Ubuntu",
     "connection": {
       "address": "192.0.2.10",
       "username": "deploy",
@@ -287,6 +288,7 @@ The corresponding inventory entry adds the `group` the guard reads and the privi
 [
   {
     "host": "web1",
+    "family": "Ubuntu",
     "connection": {"address": "192.0.2.20", "username": "deploy", "key_path": "~/.ssh/id_ed25519"},
     "group": "debian",
     "privilege": {"sudo_user": "root"}
@@ -346,12 +348,13 @@ There is no transaction and no rollback. Apply runs each step to completion; if 
 
 ### Hosts and the inventory
 
-The inventory is a list of dictionaries. Each entry must carry a `host` (its logical label) and a `connection` (how to reach it); `group`, `tags` and `privilege` are optional, and any extra keys are preserved on the materialised `Host`. reemote validates the whole inventory with pydantic before it builds a single host, so a malformed entry raises `InventoryError` immediately rather than failing later over the network.
+The inventory is a list of dictionaries. Each entry must carry a `host` (its logical label), a `family` (its OS family, one of `RedHat`, `Ubuntu` or `Alpine`) and a `connection` (how to reach it); `group`, `tags` and `privilege` are optional, and any extra keys are preserved on the materialised `Host`. reemote validates the whole inventory with pydantic before it builds a single host, so a malformed entry raises `InventoryError` immediately rather than failing later over the network.
 
 ```json
 [
   {
     "host": "web1",
+    "family": "Ubuntu",
     "connection": {"address": "192.0.2.20", "username": "deploy", "key_path": "~/.ssh/id_ed25519"},
     "group": "webservers",
     "tags": ["ubuntu", "edge"],

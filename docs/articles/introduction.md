@@ -29,6 +29,7 @@ from reemote import files, format_log, format_plan, op, run
 
 INVENTORY = [{
     "host": "demo",
+    "family": "Alpine",
     "connection": {
         "connector": "docker",
         "identifier": "alpine:3.20",

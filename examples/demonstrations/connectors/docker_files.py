@@ -7,6 +7,7 @@ This is a *usage* example, not part of the library. The inventory entry
 selects the ``docker`` connector instead of SSH::
 
     {"host": "build1",
+     "family": "Alpine",
      "connection": {"connector": "docker", "identifier": "alpine:3.20",
                     "docker_cmd": "podman"}}
 
@@ -63,6 +64,7 @@ from reemote import (
 INVENTORY = [
     {
         "host": "build1",
+        "family": "Alpine",
         "connection": {
             "connector": "docker",
             "identifier": "alpine:3.20",

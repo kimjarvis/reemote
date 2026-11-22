@@ -46,6 +46,7 @@ def make_host(**privilege: str) -> SimulatedHost:
     return SimulatedHost.from_inventory(
         {
             "host": "sim1",
+            "family": "Ubuntu",
             "connection": {"address": "192.0.2.10"},
             "privilege": dict(privilege),
         }
@@ -144,7 +145,7 @@ async def test_script_rides_the_seam_via_its_rendered_wrapper():
 
 # --- The removal seams clear the content store (#18) -------------------------
 
-INVENTORY = [{"host": "sim1", "connection": {"address": "192.0.2.10"}}]
+INVENTORY = [{"host": "sim1", "family": "Ubuntu", "connection": {"address": "192.0.2.10"}}]
 REMOVED = "/etc/reemote-removed.conf"
 REMOVED_CONTENT = "# managed by reemote\n"
 

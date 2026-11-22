@@ -65,6 +65,7 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
     """
     entry: dict[str, Any] = {
         "host": "ubuntu",
+        "family": "Ubuntu",
         "connection": {
             "address": "192.0.2.10",
             "username": "supervisor",
@@ -79,6 +80,7 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
         entry,
         {
             "host": "web1",
+            "family": "RedHat",
             "connection": {"address": "192.0.2.11", "username": "admin"},
             "group": "centos",
         },
@@ -359,7 +361,7 @@ def test_role_settings_defaults_and_overrides():
     assert settings["java_home"] == JAVA_HOME
 
     bare = SimulatedHost.from_inventory(
-        {"host": "bare", "connection": {"address": "192.0.2.12"}, "group": "ubuntu"}
+        {"host": "bare", "family": "Ubuntu", "connection": {"address": "192.0.2.12"}, "group": "ubuntu"}
     )
     defaults = java.role_settings(bare)
     assert defaults["java_packages"] is None
@@ -413,7 +415,7 @@ def test_java_plan_selects_the_vars_table_and_gates():
     plan = java.java_plan(override, {"name": "Ubuntu", "major": "22"})
     assert plan["packages"] == ("openjdk-21-jdk",)
     bare = SimulatedHost.from_inventory(
-        {"host": "bare", "connection": {"address": "192.0.2.12"}, "group": "ubuntu"}
+        {"host": "bare", "family": "Ubuntu", "connection": {"address": "192.0.2.12"}, "group": "ubuntu"}
     )
     plan = java.java_plan(bare, {"name": "Ubuntu", "major": "24"})
     assert plan["java_home_content"] is None

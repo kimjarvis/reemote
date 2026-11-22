@@ -27,6 +27,7 @@ from reemote import apt, format_log, format_plan, op, run
 
 INVENTORY = [{
     "host": "ubuntu-demo",
+    "family": "Ubuntu",
     "connection": {
         "connector": "docker",
         "identifier": "ubuntu:24.04",

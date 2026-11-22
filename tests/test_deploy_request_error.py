@@ -35,8 +35,8 @@ from reemote.modules import dnf
 from tests.simulated_host import SimulatedHost
 
 INVENTORY = [
-    {"host": "web1", "connection": {"key_path": "~/.ssh/id_ed25519"}},
-    {"host": "web2", "connection": {"key_path": "~/.ssh/id_ed25519"}},
+    {"host": "web1", "family": "Ubuntu", "connection": {"key_path": "~/.ssh/id_ed25519"}},
+    {"host": "web2", "family": "Ubuntu", "connection": {"key_path": "~/.ssh/id_ed25519"}},
 ]
 
 

@@ -63,6 +63,7 @@ extra key — reemote's `host_vars` mechanism (`host.extra`):
 ```json
 {
   "host": "ubuntu",
+  "family": "Ubuntu",
   "connection": {
     "address": "192.168.0.181",
     "username": "supervisor",

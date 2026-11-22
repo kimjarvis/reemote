@@ -37,6 +37,7 @@ HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
 INVENTORY = [
     {
         "host": "web1",
+        "family": "Ubuntu",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
     },
 ]

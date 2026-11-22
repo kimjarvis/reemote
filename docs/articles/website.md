@@ -148,6 +148,7 @@ from reemote import files, format_log, format_plan, op, run
 
 INVENTORY = [{
     "host": "beta",
+    "family": "Ubuntu",
     "connection": {"connector": "docker", "identifier": "beta", "docker_cmd": "podman"},
 }]
 
@@ -286,11 +287,12 @@ The **plan** comes from the prepare phase: reemote runs each operation to see wh
 
 ## Inventory + nginx setup
 
-So far the target has been a local container, but we want `beta` to behave like production. The inventory is just a Python list of dicts — no separate file format to learn. Each entry names a host, its connection, and any extra data:
+So far the target has been a local container, but we want `beta` to behave like production. The inventory is just a Python list of dicts — no separate file format to learn. Each entry names a host, its OS family, its connection, and any extra data:
 
 ```python
 BETA = [{
     "host": "beta",
+    "family": "Ubuntu",
     "connection": {"connector": "docker", "identifier": "beta", "docker_cmd": "podman"},
 }]
 
@@ -298,6 +300,7 @@ BETA = [{
 # "connector" key can be omitted, since ssh is the default:
 PROD = [{
     "host": "web1",
+    "family": "Ubuntu",
     "connection": {"address": "web1.example.com", "username": "deploy",
                    "key_path": "~/.ssh/id_ed25519"},
     "home_domain": "www.example.com", "stage": "prod", "nginx_https": True,
@@ -330,6 +333,7 @@ The `beta` container needs no keys and no network, but the same deploys run agai
 ```python
 REAL = [{
     "host": "web1",                                  # any name you like
+    "family": "Ubuntu",
     "connection": {
         "address": "web1.example.com",               # or an IP
         "username": "deploy",                        # the login user
@@ -685,10 +689,12 @@ Certbot needs a **resolvable** domain name to complete the HTTP-01 challenge, so
 ```python
 PROD = [
     {"host": "web1",
+     "family": "Ubuntu",
      "connection": {"address": "web1.example.com", "username": "deploy",
                     "key_path": "~/.ssh/id_ed25519"},
      "home_domain": "www.example.com", "stage": "prod", "nginx_https": True},
     {"host": "web2",
+     "family": "Ubuntu",
      "connection": {"address": "web2.example.com", "username": "deploy",
                     "key_path": "~/.ssh/id_ed25519"},
      "app_domain": "app.example.com", "stage": "prod", "nginx_https": True},

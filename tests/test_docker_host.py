@@ -152,6 +152,7 @@ def test_from_inventory_dispatches_docker():
     host = Host.from_inventory(
         {
             "host": "build1",
+            "family": "Alpine",
             "connection": {
                 "connector": "docker",
                 "identifier": "alpine",
@@ -166,14 +167,14 @@ def test_from_inventory_dispatches_docker():
 
 def test_from_inventory_default_stays_ssh():
     for connection in ({}, {"connector": "ssh"}, {"address": "10.0.0.1"}):
-        host = Host.from_inventory({"host": "web1", "connection": connection})
+        host = Host.from_inventory({"host": "web1", "family": "Ubuntu", "connection": connection})
         assert type(host) is Host
 
 
 def test_unknown_connector_is_rejected():
     with pytest.raises(InventoryError, match="unknown connector"):
         Host.from_inventory(
-            {"host": "web1", "connection": {"connector": "podman"}}
+            {"host": "web1", "family": "Ubuntu", "connection": {"connector": "podman"}}
         )
 
 
@@ -182,6 +183,7 @@ def test_docker_connection_requires_identifier():
         Host.from_inventory(
             {
                 "host": "build1",
+                "family": "Ubuntu",
                 "connection": {"connector": "docker", "docker_cmd": "docker"},
             }
         )
@@ -192,6 +194,7 @@ def test_docker_connection_requires_docker_cmd():
         Host.from_inventory(
             {
                 "host": "build1",
+                "family": "Alpine",
                 "connection": {"connector": "docker", "identifier": "alpine"},
             }
         )
@@ -202,6 +205,7 @@ def test_docker_connection_rejects_unknown_keys():
         Host.from_inventory(
             {
                 "host": "build1",
+                "family": "Alpine",
                 "connection": {
                     "connector": "docker",
                     "identifier": "alpine",
@@ -218,6 +222,7 @@ def test_docker_connection_rejects_non_string_values():
             Host.from_inventory(
                 {
                     "host": "build1",
+                    "family": "Ubuntu",
                     "connection": {
                         "connector": "docker",
                         "identifier": "alpine",
@@ -230,7 +235,7 @@ def test_docker_connection_rejects_non_string_values():
 
 def test_subclass_factory_ignores_the_connector_key():
     host = SimulatedHost.from_inventory(
-        {"host": "sim1", "connection": {"connector": "docker", "identifier": "alpine"}}
+        {"host": "sim1", "family": "Alpine", "connection": {"connector": "docker", "identifier": "alpine"}}
     )
     assert type(host) is SimulatedHost
 
@@ -663,6 +668,7 @@ async def test_run_put_and_get_through_the_docker_transport():
     inventory = [
         {
             "host": "build1",
+            "family": "Alpine",
             "connection": {
                 "connector": "docker",
                 "identifier": "alpine:3.20",

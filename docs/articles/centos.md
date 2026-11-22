@@ -27,6 +27,7 @@ from reemote import dnf, format_log, format_plan, op, run
 
 INVENTORY = [{
     "host": "centos-demo",
+    "family": "RedHat",
     "connection": {
         "connector": "docker",
         "identifier": "quay.io/centos/centos:stream9",

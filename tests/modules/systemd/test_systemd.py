@@ -73,8 +73,8 @@ from reemote.modules.systemd.systemd import (
 from tests.simulated_host import SimulatedHost
 
 INVENTORY = [
-    {"host": "web1", "connection": {"key_path": "~/.ssh/id_ed25519"}},
-    {"host": "web2", "connection": {"key_path": "~/.ssh/id_ed25519"}},
+    {"host": "web1", "family": "Ubuntu", "connection": {"key_path": "~/.ssh/id_ed25519"}},
+    {"host": "web2", "family": "Ubuntu", "connection": {"key_path": "~/.ssh/id_ed25519"}},
 ]
 
 
@@ -894,7 +894,7 @@ async def test_service_sleep_restart_runs_across_hosts_in_lockstep():
 
 
 async def test_service_is_idempotent_across_runs():
-    host = stopped_factory({"host": "h", "connection": {}})
+    host = stopped_factory({"host": "h", "family": "Ubuntu", "connection": {}})
     runtimes, plans = await run_prepare([host], manage_httpd)
     assert [p.changed for p in plans["h"]] == [True]
     report = await run_apply(runtimes, plans=plans)

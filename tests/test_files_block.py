@@ -60,6 +60,7 @@ block_transform = files_block.block_transform
 INVENTORY = [
     {
         "host": "web1",
+        "family": "Ubuntu",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
     },
 ]

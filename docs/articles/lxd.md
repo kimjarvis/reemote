@@ -68,6 +68,7 @@ uv venv .venv && source .venv/bin/activate && uv pip install reemote
 ```python
 INVENTORY = [{
     "host": "ubuntu",
+    "family": "Ubuntu",
     "connection": {
         "address": "192.168.0.181",   # your Ubuntu host
         "username": "supervisor",

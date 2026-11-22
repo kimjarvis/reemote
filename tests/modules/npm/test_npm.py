@@ -888,7 +888,7 @@ async def test_npm_package_json_seam_applies_the_manifest():
 
 # One inventory entry, so ``run`` materializes one simulated host through the
 # injected factory and hands it back for the state assertions.
-INVENTORY = [{"host": "h", "connection": {"address": "127.0.0.1", "username": "u"}}]
+INVENTORY = [{"host": "h", "family": "Ubuntu", "connection": {"address": "127.0.0.1", "username": "u"}}]
 
 
 def install_deploy(host):

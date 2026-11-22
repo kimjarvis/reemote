@@ -79,6 +79,7 @@ A target entry needs `"group": "ubuntu"`; every role variable rides beside
 ```json
 {
   "host": "ubuntu",
+  "family": "Ubuntu",
   "connection": {
     "address": "192.168.0.181",
     "username": "supervisor",

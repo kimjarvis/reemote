@@ -85,6 +85,7 @@ are optional extra keys on a `centos` entry, e.g.:
 ```json
 {
   "host": "web1",
+  "family": "RedHat",
   "connection": {
     "address": "192.168.0.159",
     "username": "supervisor",

@@ -40,6 +40,7 @@ from reemote import apk, format_log, format_plan, op, run
 
 INVENTORY = [{
     "host": "alpine-demo",
+    "family": "Alpine",
     "connection": {
         "connector": "docker",
         "identifier": "alpine:3.20",
@@ -165,6 +166,7 @@ DOCKER_CMD = "podman"   # or "docker"
 
 def conn(identifier):
     return {"host": "alpine-demo",
+            "family": "Alpine",
             "connection": {"connector": "docker",
                            "identifier": identifier,
                            "docker_cmd": DOCKER_CMD}}

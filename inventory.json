@@ -1,6 +1,7 @@
 [
   {
     "host": "alpine",
+    "family": "Alpine",
     "connection": {
       "address": "192.168.0.241",
       "username": "alpine",
@@ -11,6 +12,7 @@
   },
   {
     "host": "web1",
+    "family": "RedHat",
     "connection": {
       "address": "192.168.0.159",
       "username": "supervisor",
@@ -21,6 +23,7 @@
   },
   {
     "host": "web2",
+    "family": "RedHat",
     "connection": {
       "address": "192.168.0.135",
       "username": "supervisor",
@@ -31,6 +34,7 @@
   },
   {
     "host": "ubuntu",
+    "family": "Ubuntu",
     "connection": {
       "address": "192.168.0.181",
       "username": "supervisor",

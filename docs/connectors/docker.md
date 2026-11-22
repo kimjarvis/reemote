@@ -8,6 +8,7 @@ is selected per inventory entry with `connection.connector`:
 inventory = [
     {
         "host": "build1",
+        "family": "Alpine",
         "connection": {
             "connector": "docker",
             "identifier": "alpine:3.20",

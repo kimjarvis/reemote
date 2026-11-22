@@ -70,6 +70,7 @@ from reemote import (
 INVENTORY = [
     {
         "host": "beta",
+        "family": "Ubuntu",
         "connection": {
             "connector": "docker",
             "identifier": "beta",

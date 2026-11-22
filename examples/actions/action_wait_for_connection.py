@@ -87,6 +87,7 @@ INVENTORY_PATH = PROJECT_ROOT / "inventory.json"
 DEAD_INVENTORY = [
     {
         "host": "dead1",
+        "family": "Ubuntu",
         "connection": {"address": "192.0.2.1", "known_hosts": None},
     },
 ]

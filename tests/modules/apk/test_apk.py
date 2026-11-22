@@ -1443,7 +1443,7 @@ async def test_apk_packages_dry_run_plans_without_sending():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Alpine", "connection": {}}],
         install_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -1703,7 +1703,7 @@ async def test_apk_virtual_dry_run_plans_without_sending():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Alpine", "connection": {}}],
         create_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -2056,7 +2056,7 @@ async def test_apk_hold_dry_run_plans_without_sending():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Alpine", "connection": {}}],
         hold_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -2389,7 +2389,7 @@ async def test_apk_autoremove_dry_run_plans_without_sending():
         apk_packages={"curl": ["8.14.0-r0"]},
     )
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Alpine", "connection": {}}],
         autoremove_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -2921,7 +2921,7 @@ async def test_apk_repository_dry_run_plans_without_sending():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Alpine", "connection": {}}],
         add_deploy,
         host_factory=lambda entry: host,
         dry=True,

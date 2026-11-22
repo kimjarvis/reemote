@@ -1306,7 +1306,7 @@ async def test_openrc_service_dry_run_plans_without_sending():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         start_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -1425,7 +1425,7 @@ async def test_openrc_custom_runlevel_dry_run_plans_without_sending():
 
     host = SimulatedHost(name="h", openrc_runlevels={"default": []})
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         create_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -2005,7 +2005,7 @@ async def test_config_dry_run_plans_without_sending():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         set_deploy,
         host_factory=lambda entry: host,
         dry=True,

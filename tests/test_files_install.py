@@ -55,6 +55,7 @@ from tests.simulated_host import SimulatedHost
 INVENTORY = [
     {
         "host": "web1",
+        "family": "Ubuntu",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
     },
 ]
@@ -759,6 +760,7 @@ async def test_install_validate_failure_aborts_and_preserves_the_original():
 UNREADABLE_INVENTORY = [
     {
         "host": "web1",
+        "family": "Ubuntu",
         "connection": {"key_path": "~/.ssh/id_ed25519", "username": "kim"},
     },
 ]

@@ -11,6 +11,7 @@ operation and the privilege machinery work unchanged.
 An inventory entry selects it with ``connection.connector``::
 
     [{"host": "build1",
+      "family": "Alpine",
       "connection": {"connector": "docker", "identifier": "alpine:3.20",
                      "docker_cmd": "docker"}}]
 

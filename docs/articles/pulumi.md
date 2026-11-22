@@ -37,7 +37,7 @@ def deploy(host):
              service="nginx", running=True, enabled=True, sudo=True)
 
 async def configure(address):
-    inventory = [{"host": "web", "group": "web",
+    inventory = [{"host": "web", "family": "Ubuntu", "group": "web",
                   "connection": {"connector": "ssh",
                                  "address": address,
                                  "username": "deploy"}}]
@@ -65,7 +65,7 @@ One caveat on running both halves in one program: a Pulumi `Output` is only guar
 
 The example above also answers the line of the rant I find most irritating: another tool that has to be told about the servers the first tool just created. That step is the inventory, and it is where the mismatch gets rebuilt by habit — a second description of a fleet that already has one.
 
-A reemote inventory is a plain list of dictionaries, each with a `host` name and a `connection` mapping, optionally a `privilege` mapping and the `group` / `tags` classifiers a script branches on. There is no inventory format to learn and no plugin to write between it and a Pulumi stack — the stack's exports are Python data, and building the list is that step of glue work your organisation already does somewhere:
+A reemote inventory is a plain list of dictionaries, each with a `host` name, a `family` (one of `RedHat`, `Ubuntu` or `Alpine`) and a `connection` mapping, optionally a `privilege` mapping and the `group` / `tags` classifiers a script branches on. There is no inventory format to learn and no plugin to write between it and a Pulumi stack — the stack's exports are Python data, and building the list is that step of glue work your organisation already does somewhere:
 
 ```python
 def inventory_from_stack(project: str, stack: str, user: str) -> list[dict]:
@@ -76,6 +76,7 @@ def inventory_from_stack(project: str, stack: str, user: str) -> list[dict]:
     ))
     return [
         {"host": name,
+         "family": "Ubuntu",
          "group": "web",
          "connection": {"connector": "ssh", "address": address, "username": user},
          "privilege": {"sudo_user": "root"}}

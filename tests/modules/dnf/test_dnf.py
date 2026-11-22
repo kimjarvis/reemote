@@ -634,10 +634,12 @@ HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
 WEB_INVENTORY = [
     {
         "host": "web1",
+        "family": "RedHat",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
     },
     {
         "host": "web2",
+        "family": "RedHat",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
     },
 ]
@@ -695,6 +697,7 @@ def test_host_from_inventory_maps_known_and_extra_keys():
     host = Host.from_inventory(
         {
             "host": "web1",
+            "family": "RedHat",
             "connection": {"key_path": "~/.ssh/id_ed25519"},
             "privilege": {"sudo_user": "deploy"},
             "groups": ["web"],  # unrecognised key -> preserved in extra
@@ -710,6 +713,7 @@ def test_host_from_inventory_maps_group_and_tags():
     host = Host.from_inventory(
         {
             "host": "web1",
+            "family": "RedHat",
             "connection": {},
             "group": "webservers",
             "tags": ["ubuntu_host", "web"],
@@ -720,14 +724,14 @@ def test_host_from_inventory_maps_group_and_tags():
 
 
 def test_host_group_and_tags_default_when_absent():
-    host = Host.from_inventory({"host": "web1", "connection": {}})
+    host = Host.from_inventory({"host": "web1", "family": "RedHat", "connection": {}})
     assert host.group is None
     assert host.tags == []
 
 
 def test_from_inventory_rejects_non_string_tags():
     with pytest.raises(InventoryError):
-        Host.from_inventory({"host": "web1", "connection": {}, "tags": [1, 2]})
+        Host.from_inventory({"host": "web1", "family": "RedHat", "connection": {}, "tags": [1, 2]})
 
 
 def test_deploy_branches_on_group_and_tags():
@@ -735,6 +739,7 @@ def test_deploy_branches_on_group_and_tags():
     host = Host.from_inventory(
         {
             "host": "web1",
+            "family": "RedHat",
             "connection": {},
             "group": "webservers",
             "tags": ["ubuntu_host", "web"],
@@ -765,19 +770,25 @@ async def test_inventory_host_reaches_the_real_transport_boundary():
 def test_validate_inventory_accepts_a_wellformed_inventory():
     entries = validate_inventory(WEB_INVENTORY)
     assert [entry.host for entry in entries] == ["web1", "web2"]
+    assert [entry.family for entry in entries] == ["RedHat", "RedHat"]
     assert entries[0].connection == {"key_path": "~/.ssh/id_ed25519"}
 
 
 def test_validate_inventory_requires_a_list():
     with pytest.raises(InventoryError, match="must be a list"):
-        validate_inventory({"host": "web1", "connection": {}})
+        validate_inventory({"host": "web1", "family": "RedHat", "connection": {}})
 
 
 def test_validate_inventory_reports_the_offending_entry_index():
     # The TypeAdapter reports every bad entry by its list index in the error
     # ``loc`` (here entry 1 is missing ``connection``).
     with pytest.raises(InventoryError, match=r"1\.connection"):
-        validate_inventory([{"host": "web1", "connection": {}}, {"host": "web2"}])
+        validate_inventory(
+            [
+                {"host": "web1", "family": "RedHat", "connection": {}},
+                {"host": "web2", "family": "RedHat"},
+            ]
+        )
 
 
 def test_from_inventory_requires_a_connection_key():
@@ -788,6 +799,22 @@ def test_from_inventory_requires_a_connection_key():
 def test_from_inventory_requires_a_host_key():
     with pytest.raises(InventoryError, match="host"):
         Host.from_inventory({"connection": {}})
+
+
+def test_validate_inventory_requires_a_family():
+    with pytest.raises(InventoryError, match="family"):
+        validate_inventory([{"host": "web1", "connection": {}}])
+
+
+def test_validate_inventory_rejects_an_unknown_family():
+    # Only the three families reemote ships modules for are accepted.
+    with pytest.raises(InventoryError, match="family"):
+        validate_inventory([{"host": "web1", "family": "Debian", "connection": {}}])
+
+
+def test_from_inventory_carries_the_family_onto_the_host():
+    host = Host.from_inventory({"host": "web1", "family": "Alpine", "connection": {}})
+    assert host.family == "Alpine"
 
 
 def test_from_inventory_rejects_a_non_dict_entry():
@@ -2561,7 +2588,7 @@ async def test_dnf_options_flow_through_run_and_format_log():
         )
 
     _plans, report, (host,) = await run(
-        [{"host": "a", "connection": {}}],
+        [{"host": "a", "family": "RedHat", "connection": {}}],
         opts_deploy,
         host_factory=SimulatedHost.from_inventory,
     )
@@ -2839,7 +2866,7 @@ async def test_dnf_repo_end_to_end_write_then_noop():
         return host  # reuse ONE host so the second run sees the first's write
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], repo_deploy, host_factory=factory
+        [{"host": "h", "family": "RedHat", "connection": {}}], repo_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -2854,7 +2881,7 @@ async def test_dnf_repo_end_to_end_write_then_noop():
     assert "    $ sudo sh -c " in log
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], repo_deploy, host_factory=factory
+        [{"host": "h", "family": "RedHat", "connection": {}}], repo_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -3031,7 +3058,7 @@ async def test_dnf_repo_datadog_options_end_to_end_write_then_noop():
         return host
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], repo_deploy, host_factory=factory
+        [{"host": "h", "family": "RedHat", "connection": {}}], repo_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -3040,7 +3067,7 @@ async def test_dnf_repo_datadog_options_end_to_end_write_then_noop():
     assert content.endswith("includepkgs=docker-ce docker-ce-cli containerd.io\n")
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], repo_deploy, host_factory=factory
+        [{"host": "h", "family": "RedHat", "connection": {}}], repo_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -3175,7 +3202,7 @@ async def test_dnf_cache_ops_after_repo_write_in_one_deploy():
         return host
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], cache_deploy, host_factory=factory
+        [{"host": "h", "family": "RedHat", "connection": {}}], cache_deploy, host_factory=factory
     )
     write, clean_entry, makecache_entry = report.log
     assert write.changed
@@ -3191,7 +3218,7 @@ async def test_dnf_cache_ops_after_repo_write_in_one_deploy():
     assert "    $ sudo dnf -y makecache '--disablerepo=*' --enablerepo=DockerCE" in log
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], cache_deploy, host_factory=factory
+        [{"host": "h", "family": "RedHat", "connection": {}}], cache_deploy, host_factory=factory
     )
     write2, clean2, makecache2 = report2.log
     assert not write2.changed
@@ -3346,7 +3373,7 @@ async def test_dnf_rpm_end_to_end_install_then_noop():
         return host  # reuse ONE host so the second run sees the first's install
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], rpm_deploy, host_factory=factory
+        [{"host": "h", "family": "RedHat", "connection": {}}], rpm_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -3355,7 +3382,7 @@ async def test_dnf_rpm_end_to_end_install_then_noop():
     assert f"sudo rpm -i {RPM_FILE_PATH}" in format_log(report)
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], rpm_deploy, host_factory=factory
+        [{"host": "h", "family": "RedHat", "connection": {}}], rpm_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -3574,7 +3601,7 @@ async def test_dnf_key_end_to_end_imports_over_run():
         return host
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], key_deploy, host_factory=factory
+        [{"host": "h", "family": "RedHat", "connection": {}}], key_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -3600,7 +3627,7 @@ async def test_dnf_key_dry_run_plans_without_importing():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "RedHat", "connection": {}}],
         key_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -3811,7 +3838,7 @@ async def test_dnf_key_remove_end_to_end_over_run():
 
     host = SimulatedHost(name="h", rpm_gpg_keys=[dict(LEGACY_KEY_ENTRY)])
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "RedHat", "connection": {}}],
         key_deploy,
         host_factory=lambda entry: host,
     )
@@ -3844,7 +3871,7 @@ async def test_dnf_key_remove_dry_run_plans_without_removing():
 
     host = SimulatedHost(name="h", rpm_gpg_keys=[dict(LEGACY_KEY_ENTRY)])
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "RedHat", "connection": {}}],
         key_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -3953,7 +3980,7 @@ async def test_dnf_key_import_keyid_second_deploy_is_noop():
         return host
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], key_deploy, host_factory=factory
+        [{"host": "h", "family": "RedHat", "connection": {}}], key_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -3963,7 +3990,7 @@ async def test_dnf_key_import_keyid_second_deploy_is_noop():
     )
     assert host.imported_keys == {GPG_KEY_BYTES}
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], key_deploy, host_factory=factory
+        [{"host": "h", "family": "RedHat", "connection": {}}], key_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert not entry.changed
@@ -3988,7 +4015,7 @@ async def test_dnf_key_import_keyid_dry_run_noop_when_present():
 
     host = SimulatedHost(name="h", rpm_gpg_keys=[dict(LEGACY_KEY_ENTRY)])
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "RedHat", "connection": {}}],
         key_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -4178,7 +4205,7 @@ async def test_dnf_module_end_to_end_enable_then_noop():
         return host  # reuse ONE host so the second run sees the first's enable
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], module_deploy, host_factory=factory
+        [{"host": "h", "family": "RedHat", "connection": {}}], module_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -4191,7 +4218,7 @@ async def test_dnf_module_end_to_end_enable_then_noop():
     )
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], module_deploy, host_factory=factory
+        [{"host": "h", "family": "RedHat", "connection": {}}], module_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -4280,7 +4307,7 @@ async def test_dnf_update_end_to_end_over_run():
         yield op(dnf.update, name="Update all packages", sudo=True)
 
     _plans, report, _hosts = await run(
-        [{"host": "a", "connection": {}}],
+        [{"host": "a", "family": "RedHat", "connection": {}}],
         update_deploy,
         host_factory=SimulatedHost.from_inventory,
     )
@@ -4299,7 +4326,7 @@ async def test_dnf_update_dry_run_plans_without_sending():
 
     host = SimulatedHost(name="h", packages={"nginx": [""]})
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "RedHat", "connection": {}}],
         update_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -4489,7 +4516,10 @@ async def test_hosts_finishing_at_different_steps():
             yield op(dnf.packages, name="Install vim", packages=("vim",))
 
     _plans, report, (a, b) = await run(
-        [{"host": "a", "connection": {}}, {"host": "b", "connection": {}}],
+        [
+            {"host": "a", "family": "RedHat", "connection": {}},
+            {"host": "b", "family": "RedHat", "connection": {}},
+        ],
         uneven_deploy,
         host_factory=SimulatedHost.from_inventory,
     )
@@ -4509,7 +4539,7 @@ async def test_sudo_flag_flows_into_the_apply_log():
         yield op(dnf.packages, name="Install nginx", packages=("nginx",), sudo=True)
 
     _plans, report, _hosts = await run(
-        [{"host": "a", "connection": {}}],
+        [{"host": "a", "family": "RedHat", "connection": {}}],
         sudo_deploy,
         host_factory=SimulatedHost.from_inventory,
     )
@@ -4529,7 +4559,7 @@ async def test_sudo_user_from_privilege_flows_into_the_apply_log():
         yield op(dnf.packages, name="Install nginx", packages=("nginx",), sudo=True)
 
     _plans, report, _hosts = await run(
-        [{"host": "a", "connection": {}, "privilege": {"sudo_user": "deploy"}}],
+        [{"host": "a", "family": "RedHat", "connection": {}, "privilege": {"sudo_user": "deploy"}}],
         sudo_deploy,
         host_factory=SimulatedHost.from_inventory,
     )
@@ -4549,6 +4579,7 @@ async def test_sudo_password_never_appears_in_the_apply_log():
         [
             {
                 "host": "a",
+                "family": "RedHat",
                 "connection": {},
                 "privilege": {"sudo_user": "deploy", "sudo_password": "s3cr3t"},
             }
@@ -4569,7 +4600,7 @@ async def test_su_user_from_privilege_flows_into_the_apply_log():
         yield op(dnf.packages, name="Install nginx", packages=("nginx",), su=True)
 
     _plans, report, _hosts = await run(
-        [{"host": "a", "connection": {}, "privilege": {"su_user": "deploy"}}],
+        [{"host": "a", "family": "RedHat", "connection": {}, "privilege": {"su_user": "deploy"}}],
         su_deploy,
         host_factory=SimulatedHost.from_inventory,
     )
@@ -4587,6 +4618,7 @@ async def test_su_password_never_appears_in_the_apply_log():
         [
             {
                 "host": "a",
+                "family": "RedHat",
                 "connection": {},
                 "privilege": {"su_user": "deploy", "su_password": "s3cr3t"},
             }

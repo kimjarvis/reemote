@@ -9,6 +9,7 @@ by omitting the key, since `"ssh"` is the default:
 inventory = [
     {
         "host": "web1",
+        "family": "Ubuntu",
         "connection": {
             "address": "192.168.0.240",
             "username": "kjarvis",
@@ -97,6 +98,7 @@ add to or override the curated options, for example:
 ```python
 {
     "host": "web1",
+    "family": "Ubuntu",
     "connection": {
         "address": "192.168.0.240",
         "username": "kjarvis",

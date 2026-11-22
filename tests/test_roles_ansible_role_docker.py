@@ -94,6 +94,7 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
     """
     entry: dict[str, Any] = {
         "host": "ubuntu",
+        "family": "Ubuntu",
         "connection": {
             "address": "192.0.2.10",
             "username": "supervisor",
@@ -110,6 +111,7 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
         entry,
         {
             "host": "web1",
+            "family": "RedHat",
             "connection": {"address": "192.0.2.11", "username": "admin"},
             "group": "centos",
         },
@@ -591,7 +593,7 @@ def test_role_settings_derives_the_role_defaults():
 
     # A bare entry (no extras) reproduces the role's templated defaults.
     bare = SimulatedHost.from_inventory(
-        {"host": "bare", "connection": {"address": "192.0.2.12"}, "group": "ubuntu"}
+        {"host": "bare", "family": "Ubuntu", "connection": {"address": "192.0.2.12"}, "group": "ubuntu"}
     )
     defaults = docker.role_settings(bare)
     assert defaults["users"] == ()
@@ -637,7 +639,7 @@ def test_notifying_names_enumerates_the_notifying_requests():
     )
     minimal = docker.role_settings(
         SimulatedHost.from_inventory(
-            {"host": "bare", "connection": {"address": "192.0.2.12"}, "group": "ubuntu"}
+            {"host": "bare", "family": "Ubuntu", "connection": {"address": "192.0.2.12"}, "group": "ubuntu"}
         )
     )
     assert docker.notifying_names(minimal) == (

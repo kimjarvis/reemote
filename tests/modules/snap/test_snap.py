@@ -785,7 +785,7 @@ async def test_snap_package_dry_run_plans_without_sending():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         install_deploy,
         host_factory=lambda entry: host,
         dry=True,

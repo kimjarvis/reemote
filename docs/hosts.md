@@ -2,7 +2,8 @@
 
 Hosts and their SSH information are specified as a simple *inventory*: a list
 of dictionaries, each describing one host. Every entry must carry at least a
-`host` (its name) and a `connection` (the SSH connection data); `privilege`,
+`host` (its name), a `family` (its OS family, one of `RedHat`, `Ubuntu` or
+`Alpine`) and a `connection` (the SSH connection data); `privilege`,
 `group` and `tags` are optional and any extra keys are preserved. The inventory
 is the parameter the library functions accept;
 [`Host.from_inventory`][reemote.hosts.Host.from_inventory]
@@ -12,8 +13,9 @@ materializes each entry into a [`Host`][reemote.hosts.Host] whose
 
 The inventory is validated with pydantic before any host is materialized.
 Each entry is checked against the [`InventoryEntry`][reemote.hosts.InventoryEntry]
-schema — `host` and `connection` are required, `privilege`, `group` and `tags`
-optional, and unrecognised keys are allowed (they land in `Host.extra`).
+schema — `host`, `family` and `connection` are required, `privilege`, `group`
+and `tags` optional, and unrecognised keys are allowed (they land in
+`Host.extra`).
 [`validate_inventory`][reemote.hosts.validate_inventory] checks a whole
 inventory up front (it must be a list of dictionaries), and
 [`run`][reemote.drivers.run] calls it before building any host, so a
@@ -88,6 +90,7 @@ options above, for example:
 ```python
 {
     "host": "web1",
+    "family": "Ubuntu",
     "connection": {
         "address": "192.168.0.240",
         "username": "kjarvis",
@@ -129,11 +132,15 @@ to the default `Host.from_inventory` factory; a subclass factory (such as
 the test framework's `SimulatedHost.from_inventory`) always builds its own
 class.
 
-## Groups and tags
+## Family, groups and tags
 
-An entry may carry two optional, static classifiers that a deploy script reads
-off the materialized [`Host`][reemote.hosts.Host] to branch per host:
+`family` and the two optional classifiers are static values a deploy script
+reads off the materialized [`Host`][reemote.hosts.Host] to branch per host:
 
+- `family` — the OS family the host belongs to, one of `RedHat`, `Ubuntu` or
+  `Alpine`, exposed as `host.family`. It is required by the schema, so a script
+  can pick the module a family uses (`apt`, `dnf`, `apk`) before gathering a
+  single fact.
 - `group` — a single string naming the group the host belongs to, exposed as
   `host.group` (`None` when unset).
 - `tags` — an unordered list of strings, exposed as `host.tags` (empty when
@@ -142,6 +149,7 @@ off the materialized [`Host`][reemote.hosts.Host] to branch per host:
 ```python
 {
     "host": "web1",
+    "family": "Ubuntu",
     "connection": {
         "address": "192.168.0.240",
         "username": "kjarvis",
@@ -152,13 +160,15 @@ off the materialized [`Host`][reemote.hosts.Host] to branch per host:
 }
 ```
 
-Both come from the inventory, so a deploy generator can select work by host
-name, group or tag:
+All three come from the inventory, so a deploy generator can select work by
+host name, family, group or tag:
 
 ```python
 def deploy(host):
     if host.name == "web1":
         yield from role_web(host)
+    if host.family == "Ubuntu":
+        yield from role_apt_install_nginx(host)
     if host.group == "webservers":
         yield from role_web(host)
     if "ubuntu_host" in host.tags:
@@ -190,6 +200,7 @@ Five keys are recognised:
 ```python
 {
     "host": "web1",
+    "family": "Ubuntu",
     "connection": {"address": "192.168.0.240", "username": "kjarvis"},
     "privilege": {"sudo_user": "deploy", "sudo_password": "s3cr3t"},
 }

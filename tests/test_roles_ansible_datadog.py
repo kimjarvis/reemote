@@ -100,6 +100,7 @@ def make_inventory(custom_check_source: Path) -> list[dict[str, Any]]:
     return [
         {
             "host": "ubuntu",
+            "family": "Ubuntu",
             "connection": {
                 "address": "192.0.2.10",
                 "username": "kjarvis",
@@ -117,6 +118,7 @@ def make_inventory(custom_check_source: Path) -> list[dict[str, Any]]:
         },
         {
             "host": "web1",
+            "family": "RedHat",
             "connection": {"address": "192.0.2.11", "username": "admin"},
             "group": "centos",
         },

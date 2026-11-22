@@ -77,13 +77,14 @@ DESIRED = "# /etc/sysctl.conf\nfs.file-max = 100000\nvm.swappiness = 10\n"
 INVENTORY = [
     {
         "host": "web1",
+        "family": "RedHat",
         "group": "centos",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
     },
 ]
 TWO_HOSTS = [
     *INVENTORY,
-    {"host": "web2", "group": "centos", "connection": {"key_path": "~/.ssh/id_ed25519"}},
+    {"host": "web2", "family": "RedHat", "group": "centos", "connection": {"key_path": "~/.ssh/id_ed25519"}},
 ]
 
 # Stable spool transforms for the end-to-end deploys, exactly as main() fills

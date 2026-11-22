@@ -79,6 +79,7 @@ from reemote.modules.files.files import FileExists
 PROD = [
     {
         "host": "web1",
+        "family": "Ubuntu",
         "connection": {
             "address": "web1.example.com",
             "username": "deploy",
@@ -90,6 +91,7 @@ PROD = [
     },
     {
         "host": "web2",
+        "family": "Ubuntu",
         "connection": {
             "address": "web2.example.com",
             "username": "deploy",

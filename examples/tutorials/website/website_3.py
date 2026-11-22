@@ -65,6 +65,7 @@ from reemote.modules.files.files import FileExists
 INVENTORY = [
     {
         "host": "beta",
+        "family": "Ubuntu",
         "connection": {
             "connector": "docker",
             "identifier": "beta",

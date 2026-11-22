@@ -34,6 +34,7 @@ from tests.simulated_host import SimulatedHost
 INVENTORY = [
     {
         "host": "web1",
+        "family": "Ubuntu",
         "connection": {"key_path": "~/.ssh/id_ed25519"},
     },
 ]

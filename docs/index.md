@@ -56,6 +56,7 @@ Create `inventory.json` beside the script you will write next:
 [
   {
     "host": "demo",
+    "family": "Ubuntu",
     "connection": {
       "address": "192.0.2.10",
       "username": "deploy",
@@ -67,7 +68,7 @@ Create `inventory.json` beside the script you will write next:
 
 Replace `192.0.2.10` with your server's address, `deploy` with your login account, and the key path if necessary. The address shown is a documentation placeholder, not a public test server.
 
-`host` is a label used in results; `connection.address` is the actual SSH destination. They need not be the same. Use a different label for every server. JSON is just a convenient way for this tutorial to load a Python list of dictionaries; reemote does not load the file itself.
+`host` is a label used in results; `connection.address` is the actual SSH destination. They need not be the same. Use a different label for every server. `family` declares which OS family the target belongs to — one of `RedHat`, `Ubuntu` or `Alpine` — so your script can reach for the right module (`apt`, `dnf`, `apk`) without connecting first. JSON is just a convenient way for this tutorial to load a Python list of dictionaries; reemote does not load the file itself.
 
 That is enough inventory for a first deployment. Groups, tags, passwords, ports and other options can wait until you need them.
 

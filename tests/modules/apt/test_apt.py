@@ -2098,7 +2098,7 @@ async def test_apt_deb_end_to_end_install_then_noop():
         return host  # reuse ONE host so the second run sees the first's install
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], deb_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], deb_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -2109,7 +2109,7 @@ async def test_apt_deb_end_to_end_install_then_noop():
     assert f"sudo {APT_INSTALL_FIX_SHELL}" in log
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], deb_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], deb_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -2125,7 +2125,7 @@ async def test_apt_deb_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h", deb_files={DEB_FILE_PATH: DEB_FILE_INFO})
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         deb_deploy,
         dry=True,
         host_factory=lambda entry: host,
@@ -2460,7 +2460,7 @@ async def test_apt_dist_upgrade_end_to_end_upgrade_then_noop():
         return host  # reuse ONE host so the second run sees the first's upgrade
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], upgrade_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], upgrade_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -2470,7 +2470,7 @@ async def test_apt_dist_upgrade_end_to_end_upgrade_then_noop():
     assert f"sudo {DIST_UPGRADE_SHELL}" in log
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], upgrade_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], upgrade_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -2486,7 +2486,7 @@ async def test_apt_dist_upgrade_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h", apt_simulations={"dist-upgrade": DIST_UPGRADE_CHANGES})
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         upgrade_deploy,
         dry=True,
         host_factory=lambda entry: host,
@@ -2597,7 +2597,7 @@ async def test_apt_auto_remove_end_to_end_remove_then_noop():
         return host
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], cleanup_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], cleanup_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -2607,7 +2607,7 @@ async def test_apt_auto_remove_end_to_end_remove_then_noop():
     assert f"sudo {AUTOREMOVE_SHELL}" in log
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], cleanup_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], cleanup_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -2835,7 +2835,7 @@ async def test_apt_key_end_to_end_installs_over_run():
         return host
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], key_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], key_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -2860,7 +2860,7 @@ async def test_apt_key_dry_run_plans_without_installing():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         key_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -3073,7 +3073,7 @@ async def test_apt_mark_end_to_end_hold_then_noop():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], hold_deploy, host_factory=lambda entry: host
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], hold_deploy, host_factory=lambda entry: host
     )
     assert plans["h"][0].changed
     assert plans["h"][1].changed
@@ -3133,7 +3133,7 @@ async def test_apt_mark_dry_run_plans_without_holding():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         hold_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -3629,7 +3629,7 @@ async def test_apt_packages_latest_second_apply_is_a_noop():
         return host
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], latest_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], latest_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -3638,7 +3638,7 @@ async def test_apt_packages_latest_second_apply_is_a_noop():
     assert host.apt_upgradable == []
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], latest_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], latest_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -3939,7 +3939,7 @@ async def test_apt_packages_end_to_end_install_then_noop():
         return host  # reuse ONE host so the second run sees the first's install
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], packages_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], packages_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -3953,7 +3953,7 @@ async def test_apt_packages_end_to_end_install_then_noop():
     assert f"sudo {APT_GET_PREFIX}install asterisk vim" in log
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], packages_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], packages_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     # update stays stateless (always changed); the install half converges.
@@ -3975,14 +3975,14 @@ async def test_apt_packages_pinned_end_to_end_converges():
         return host
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], pin_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], pin_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
     assert host.apt_packages == {"something": ["1.0"]}
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], pin_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], pin_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -4006,7 +4006,7 @@ async def test_apt_packages_glob_pin_end_to_end_converges():
 
     satisfied = SimulatedHost(name="h", apt_packages={"nodejs": ["16.20.2-1nodesource1"]})
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         glob_deploy,
         host_factory=lambda entry: satisfied,
     )
@@ -4021,7 +4021,7 @@ async def test_apt_packages_glob_pin_end_to_end_converges():
         return other
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], glob_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], glob_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert entry2.changed
@@ -4030,7 +4030,7 @@ async def test_apt_packages_glob_pin_end_to_end_converges():
     assert f"sudo {APT_GET_PREFIX}install 'nodejs=16.*'" in log
 
     _plans3, report3, _hosts3 = await run(
-        [{"host": "h", "connection": {}}], glob_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], glob_deploy, host_factory=factory
     )
     (entry3,) = report3.log
     assert not entry3.changed
@@ -4058,7 +4058,7 @@ async def test_apt_packages_default_release_end_to_end_then_noop():
         return host  # reuse ONE host so the second run sees the first's install
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], release_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], release_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -4069,7 +4069,7 @@ async def test_apt_packages_default_release_end_to_end_then_noop():
     assert f"sudo {APT_GET_PREFIX}install -t bookworm nginx" in log
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], release_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], release_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -4094,7 +4094,7 @@ async def test_apt_packages_upgrade_end_to_end_then_noop():
         return host
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], upgrade_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], upgrade_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -4104,7 +4104,7 @@ async def test_apt_packages_upgrade_end_to_end_then_noop():
     assert f"sudo {APT_GET_PREFIX}upgrade" in log
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], upgrade_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], upgrade_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -4120,7 +4120,7 @@ async def test_apt_packages_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         packages_deploy,
         dry=True,
         host_factory=lambda entry: host,
@@ -4374,7 +4374,7 @@ async def test_apt_update_cache_valid_time_end_to_end_second_run_skips():
         return host
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], update_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], update_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -4383,7 +4383,7 @@ async def test_apt_update_cache_valid_time_end_to_end_second_run_skips():
     assert host.apt_update_stamp is not None
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], update_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], update_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -4451,7 +4451,7 @@ async def test_apt_packages_cache_valid_time_end_to_end_second_run_skips_update(
         return host
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], packages_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], packages_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -4463,7 +4463,7 @@ async def test_apt_packages_cache_valid_time_end_to_end_second_run_skips_update(
     assert host.apt_packages == {"git": [""]}
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], packages_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], packages_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     # The stamp is fresh AND git is installed, so nothing yields and the
@@ -4487,7 +4487,7 @@ async def test_apt_update_end_to_end_stays_non_idempotent():
         return host  # reuse ONE host across both runs
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], update_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], update_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -4495,7 +4495,7 @@ async def test_apt_update_end_to_end_stays_non_idempotent():
     assert "$ sudo apt-get update" in format_log(report)
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], update_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], update_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert entry2.changed
@@ -4511,7 +4511,7 @@ async def test_apt_update_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         update_deploy,
         dry=True,
         host_factory=lambda entry: host,
@@ -4647,7 +4647,7 @@ async def test_apt_upgrade_end_to_end_upgrade_then_noop():
         return host  # reuse ONE host so the second run sees the first's upgrade
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], upgrade_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], upgrade_deploy, host_factory=factory
     )
     (entry,) = report.log
     assert entry.changed
@@ -4656,7 +4656,7 @@ async def test_apt_upgrade_end_to_end_upgrade_then_noop():
     assert f"$ sudo {APT_GET_PREFIX}upgrade" in format_log(report)
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], upgrade_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], upgrade_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert not entry2.changed
@@ -4677,7 +4677,7 @@ async def test_apt_update_then_upgrade_in_one_deploy():
         apt_upgradable=[{"name": "vim", "installed": "2:9.1-1", "candidate": "2:9.1-2"}],
     )
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         patch_deploy,
         host_factory=lambda entry: host,
     )
@@ -4700,7 +4700,7 @@ async def test_apt_upgrade_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h", apt_simulations={"upgrade": SIM_UPGRADE_FACT})
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         upgrade_deploy,
         dry=True,
         host_factory=lambda entry: host,
@@ -4874,7 +4874,7 @@ async def test_apt_ppa_end_to_end_over_run():
         return host
 
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], ppa_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], ppa_deploy, host_factory=factory
     )
     assert plans["h"][0].changed
     (entry,) = report.log
@@ -4886,7 +4886,7 @@ async def test_apt_ppa_end_to_end_over_run():
 
     # Idempotent: a second run reads the now-configured source and is a no-op.
     plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], ppa_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], ppa_deploy, host_factory=factory
     )
     assert not plans2["h"][0].changed
     (entry2,) = report2.log
@@ -4905,7 +4905,7 @@ async def test_apt_ppa_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         ppa_deploy,
         dry=True,
         host_factory=lambda entry: host,
@@ -5304,7 +5304,7 @@ async def test_apt_repo_end_to_end_add_then_noop():
         return host
 
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], repo_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], repo_deploy, host_factory=factory
     )
     assert plans["h"][0].changed
     (entry,) = report.log
@@ -5321,7 +5321,7 @@ async def test_apt_repo_end_to_end_add_then_noop():
 
     # Idempotent: the fresh fact read sees the installed entry -> no change.
     plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], repo_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], repo_deploy, host_factory=factory
     )
     assert not plans2["h"][0].changed
     (entry2,) = report2.log
@@ -5352,14 +5352,14 @@ async def test_apt_repo_end_to_end_filename_then_remove():
         return host
 
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], add_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], add_deploy, host_factory=factory
     )
     assert report.log[0].changed
     assert host.remote_files[LISTS_PATH] == f"{REPO_SRC}\n".encode()
     assert LISTS_SPOOL not in host.remote_files
 
     _plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], remove_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], remove_deploy, host_factory=factory
     )
     (entry2,) = report2.log
     assert entry2.changed
@@ -5383,7 +5383,7 @@ async def test_apt_repo_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         repo_deploy,
         dry=True,
         host_factory=lambda entry: host,
@@ -6015,7 +6015,7 @@ async def test_apt_sources_file_end_to_end_write_then_noop():
         return host
 
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], sources_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], sources_deploy, host_factory=factory
     )
     assert plans["h"][0].changed
     assert "[changed: " in format_plan(plans)
@@ -6034,7 +6034,7 @@ async def test_apt_sources_file_end_to_end_write_then_noop():
 
     # Idempotent: the fresh fact read sees the installed entries -> no change.
     plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], sources_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], sources_deploy, host_factory=factory
     )
     assert not plans2["h"][0].changed
     (entry2,) = report2.log
@@ -6063,10 +6063,10 @@ async def test_apt_sources_file_end_to_end_update_replaces():
         return host
 
     _plans, _report, _hosts = await run(
-        [{"host": "h", "connection": {}}], deploy_for("bookworm"), host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], deploy_for("bookworm"), host_factory=factory
     )
     plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         deploy_for("bookworm-updates"),
         host_factory=factory,
     )
@@ -6091,7 +6091,7 @@ async def test_apt_sources_file_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         sources_deploy,
         dry=True,
         host_factory=lambda entry: host,
@@ -6327,7 +6327,7 @@ async def test_apt_repo_update_cache_end_to_end_then_noop():
         return host
 
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], repo_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], repo_deploy, host_factory=factory
     )
     assert plans["h"][0].changed
     (entry,) = report.log
@@ -6346,7 +6346,7 @@ async def test_apt_repo_update_cache_end_to_end_then_noop():
     # Idempotent: the fresh fact read sees the installed entry -> no change,
     # and update_cache rides the change, so no refresh is queued either.
     plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], repo_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], repo_deploy, host_factory=factory
     )
     assert not plans2["h"][0].changed
     (entry2,) = report2.log
@@ -6868,7 +6868,7 @@ async def test_apt_sources_file_url_signed_by_end_to_end_write_then_noop(
         return host
 
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], sources_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], sources_deploy, host_factory=factory
     )
     assert plans["h"][0].changed
     (entry,) = report.log
@@ -6887,7 +6887,7 @@ async def test_apt_sources_file_url_signed_by_end_to_end_write_then_noop(
     assert "    $ sudo sh -c " in log
 
     plans2, report2, _hosts2 = await run(
-        [{"host": "h", "connection": {}}], sources_deploy, host_factory=factory
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], sources_deploy, host_factory=factory
     )
     assert not plans2["h"][0].changed
     (entry2,) = report2.log
@@ -6911,7 +6911,7 @@ async def test_apt_sources_file_url_signed_by_dry_run_sends_nothing(canned_key_f
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         sources_deploy,
         dry=True,
         host_factory=lambda entry: host,

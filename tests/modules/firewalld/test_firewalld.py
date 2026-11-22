@@ -1468,8 +1468,8 @@ async def test_prepare_cache_persists_apply_cache_is_fresh():
 
 
 INVENTORY = [
-    {"host": "web1", "connection": {}},
-    {"host": "web2", "connection": {}},
+    {"host": "web1", "family": "RedHat", "connection": {}},
+    {"host": "web2", "family": "RedHat", "connection": {}},
 ]
 
 
@@ -1515,7 +1515,7 @@ async def test_dry_run_plans_without_sending():
 
     host = seeded_host()
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "RedHat", "connection": {}}],
         port_deploy,
         host_factory=lambda entry: host,
         dry=True,

@@ -259,8 +259,8 @@ from reemote.modules.server.server import (
 from tests.simulated_host import SimulatedHost
 
 INVENTORY = [
-    {"host": "web1", "connection": {"key_path": "~/.ssh/id_ed25519"}},
-    {"host": "web2", "connection": {"key_path": "~/.ssh/id_ed25519"}},
+    {"host": "web1", "family": "Ubuntu", "connection": {"key_path": "~/.ssh/id_ed25519"}},
+    {"host": "web2", "family": "Ubuntu", "connection": {"key_path": "~/.ssh/id_ed25519"}},
 ]
 
 
@@ -4473,7 +4473,7 @@ async def test_hostname_without_hostnamectl_runs_the_bare_command():
 
 
 async def test_hostname_second_prepare_plans_no_change():
-    host = old_hostname_factory({"host": "h", "connection": {}})
+    host = old_hostname_factory({"host": "h", "family": "Ubuntu", "connection": {}})
     runtimes, plans = await run_prepare([host], set_hostnames)
     assert [p.changed for p in plans["h"]] == [True]
     report = await run_apply(runtimes, plans=plans)
@@ -4647,7 +4647,7 @@ async def test_kill_runs_across_hosts_in_lockstep():
 
 
 async def test_kill_is_not_idempotent_across_runs():
-    host = worker_factory({"host": "h", "connection": {}})
+    host = worker_factory({"host": "h", "family": "Ubuntu", "connection": {}})
     runtimes, plans = await run_prepare([host], kill_workers)
     assert [p.changed for p in plans["h"]] == [True]
     report = await run_apply(runtimes, plans=plans)
@@ -4664,7 +4664,7 @@ async def test_kill_duplicate_requests_both_change_in_apply():
         yield op(server.kill, name="Kill worker", pid=1234, sudo=True)
         yield op(server.kill, name="Kill worker again", pid=1234, sudo=True)
 
-    host = worker_factory({"host": "h", "connection": {}})
+    host = worker_factory({"host": "h", "family": "Ubuntu", "connection": {}})
     runtimes, plans = await run_prepare([host], twice)
     assert [p.changed for p in plans["h"]] == [True, True]
     report = await run_apply(runtimes, plans=plans)
@@ -5580,7 +5580,7 @@ async def test_timezone_without_timedatectl_aborts_the_prepare():
 
 
 async def test_timezone_second_prepare_plans_no_change():
-    host = utc_timezone_factory({"host": "h", "connection": {}})
+    host = utc_timezone_factory({"host": "h", "family": "Ubuntu", "connection": {}})
     runtimes, plans = await run_prepare([host], set_timezones)
     assert [p.changed for p in plans["h"]] == [True]
     report = await run_apply(runtimes, plans=plans)
@@ -9130,7 +9130,7 @@ async def test_locale_repeat_request_is_noop_in_apply():
         yield op(server.locale, name="Enable first", locale=LG_LOCALE, sudo=True)
         yield op(server.locale, name="Enable again", locale=LG_LOCALE, sudo=True)
 
-    host = locale_seed_factory({"host": "h", "connection": {}})
+    host = locale_seed_factory({"host": "h", "family": "Ubuntu", "connection": {}})
     runtimes, plans = await run_prepare([host], twice)
     # Prepare shares one cache across the two requests and never sends, so
     # both identical requests plan a change...
@@ -9148,7 +9148,7 @@ async def test_locale_enable_then_disable_in_one_deploy():
             server.locale, name="Disable", locale=LG_LOCALE, present=False, sudo=True
         )
 
-    host = locale_seed_factory({"host": "h", "connection": {}})
+    host = locale_seed_factory({"host": "h", "family": "Ubuntu", "connection": {}})
     runtimes, plans = await run_prepare([host], deploy)
     # Prepare shares one cache and never sends, so the disable still sees
     # the pre-enable Locales listing and plans "already disabled"...
@@ -9609,7 +9609,7 @@ async def test_security_limit_repeat_request_is_noop_in_apply():
             sudo=True,
         )
 
-    host = security_limit_seed_factory({"host": "h", "connection": {}})
+    host = security_limit_seed_factory({"host": "h", "family": "Ubuntu", "connection": {}})
     runtimes, plans = await run_prepare([host], twice)
     # Prepare shares one cache across the two requests and never sends, so
     # both identical requests plan a change...
@@ -9641,7 +9641,7 @@ async def test_security_limit_set_then_change_value_in_one_deploy():
             sudo=True,
         )
 
-    host = security_limit_seed_factory({"host": "h", "connection": {}})
+    host = security_limit_seed_factory({"host": "h", "family": "Ubuntu", "connection": {}})
     runtimes, plans = await run_prepare([host], deploy)
     # Prepare shares one cache and never sends, so both requests see the
     # stock file and plan a change...

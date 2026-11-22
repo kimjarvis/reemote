@@ -9,6 +9,7 @@ It runs in two phases: prepare a plan against live facts, then apply. It is asyn
     from reemote import files, format_plan, op, run
 
     INVENTORY = [{"host": "demo",
+                  "family": "Alpine",
                   "connection": {"connector": "docker",
                                  "identifier": "alpine:3.20",
                                  "docker_cmd": "podman"}}]   # or "docker"

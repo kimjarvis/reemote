@@ -1251,7 +1251,7 @@ async def test_dry_run_plans_without_sending():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         ssh_deploy,
         host_factory=lambda entry: host,
         dry=True,

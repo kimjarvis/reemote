@@ -128,6 +128,7 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
     """
     entry: dict[str, Any] = {
         "host": "ubuntu",
+        "family": "Ubuntu",
         "connection": {
             "address": "192.0.2.10",
             "username": "supervisor",
@@ -141,6 +142,7 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
         entry,
         {
             "host": "web1",
+            "family": "RedHat",
             "connection": {"address": "192.0.2.11", "username": "admin"},
             "group": "centos",
         },

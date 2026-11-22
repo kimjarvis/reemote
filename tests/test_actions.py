@@ -118,8 +118,8 @@ class UnreachableActionHost(ActionHost):
 
 
 INVENTORY = [
-    {"host": "web1", "connection": {"address": "10.0.0.1"}},
-    {"host": "web2", "connection": {"address": "10.0.0.2"}},
+    {"host": "web1", "family": "Ubuntu", "connection": {"address": "10.0.0.1"}},
+    {"host": "web2", "family": "Ubuntu", "connection": {"address": "10.0.0.2"}},
 ]
 
 

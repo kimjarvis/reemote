@@ -221,6 +221,7 @@ java_packages:
 # inventory.json (an entry carrying the vars inline)
 # {
 #   "host": "web1",
+#   "family": "RedHat",
 #   "connection": {"address": "192.0.2.20", "username": "deploy"},
 #   "group": "webservers",
 #   "java_home": "/opt/java-21",

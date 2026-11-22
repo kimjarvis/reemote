@@ -76,6 +76,7 @@ Add the key (and any other role variables) as extra keys on the `ubuntu` entry:
 ```json
 {
   "host": "ubuntu",
+  "family": "Ubuntu",
   "connection": {
     "address": "192.168.0.221",
     "username": "kjarvis",

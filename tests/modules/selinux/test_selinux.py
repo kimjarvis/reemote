@@ -2307,7 +2307,7 @@ async def test_boolean_dry_run_plans_without_sending():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "RedHat", "connection": {}}],
         boolean_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -2832,7 +2832,7 @@ async def test_config_dry_run_plans_without_sending():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "RedHat", "connection": {}}],
         config_deploy,
         host_factory=lambda entry: host,
         dry=True,

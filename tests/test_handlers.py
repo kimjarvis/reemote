@@ -291,8 +291,8 @@ def test_service_handler_rejects_an_unknown_action():
 # --- end to end: the two-deploy outcome split --------------------------------
 
 INVENTORY = [
-    {"host": "web1", "connection": {}, "group": "centos"},
-    {"host": "web2", "connection": {}, "group": "centos"},
+    {"host": "web1", "family": "RedHat", "connection": {}, "group": "centos"},
+    {"host": "web2", "family": "RedHat", "connection": {}, "group": "centos"},
 ]
 
 

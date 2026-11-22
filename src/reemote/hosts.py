@@ -8,10 +8,12 @@ simple *inventory*: a list of dictionaries, each describing one host, e.g.::
 
     [
         {"host": "web1",
+         "family": "Ubuntu",
          "connection": {"key_path": "~/.ssh/id_ed25519"},
          "group": "webservers",
          "tags": ["ubuntu_host", "web"]},
         {"host": "web2",
+         "family": "RedHat",
          "connection": {"key_path": "~/.ssh/id_ed25519"},
          "privilege": {"sudo_user": "deploy"}},
     ]
@@ -22,11 +24,14 @@ connection, privilege (and optional extra) data, which the operations
 
 Every entry is validated with pydantic before it is materialized: the
 inventory must be a list of dictionaries and each entry must carry at least
-a ``host`` (its name) and a ``connection`` (the SSH connection data), while
-``privilege``, ``group`` and ``tags`` are optional and any other keys are
-preserved. ``group`` (a single label) and ``tags`` (an unordered list of
-string labels) are static classifiers a deploy script reads off the host to
-branch per host (``host.group``, ``host.tags``).
+a ``host`` (its name), a ``family`` (the OS family, one of ``"RedHat"``,
+``"Ubuntu"`` or ``"Alpine"``) and a ``connection`` (the SSH connection data),
+while ``privilege``, ``group`` and ``tags`` are optional and any other keys are
+preserved. ``family`` (the OS family, so a deploy script can pick the right
+package manager without gathering facts), ``group`` (a single label) and
+``tags`` (an unordered list of string labels) are static classifiers a deploy
+script reads off the host to branch per host (``host.family``, ``host.group``,
+``host.tags``).
 ``Host.from_inventory`` validates a single entry; ``validate_inventory``
 validates a whole inventory up front (``drivers.run`` calls it before
 materializing any host). Both raise ``InventoryError`` on bad input.
@@ -59,7 +64,7 @@ import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
@@ -583,13 +588,18 @@ class PrivilegeError(RuntimeError):
 class InventoryEntry(BaseModel):
     """Pydantic schema for one inventory entry.
 
-    An entry must carry at least ``host`` (the host name) and ``connection``
-    (the SSH connection data -- possibly an empty mapping for a host only
-    ever driven through the test framework's ``SimulatedHost``); ``privilege``,
-    ``group`` and ``tags`` are optional. ``group`` is a single label naming the
-    group the host belongs to; ``tags`` is an unordered list of string labels.
-    Both are static, inventory-supplied values a deploy script can branch on
-    (``host.group``, ``host.tags``). Any other keys are allowed and preserved:
+    An entry must carry at least ``host`` (the host name), ``family`` (the OS
+    family -- one of ``"RedHat"``, ``"Ubuntu"`` or ``"Alpine"``) and
+    ``connection`` (the SSH connection data -- possibly an empty mapping for a
+    host only ever driven through the test framework's ``SimulatedHost``);
+    ``privilege``, ``group`` and ``tags`` are optional. ``family`` is the
+    declared distribution family a deploy script branches on to choose the
+    package manager and service manager before gathering any facts;
+    ``group`` is a single label naming the group the host belongs to; ``tags``
+    is an unordered list of string labels. All three are static,
+    inventory-supplied values a deploy script can branch on
+    (``host.family``, ``host.group``, ``host.tags``). Any other keys are allowed
+    and preserved:
     ``extra="allow"`` keeps them in ``model_extra``, which
     ``Host.from_inventory`` folds into ``Host.extra``, so the inventory
     format stays extensible without schema changes.
@@ -598,6 +608,7 @@ class InventoryEntry(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     host: str
+    family: Literal["RedHat", "Ubuntu", "Alpine"]
     connection: dict[str, Any]
     privilege: dict[str, Any] = Field(default_factory=dict)
     group: str | None = None
@@ -629,7 +640,7 @@ def _validate_entry(entry: Any) -> InventoryEntry:
 
 def validate_inventory(inventory: Any) -> list[InventoryEntry]:
     """Validate a whole inventory: a list of dictionaries, each carrying at
-    least a ``host`` and a ``connection`` key.
+    least a ``host``, a ``family`` and a ``connection`` key.
 
     Returns the validated ``InventoryEntry`` models. Raises ``InventoryError``
     when ``inventory`` is not a list or an entry fails the ``InventoryEntry``
@@ -664,11 +675,15 @@ class Host:
     ``permit nopass`` rule). When several flags are set the escalations combine
     in the fixed order ``doas`` then ``sudo`` then ``su``. Privilege parameters
     come from here, the inventory, and never from an operation: a deploy script
-    can ask to elevate but cannot choose the run-as user. ``group`` (an optional
+    can ask to elevate but cannot choose the run-as user. ``family`` (one of
+    ``"RedHat"``, ``"Ubuntu"`` or ``"Alpine"``), ``group`` (an optional
     single label)
     and ``tags`` (an optional unordered list of string labels) are static,
     inventory-supplied classifiers a deploy script reads to branch per host --
-    e.g. ``if host.group == "webservers":`` or ``if "web" in host.tags:``.
+    e.g. ``if host.family == "Alpine":`` or ``if "web" in host.tags:``.
+    ``family`` is required by the inventory schema, so it is only ``None`` for a
+    ``Host`` built directly rather than from an entry (as the test framework's
+    ``SimulatedHost`` does).
     Any unrecognised inventory keys are
     preserved in ``extra``, so the inventory format is extensible without
     library changes.
@@ -693,6 +708,7 @@ class Host:
     """
 
     name: str
+    family: str | None = None
     connection: dict = field(default_factory=dict)
     privilege: dict = field(default_factory=dict)
     group: str | None = None
@@ -704,9 +720,9 @@ class Host:
         """Build a host from one validated inventory dictionary.
 
         The entry is validated with pydantic (``InventoryEntry``) first, so
-        it must carry at least ``host`` and ``connection``; ``privilege``,
-        ``group`` and ``tags`` are optional and every other key lands in
-        ``extra``. Raises ``InventoryError`` on invalid input.
+        it must carry at least ``host``, ``family`` and ``connection``;
+        ``privilege``, ``group`` and ``tags`` are optional and every other key
+        lands in ``extra``. Raises ``InventoryError`` on invalid input.
 
         The ``connection.connector`` key selects the transport: the default
         ``"ssh"`` builds this class, while ``"docker"`` builds a
@@ -733,6 +749,7 @@ class Host:
                 )
         return host_cls(
             name=validated.host,
+            family=validated.family,
             connection=dict(validated.connection),
             privilege=dict(validated.privilege),
             group=validated.group,

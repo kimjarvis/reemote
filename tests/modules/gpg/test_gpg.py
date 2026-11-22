@@ -2022,7 +2022,7 @@ async def test_gpg_key_end_to_end_installs_over_run():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], key_deploy, host_factory=lambda entry: host
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], key_deploy, host_factory=lambda entry: host
     )
     (entry,) = report.log
     assert entry.changed
@@ -2099,7 +2099,7 @@ async def test_gpg_key_dry_run_plans_without_installing():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         key_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -2227,7 +2227,7 @@ async def test_gpg_dearmor_end_to_end_over_run():
 
     host = SimulatedHost(name="h", remote_files={DEARMOR_SRC: GPG_KEY_BYTES})
     _plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}], dearmor_deploy, host_factory=lambda entry: host
+        [{"host": "h", "family": "Ubuntu", "connection": {}}], dearmor_deploy, host_factory=lambda entry: host
     )
     (entry,) = report.log
     assert entry.changed
@@ -2248,7 +2248,7 @@ async def test_gpg_dearmor_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h", remote_files={DEARMOR_SRC: GPG_KEY_BYTES})
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         dearmor_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -2433,7 +2433,7 @@ async def test_gpg_import_key_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         import_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -2833,7 +2833,7 @@ async def test_gpg_export_key_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         export_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -2982,7 +2982,7 @@ async def test_gpg_delete_key_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h", gpg_keys=[VENDOR_KEY])
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         delete_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -3186,7 +3186,7 @@ async def test_gpg_gen_key_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         gen_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -3330,7 +3330,7 @@ async def test_gpg_trust_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         trust_deploy,
         host_factory=lambda entry: host,
         dry=True,
@@ -3429,7 +3429,7 @@ async def test_gpg_refresh_keys_dry_run_sends_nothing():
 
     host = SimulatedHost(name="h")
     plans, report, _hosts = await run(
-        [{"host": "h", "connection": {}}],
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
         refresh_deploy,
         host_factory=lambda entry: host,
         dry=True,
