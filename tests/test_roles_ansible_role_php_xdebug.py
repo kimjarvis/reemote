@@ -461,7 +461,7 @@ async def test_first_pass_builds_and_installs_xdebug(rig, canned_fetch):
     assert host.services["php8.3-fpm.service"] == "active"
 
 
-async def test_non_ubuntu_host_is_never_touched(rig):
+async def test_non_ubuntu_host_is_never_touched(rig, canned_fetch):
     inventory, hosts = rig
     result = await migrate(inventory, hosts)
 
@@ -528,7 +528,7 @@ async def test_dry_preview_mutates_nothing(rig):
 # --- the CLI-disable branch --------------------------------------------------
 
 
-async def test_cli_disable_removes_the_cli_ini_and_skips_the_cli_write():
+async def test_cli_disable_removes_the_cli_ini_and_skips_the_cli_write(canned_fetch):
     inventory = make_inventory(php_xdebug_cli_disable=True)
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
@@ -562,7 +562,7 @@ async def test_cli_disable_removes_the_cli_ini_and_skips_the_cli_write():
 # --- the FPM handler gates ---------------------------------------------------
 
 
-async def test_fpm_disabled_skips_the_fpm_handler():
+async def test_fpm_disabled_skips_the_fpm_handler(canned_fetch):
     """The role default (php_enable_php_fpm false) fires only the webserver handler."""
     inventory = make_inventory(php_enable_php_fpm=False)
     hosts = make_hosts(inventory)
@@ -582,7 +582,7 @@ async def test_fpm_disabled_skips_the_fpm_handler():
     assert second["webserver_hosts"] == frozenset()
 
 
-async def test_fpm_handler_state_verbs():
+async def test_fpm_handler_state_verbs(canned_fetch):
     """Each php_fpm_handler_state selects the chained FPM handler's verb."""
     for state, name in (
         ("restarted", "Restart php8.3-fpm (handler)"),
@@ -599,7 +599,7 @@ async def test_fpm_handler_state_verbs():
         assert name in handler_names
 
 
-async def test_fpm_state_stopped_gates_off_the_fpm_handler():
+async def test_fpm_state_stopped_gates_off_the_fpm_handler(canned_fetch):
     """The handler fires only when php_fpm_state == 'started', even if FPM enabled."""
     inventory = make_inventory(php_fpm_state="stopped")
     hosts = make_hosts(inventory)
@@ -609,7 +609,7 @@ async def test_fpm_state_stopped_gates_off_the_fpm_handler():
     assert result["fpm_hosts"] == frozenset()
 
 
-async def test_build_failure_raises_command_error(rig):
+async def test_build_failure_raises_command_error(rig, canned_fetch):
     """A non-zero build exit is data in the Result, re-raised typed."""
     inventory, hosts = rig
     hosts["ubuntu"].shell_results[BUILD_SHELL] = {
