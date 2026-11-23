@@ -395,14 +395,33 @@ tolerant `dpkg -i` (ignoring unmet dependencies), an `apt-get install -f` to
 resolve them, then a final `dpkg -i` that configures the package and fails fast
 (`CommandError`) if dependencies are still missing. `present=False` removes the
 file's package by name with `apt-get remove` only when that exact version is
-installed; because removal reads the name from the file, a `present=False`
-whose `.deb` is absent cannot resolve a name and is a no-op. `wait_for_lock`
+installed. `wait_for_lock`
 (`True` → 60s, an int → that many seconds) makes apt wait for its lock instead
 of failing instantly. Installing or removing needs root, so flag the request
 `sudo=True` (or `su=True`). Two the baseline options are deliberately dropped: a URL
-`src` (`apt.deb` installs a binary `.deb` that must already be on the host, and
-reemote's URL download `files.download` is text-only, so it raises `ValueError`,
-mirroring `dnf.rpm`) and `force` (`--force-yes` is deprecated in modern apt).
+`src` (`apt.deb` installs a binary `.deb` that must already be on the host, so
+it raises `ValueError`, mirroring `dnf.rpm`; stage a URL with `files.download`,
+which fetches control-side and installs a binary body intact since #23) and
+`force` (`--force-yes` is deprecated in modern apt).
+
+Because the identity otherwise comes from the artifact alone, `apt.deb` also
+takes an optional `package`/`version` *identity hint* (issue #55) — Ansible's
+convergence property across the staging boundary. When the `.deb` answers
+nothing (absent, unreadable, or cleaned out of `/tmp` by a spool cleanup, a
+tmpreaper or an image-slimming step), presence falls back to the installed
+package database: `package` names the package, `version` pins it the
+`apt.packages` way (verbatim, or `fnmatch` for a wildcard like `131.*`), and a
+bare `package` accepts any installed version. The file stays authoritative
+whenever it answers, so the hint is a fallback and never an override — an
+upgrade against a new file still fires. With the file gone and the hint
+unsatisfied, the install direction reports the missing artifact honestly
+instead of planning a `dpkg -i` on a path that is not there, the removal
+direction still works (it used to no-op silently), and a request with
+neither the file nor a hint is a documented no-op rather than a
+`CommandError` — a file staged later in the same deploy is still installed,
+because the apply phase re-reads the fact. `version` without `package` raises
+`ValueError`, and the hint is spelled `package` because `op()` consumes `name`
+as the request label.
 
 `apt.dist_upgrade` updates all apt packages, employing `dist-upgrade`
 (the baseline's `apt.dist_upgrade` parity). The `SimulateOperationWillChange`

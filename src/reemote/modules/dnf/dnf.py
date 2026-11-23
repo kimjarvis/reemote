@@ -2238,6 +2238,8 @@ async def rpm(
     ctx: OpContext,
     src: str,
     present: bool = True,
+    package: str | None = None,
+    version: str | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Add/remove a ``.rpm`` file package.
@@ -2247,6 +2249,18 @@ async def rpm(
         src (str): Path to the ``.rpm`` file on the *target host*.
         present (bool, optional): Whether the package should be installed.
             Defaults to True.
+        package (str | None, optional): The name the ``.rpm`` provides -- an
+            *identity hint* used only when the file itself answers nothing
+            (absent, unreadable or cleaned up), so presence falls back to the
+            installed rpm database instead of the artifact. Ignored when the
+            file is readable, which stays authoritative. Spelled ``package``
+            rather than ``name`` because ``op()`` consumes ``name`` as the
+            request label. Defaults to None.
+        version (str | None, optional): The version the ``package`` hint pins
+            to, rpm's ``VERSION-RELEASE`` compared verbatim (``8.1-1.el9``).
+            Without it any installed version of ``package`` satisfies the
+            request; with it only that version does. Requires ``package``.
+            Defaults to None.
         **kwargs: Additional keyword arguments.
 
     Yields:
@@ -2278,6 +2292,17 @@ async def rpm(
             present=False,
             sudo=True,
         )
+
+        # Name the package so the request still converges once the staged
+        # spool is cleaned up: the installed rpm database answers.
+        yield op(
+            dnf.rpm,
+            name="Install the vendor release package",
+            src="/tmp/remi-release.rpm",
+            package="remi-release",
+            version="1.2-1.el9",
+            sudo=True,
+        )
         ```
 
         Examples can be found in ``examples/modules/dnf/dnf_rpm.py``.
@@ -2301,31 +2326,81 @@ async def rpm(
     # ``ValueError`` (mirroring ``dnf.repo``). Stage a URL ``.rpm`` with
     # ``files.download`` first -- it fetches control-side and installs a
     # binary body intact (#23) -- then install from the staged path.
-    # Because removal reads the package name from the file, a
-    # ``present=False`` request whose ``.rpm`` is absent from the host cannot
-    # resolve a name and is a no-op -- the same limitation documented for
-    # an un-downloaded URL source. ``**kwargs`` absorbs any further global
-    # arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    #
+    # What the ``package``/``version`` hint adds is Ansible's convergence
+    # property across that staging boundary (issue #55, mirroring ``apt.deb``).
+    # Ansible's presence test runs against the *installed package database*, so
+    # ``yum: name=<url>`` converges and leaves no artifact behind; reemote reads
+    # the staged file, so without a hint an artifact cleaned out of ``/tmp``
+    # (a spool cleanup request, tmpreaper, an image-slimming step, a hand) left
+    # the operation unable to name the package: ``present=True`` planned an
+    # ``rpm -i`` on a path that is gone -- ``changed=True`` and a
+    # ``CommandError`` on a host already in the desired state -- and
+    # ``present=False`` silently no-opped a package that is installed. With the
+    # hint the file's silence is answered by ``RpmPackage`` on the name instead,
+    # the install direction reports the missing artifact honestly rather than
+    # planning a command that cannot run, and the removal direction works. The
+    # file stays authoritative whenever it answers, so ``package`` is a
+    # fallback, never an override: an upgrade against a new file still fires.
+    # ``**kwargs`` absorbs any further global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``).
     if urlparse(src).scheme:
         raise ValueError(
             "dnf.rpm does not support a URL src (it installs a binary .rpm "
             "that must already be on the host); stage it with files.download "
             f"first, got: {src}"
         )
+    if version is not None and package is None:
+        raise ValueError(
+            "dnf.rpm's version pins the package named by package=; pass "
+            f"package= too, got version={version!r} with no package"
+        )
 
     info = await ctx.facts.get(RpmPackage, src)
-    # ``installed_name`` is set only when the file's package is installed at the
-    # file's exact version, so it doubles as the ``exists`` flag and
-    # carries the name the removal needs.
-    installed_name: str | None = None
+
+    # ``staged_absent`` marks the fallback path, where the identity came from
+    # the hint and the reasons have to say so; ``wanted`` is the version the
+    # installed package has to match -- the file's when it answers, the hint's
+    # (or any installed version, when the hint gives none) when it does not.
     if info is not None:
-        current = await ctx.facts.get(RpmPackage, info["name"])
-        if current is not None and current["version"] == info["version"]:
-            installed_name = info["name"]
+        staged_absent = False
+        name: str = info["name"]
+        wanted: str | None = info["version"]
+    elif package is not None:
+        staged_absent = True
+        name = package
+        wanted = version
+    else:
+        # Neither the file nor a hint names the package, so nothing can be
+        # resolved: report the honest no-op instead of planning an ``rpm -i``
+        # on the absent path (issue #55). A file staged later in the same
+        # deploy is still installed by the apply phase, which re-reads
+        # ``RpmPackage`` against the file that exists by then.
+        ctx.reason = f"rpm {src} is absent and no package= given, nothing to do"
+        return
+
+    # ``installed_name`` is set only when the wanted state already holds, so it
+    # doubles as the ``exists`` flag and carries the name the removal needs.
+    installed_name: str | None = None
+    current = await ctx.facts.get(RpmPackage, name)
+    if current is not None and (wanted is None or current["version"] == wanted):
+        installed_name = name
 
     if present:
         if installed_name is not None:
-            ctx.reason = f"rpm {src} is installed"
+            ctx.reason = (
+                f"rpm {name} is installed (staged file {src} absent)"
+                if staged_absent
+                else f"rpm {src} is installed"
+            )
+        elif staged_absent:
+            # The hint says the package is wanted and rpm's database says it is
+            # not there, but the artifact to install is gone: name it rather
+            # than run ``rpm -i`` on a missing path (issue #55).
+            ctx.reason = (
+                f"rpm {name} not installed and staged file {src} absent, "
+                "cannot install"
+            )
         else:
             ctx.changed = True
             ctx.reason = f"rpm {src} not installed, will install"
@@ -2333,8 +2408,14 @@ async def rpm(
     else:
         if installed_name is not None:
             ctx.changed = True
-            ctx.reason = f"rpm {src} installed, will remove"
+            ctx.reason = (
+                f"rpm {name} installed, will remove (staged file {src} absent)"
+                if staged_absent
+                else f"rpm {src} installed, will remove"
+            )
             yield DnfRemoveCommand(packages=(installed_name,))
+        elif staged_absent:
+            ctx.reason = f"rpm {name} is not installed (staged file {src} absent)"
         else:
             ctx.reason = f"rpm {src} is not installed"
 

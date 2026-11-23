@@ -35,9 +35,11 @@ from a project's GitHub releases and installs by hand. The ``src`` is
 therefore a **remote** path, not a controller-side one: upload the file first
 with ``files.put`` (or place it there by any other means). Unlike the baseline --
 whose ``apt.deb`` can also *download* a remote ``.deb`` mid-deploy -- reemote's
-``apt.deb`` installs a *binary* file that must already be on the host (and
-``files.download`` is text-only), so a ``src`` with a URL scheme raises
-``ValueError``. This example stages the file with a demo-side ``curl``
+``apt.deb`` installs a *binary* file that must already be on the host, so a
+``src`` with a URL scheme raises ``ValueError``; stage a URL with
+``files.download`` (which fetches control-side and installs a binary body
+intact since #23) or, as here, on the host itself. This example stages the file
+with a demo-side ``curl``
 one-liner (a raw ``StringCommand``, the same pattern as
 ``server_op_sysctl.py``'s ``sysctl_set``) yielded before the install, so the
 ``.deb`` really exists on the host when ``apt.deb`` reads it. ``bat`` is
@@ -60,6 +62,25 @@ prepare phase plans both as changes (nothing is installed yet, so
 both compare against the same pre-deployment state), while the apply phase
 installs on the first and reports the second as a no-op, because the fresh
 per-step fact cache now sees the package the first step installed.
+
+The install requests also carry ``package="bat"`` -- the *identity hint* that
+keeps the request converging once the artifact itself is gone (issue #55).
+Without it, presence is derived solely from the file, so a ``.deb`` cleaned out
+of ``/tmp`` (tmpreaper, an image-slimming step, a hand) leaves ``apt.deb``
+unable to name the package: it can neither converge (it would plan a
+``dpkg -i`` on a path that is not there) nor remove. With the hint the file's
+silence is answered by the installed package database instead. The script
+demonstrates that directly: a fourth request ``rm -f``s the staged ``.deb``, and
+the fifth -- the same install, hinted -- reports no change because ``bat`` is
+installed, exactly as Ansible's ``apt: deb=<url>`` converges after deleting its
+temporary file. The file stays authoritative whenever it answers, so the hint is
+a fallback and never an override; ``version="0.24.0"`` (a literal or a glob like
+``0.24.*``) would pin the hint further, and no hint at all with the file absent
+is a no-op whose reason names the missing artifact rather than a failing
+install. Because the prepare phase reads the *pre-deployment* state, on a host
+that has never run this script the first plan reports "staged file absent, cannot
+install" -- the apply phase, where the ``curl`` step has already run, is the one
+that installs.
 
 Installing a package writes to the root-owned dpkg database, so the request is
 flagged ``sudo=True`` and the driver elevates its commands. The tolerant first
@@ -108,11 +129,15 @@ from reemote import (
 )
 
 # The ``.deb`` file to install, as a path on the *target host*, and the URL
-# the demo-side download step stages it from. ``files.download`` is text-only
-# and a ``.deb`` is binary, so the example curls the file onto the host itself
-# before ``apt.deb`` reads it. BAT_DEB is shared by both install requests below so
-# they carry identical operation kwargs (only the log ``name`` differs).
+# the demo-side download step stages it from. A ``.deb`` is binary, so it is
+# curled onto the host here (``files.download`` would fetch it control-side and
+# install the bytes intact) before ``apt.deb`` reads it. BAT_DEB is shared by
+# the install requests below so they carry identical operation kwargs (only the
+# log ``name`` differs). BAT_PACKAGE is the identity hint (issue #55) the install
+# requests carry, so they still converge after the last request removes the
+# staged artifact.
 BAT_DEB = "/tmp/bat_0.24.0_amd64.deb"
+BAT_PACKAGE = "bat"
 BAT_URL = (
     "https://github.com/sharkdp/bat/releases/download/v0.24.0/bat_0.24.0_amd64.deb"
 )
@@ -136,8 +161,8 @@ def is_ubuntu(host: Host) -> bool:
 async def download_deb(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
     """Stage the ``bat`` ``.deb`` on the host (demo-side download step).
 
-    reemote's ``apt.deb`` takes a *remote* path and a ``.deb`` is binary
-    (``files.download`` is text-only), so the file must already exist on the
+    reemote's ``apt.deb`` takes a *remote* path and a ``.deb`` is binary, so the
+    file must already exist on the
     target host. This example
     stages it with a stateless one-liner over the public raw ``StringCommand``
     descriptor -- the same demo-side pattern as ``server_op_sysctl.py``'s
@@ -153,23 +178,45 @@ async def download_deb(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
     yield StringCommand(f"test -f {BAT_DEB} || curl -fsSL -o {BAT_DEB} {BAT_URL}")
 
 
+async def remove_staged_deb(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
+    """Delete the staged ``.deb`` from the host (demo-side cleanup step).
+
+    The point of the request is to take the artifact away *while the package
+    stays installed*, which is the state a tmpreaper, an ``apt-get clean``, an
+    image-slimming step or a hand eventually puts a real host in -- and the state
+    the hinted ``apt.deb`` requests below have to converge from. Like the staging
+    step it is a stateless raw ``StringCommand`` (``rm -f`` succeeds whether or
+    not the file is there) and needs no root, since the login user created the
+    file in ``/tmp``.
+    """
+    ctx.changed = True
+    ctx.reason = "will remove the staged bat .deb from the host"
+    yield StringCommand(f"rm -f {BAT_DEB}")
+
+
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Stage the ``bat`` ``.deb``, then install it -- twice, to show idempotence.
+    """Stage the ``bat`` ``.deb``, install it twice, then install it again with
+    the artifact gone.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError).
     The first request stages the file on the host with a demo-side ``curl``
-    (``apt.deb`` takes a remote path, and a ``.deb`` is binary so
-    ``files.download`` does not apply);
+    (``apt.deb`` takes a remote path, and a ``.deb`` is binary so the file has
+    to be put there before it is read);
     it is unprivileged, since writing ``/tmp`` and running ``curl`` need no
     root. The next two requests install the file's package: the first
     installs, the second carries the same arguments and is a guaranteed no-op
     in the apply phase, because the first install is already visible through
-    the fresh per-step fact cache.
+    the fresh per-step fact cache. All three carry the ``package`` identity
+    hint. The fourth request removes the staged ``.deb`` itself, and the fifth
+    repeats the install: with the artifact gone the hinted request reads the
+    installed package database instead of failing on the missing path, so it
+    reports no change -- Ansible's convergence, without the permanent file in
+    ``/tmp``.
 
-    Installing a package writes to the root-owned dpkg database, so the two
+    Installing a package writes to the root-owned dpkg database, so the three
     ``apt.deb`` requests are flagged ``sudo=True`` and the driver elevates
-    their commands over SSH; the download step stays unprivileged.
+    their commands over SSH; the staging and cleanup steps stay unprivileged.
     """
     yield op(
         download_deb,
@@ -180,6 +227,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         apt.deb,
         name="Install bat deb",
         src=BAT_DEB,
+        package=BAT_PACKAGE,
         sudo=True,
         when=is_ubuntu,
     )
@@ -187,6 +235,20 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         apt.deb,
         name="Re-install bat deb (no-op)",
         src=BAT_DEB,
+        package=BAT_PACKAGE,
+        sudo=True,
+        when=is_ubuntu,
+    )
+    yield op(
+        remove_staged_deb,
+        name="Remove the staged bat deb",
+        when=is_ubuntu,
+    )
+    yield op(
+        apt.deb,
+        name="Install bat deb again, file gone (no-op via package=)",
+        src=BAT_DEB,
+        package=BAT_PACKAGE,
         sudo=True,
         when=is_ubuntu,
     )

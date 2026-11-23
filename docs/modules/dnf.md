@@ -78,6 +78,14 @@ entry is already imported (the `gpg.import_key` precedent, Ansible
 removal direction (`present=False`, Ansible
 `rpm_key state=absent` parity) reads `RpmGpgKeys` and idempotently erases the
 matching `gpg-pubkey` pseudo-packages with an elevated `rpm -e`.
+`dnf.rpm` installs a host-staged `.rpm` (a URL `src` raises `ValueError`; stage
+one with `files.download`, which installs a binary body intact since #23) and
+takes the same optional `package`/`version` *identity hint* as `apt.deb` (issue
+#55): when the staged file answers nothing, presence falls back to the
+installed rpm database, so a request still converges after the artifact is
+cleaned up and `present=False` still removes the package. `version` is rpm's
+`VERSION-RELEASE` compared verbatim (`8.1-1.el9`); a bare `package` accepts any
+installed version, and `version` without `package` raises `ValueError`.
 
 ## Facts
 

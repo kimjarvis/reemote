@@ -154,8 +154,9 @@ counts the package as present only when the installed version matches the
 file's, so `present=True` installs with `rpm -i` only when it does not and is
 otherwise a no-op, while `present=False` removes it with `dnf remove -y <name>`.
 Where the baseline's `dnf.rpm` can also *download* a remote `.rpm` mid-deploy,
-reemote's `dnf.rpm` installs a binary `.rpm` that must already be on the host
-(and `files.download` is text-only), so a URL `src` raises `ValueError`. The
+reemote's `dnf.rpm` installs a binary `.rpm` that must already be on the host,
+so a URL `src` raises `ValueError` (stage a URL with `files.download`, which
+fetches control-side and installs a binary body intact since #23). The
 example therefore stages the file itself first: a demo-side `curl` one-liner (a
 raw `StringCommand`, the same pattern as `apt_deb.py`'s `download_deb`)
 downloads `sl` — the small steam-locomotive `ls` joke, whose only library
@@ -164,9 +165,28 @@ dependency `ncurses-libs` is part of the RedHat base — onto the host before
 root), and the script yields the same install request twice — the second is a
 guaranteed no-op in the apply phase, because the first install is visible to it
 through the fresh per-step fact cache (in the prepare phase, where nothing is
-sent, both plan as changes). A final `present=False` request then removes `sl`
-again, so the example is **self-restoring**: it leaves the shared RedHat hosts
-as it found them and every run starts from the same not-installed state.
+sent, both plan as changes). A cleanup request then `rm -f`s the staged `.rpm`
+and a final `present=False` request removes `sl` again, so the example is
+**self-restoring**: it leaves the shared RedHat hosts as it found them and every
+run starts from the same not-installed state.
+
+Every `dnf.rpm` request carries `package="sl"` — the optional *identity hint*
+(issue #55, the same one `apt.deb` gained) that keeps the request converging
+after the artifact itself is gone. Presence otherwise comes from the file alone,
+so an `.rpm` cleaned out of `/tmp` left `dnf.rpm` unable to name the package:
+`present=True` planned an `rpm -i` on a path that is not there and
+`present=False` silently no-opped — the two rows Ansible's `yum: name=<url>`
+converges, because its presence test reads the package database. With the hint
+the file's silence is answered by `RpmPackage` on the name instead (an optional
+`version` pins it to rpm's `VERSION-RELEASE`, compared verbatim), and the file
+stays authoritative whenever it answers, so the hint is a fallback and never an
+override. That is what makes the self-restoring removal work here even after the
+cleanup step: without the hint the final request would leave `sl` installed.
+With neither the file nor a hint the operation is a documented no-op whose
+reason names the missing artifact rather than a failing install, so on a host
+that has never run this script the first *plan* reads "staged file absent,
+cannot install" while the apply phase, where the `curl` step has already run,
+does the install.
 
 Unlike `dnf.key`'s import below, this example applies cleanly even on the
 SELinux `staff_t`-confined RedHat hosts: `dnf.rpm`'s install is a *plain*

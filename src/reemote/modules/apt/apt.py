@@ -1910,6 +1910,8 @@ async def deb(
     src: str,
     present: bool = True,
     wait_for_lock: bool | int = False,
+    package: str | None = None,
+    version: str | None = None,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Add/remove a ``.deb`` file package.
@@ -1922,6 +1924,18 @@ async def deb(
         wait_for_lock (bool | int, optional): Wait for the apt lock instead of
             failing instantly; ``True`` waits up to 60 seconds, an int sets
             the timeout in seconds. Defaults to False.
+        package (str | None, optional): The name the ``.deb`` provides -- an
+            *identity hint* used only when the file itself answers nothing
+            (absent, unreadable or cleaned up), so presence falls back to the
+            installed package database instead of the artifact. Ignored when
+            the file is readable, which stays authoritative. Spelled
+            ``package`` rather than ``name`` because ``op()`` consumes ``name``
+            as the request label. Defaults to None.
+        version (str | None, optional): The version the ``package`` hint pins
+            to -- a literal version or a glob pattern (``16.*``) matched the
+            ``apt.packages`` way. Without it any installed version of
+            ``package`` satisfies the request; with it only that version does.
+            Requires ``package``. Defaults to None.
         **kwargs: Additional keyword arguments.
 
     Yields:
@@ -1953,6 +1967,17 @@ async def deb(
             present=False,
             sudo=True,
         )
+
+        # Name the package so the request still converges once the staged
+        # artifact is cleaned out of /tmp: the installed database answers.
+        yield op(
+            apt.deb,
+            name="Install the vendor release package",
+            src="/tmp/vendor-release.deb",
+            package="vendor-release",
+            version="1.2",
+            sudo=True,
+        )
         ```
 
         Examples can be found in ``examples/modules/apt/apt_deb.py``.
@@ -1979,11 +2004,23 @@ async def deb(
     # ``ValueError`` (mirroring ``dnf.rpm``). Stage a URL ``.deb`` with
     # ``files.download`` first -- it fetches control-side and installs a
     # binary body intact (#23) -- then install from the staged path.
-    # Because removal reads the package name from the file, a
-    # ``present=False`` request whose ``.deb`` is absent from the host cannot
-    # resolve a name and is a no-op -- the same limitation the baseline documents for
-    # an un-downloaded URL source. The baseline's ``force`` option (``--force-yes``)
-    # is deliberately dropped: the flag is deprecated in modern apt.
+    #
+    # What the ``package``/``version`` hint adds is Ansible's convergence
+    # property across that staging boundary (issue #55). Ansible's presence test
+    # runs against the *installed package database*, so ``apt: deb=<url>``
+    # converges and deletes its temporary artifact afterwards; reemote reads the
+    # staged file, so without a hint an artifact cleaned out of ``/tmp``
+    # (tmpreaper, an image-slimming step, a hand) left the operation unable to
+    # name the package: ``present=True`` planned a ``dpkg -i`` on a path that is
+    # gone -- ``changed=True`` and a ``CommandError`` on a host already in the
+    # desired state -- and ``present=False`` silently no-opped a package that is
+    # installed. With the hint the file's silence is answered by ``AptPackages``
+    # instead, the install direction reports the missing artifact honestly rather
+    # than planning a command that cannot run, and the removal direction works.
+    # The file stays authoritative whenever it answers, so ``package`` is a
+    # fallback, never an override: an upgrade against a new file still fires.
+    # The baseline's ``force`` option (``--force-yes``) is deliberately dropped:
+    # the flag is deprecated in modern apt.
     # ``**kwargs`` absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     if urlparse(src).scheme:
@@ -1992,20 +2029,61 @@ async def deb(
             "that must already be on the host); stage it with files.download "
             f"first, got: {src}"
         )
+    if version is not None and package is None:
+        raise ValueError(
+            "apt.deb's version pins the package named by package=; pass "
+            f"package= too, got version={version!r} with no package"
+        )
 
     info = await ctx.facts.get(DebPackage, src)
     current = await ctx.facts.get(AptPackages)
     installed = {entry["name"]: entry["versions"] for entry in current}
-    # ``installed_name`` is set only when the file's package is installed at
-    # the file's exact version, so it doubles as the baseline's ``exists`` flag and
-    # carries the name the removal needs.
-    installed_name: str | None = None
-    if info is not None and info["version"] in installed.get(info["name"], []):
-        installed_name = info["name"]
+
+    # ``staged_absent`` marks the fallback path, where the identity came from
+    # the hint and the reasons have to say so; ``installed_name`` is set only
+    # when the wanted state already holds, so it doubles as the baseline's
+    # ``exists`` flag and carries the name the removal needs.
+    if info is not None:
+        staged_absent = False
+        name: str = info["name"]
+        installed_name: str | None = (
+            name if info["version"] in installed.get(name, []) else None
+        )
+    elif package is not None:
+        staged_absent = True
+        name = package
+        versions = installed.get(package, [])
+        satisfied = (
+            bool(versions)
+            if version is None
+            else _pin_satisfied_by_any(version, versions)
+        )
+        installed_name = package if satisfied else None
+    else:
+        # Neither the file nor a hint names the package, so nothing can be
+        # resolved: report the honest no-op instead of planning a ``dpkg -i``
+        # whose final pass would fail on the absent path (issue #55). A file
+        # staged later in the same deploy is still installed by the apply
+        # phase, which re-reads ``DebPackage`` against the file that exists by
+        # then.
+        ctx.reason = f"deb {src} is absent and no package= given, nothing to do"
+        return
 
     if present:
         if installed_name is not None:
-            ctx.reason = f"deb {src} is installed"
+            ctx.reason = (
+                f"deb {name} is installed (staged file {src} absent)"
+                if staged_absent
+                else f"deb {src} is installed"
+            )
+        elif staged_absent:
+            # The hint says the package is wanted and the database says it is
+            # not there, but the artifact to install is gone: name it rather
+            # than run ``dpkg -i`` on a missing path (issue #55).
+            ctx.reason = (
+                f"deb {name} not installed and staged file {src} absent, "
+                "cannot install"
+            )
         else:
             ctx.changed = True
             ctx.reason = f"deb {src} not installed, will install"
@@ -2015,10 +2093,16 @@ async def deb(
     else:
         if installed_name is not None:
             ctx.changed = True
-            ctx.reason = f"deb {src} installed, will remove"
+            ctx.reason = (
+                f"deb {name} installed, will remove (staged file {src} absent)"
+                if staged_absent
+                else f"deb {src} installed, will remove"
+            )
             yield AptRemoveCommand(
                 packages=(installed_name,), wait_for_lock=wait_for_lock
             )
+        elif staged_absent:
+            ctx.reason = f"deb {name} is not installed (staged file {src} absent)"
         else:
             ctx.reason = f"deb {src} is not installed"
 

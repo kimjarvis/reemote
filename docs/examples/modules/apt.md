@@ -45,8 +45,9 @@ with `apt-get remove <name>`. The install runs the baseline's three-pass sequenc
 tolerant `dpkg -i`, an `apt-get install -f` to resolve dependencies, then a final
 `dpkg -i` that fails fast if they are still missing). Where the baseline's `apt.deb`
 can also *download* a remote `.deb` mid-deploy, reemote's `apt.deb` installs a
-binary `.deb` that must already be on the host (and `files.download` is
-text-only), so a URL `src` raises `ValueError`. The example therefore stages the
+binary `.deb` that must already be on the host, so a URL `src` raises
+`ValueError` (stage a URL with `files.download`, which fetches control-side and
+installs a binary body intact since #23). The example therefore stages the
 file itself first: a demo-side `curl` one-liner (a raw `StringCommand`, the same
 pattern as `server_op_sysctl.py`'s `sysctl_set`) downloads the small,
 self-contained `bat` `.deb` (~2.4 MB, no library dependencies — chosen to fit the
@@ -56,6 +57,24 @@ the script yields the same install request twice — the second is a guaranteed
 no-op in the apply phase, because the first install is visible to it through the
 fresh per-step fact cache (in the prepare phase, where nothing is sent, both plan
 as changes).
+
+Every install request also carries `package="bat"` — the optional *identity
+hint* (issue #55) that keeps the request converging after the artifact itself is
+gone. Presence otherwise comes from the file alone, so a `.deb` cleaned out of
+`/tmp` (tmpreaper, an image-slimming step, a hand) left `apt.deb` unable to name
+the package: `present=True` planned a `dpkg -i` on a path that is not there and
+`present=False` silently no-opped — the two rows Ansible's `apt: deb=<url>`
+converges, because its presence test reads the package database. With the hint
+the file's silence is answered by `AptPackages` instead (an optional `version`
+pins it the `apt.packages` way, literally or as a glob like `0.24.*`), and the
+file stays authoritative whenever it answers, so the hint is a fallback and
+never an override. The script demonstrates the property directly: a fourth
+request `rm -f`s the staged `.deb`, and the fifth — the same hinted install —
+reports no change because `bat` is installed. With neither the file nor a hint
+the operation is a documented no-op whose reason names the missing artifact
+rather than a failing install, so on a host that has never run this script the
+first *plan* reads "staged file absent, cannot install" while the apply phase,
+where the `curl` step has already run, does the install.
 
 ::: apt_deb
     options:

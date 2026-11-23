@@ -1973,15 +1973,244 @@ async def test_apt_deb_removal_noop_when_not_installed():
 
 
 async def test_apt_deb_removal_noop_when_file_absent():
-    """A present=False whose ``.deb`` is absent cannot resolve a package name, so
-    it is a no-op -- the limitation the docstring records for an un-downloadable
-    source."""
+    """A present=False whose ``.deb`` is absent names no package (no hint given),
+    so it reports the missing artifact instead of claiming the package is absent
+    and planning nothing (issue #55)."""
     host = SimulatedHost(name="h")
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
     commands = [c async for c in apt.deb(ctx, src=DEB_FILE_PATH, present=False)]
     assert not ctx.changed
-    assert ctx.reason == f"deb {DEB_FILE_PATH} is not installed"
+    assert ctx.reason == f"deb {DEB_FILE_PATH} is absent and no package= given, nothing to do"
     assert commands == []
+
+
+async def test_apt_deb_install_noop_when_file_absent_and_no_hint():
+    """The ``present=True`` twin: with the artifact gone and no identity hint
+    nothing can be resolved, so the operation reports the absent file and yields
+    no command -- instead of the three-pass sequence whose final ``dpkg -i`` used
+    to fail on the missing path (issue #55)."""
+    host = SimulatedHost(name="h", apt_packages={DEB_FILE_NAME: [DEB_FILE_VERSION]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.deb(ctx, src=DEB_FILE_PATH)]
+    assert not ctx.changed
+    assert ctx.reason == f"deb {DEB_FILE_PATH} is absent and no package= given, nothing to do"
+    assert commands == []
+
+
+async def test_apt_deb_package_hint_converges_from_the_database_when_the_file_is_gone():
+    """The identity hint is Ansible's convergence property: the staged ``.deb``
+    is gone, ``AptPackages`` reports the name at the pinned version, so the
+    request is a no-op with a reason naming the absent artifact (issue #55)."""
+    host = SimulatedHost(name="h", apt_packages={DEB_FILE_NAME: [DEB_FILE_VERSION]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.deb(
+            ctx, src=DEB_FILE_PATH, package=DEB_FILE_NAME, version=DEB_FILE_VERSION
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == (
+        f"deb {DEB_FILE_NAME} is installed (staged file {DEB_FILE_PATH} absent)"
+    )
+    assert commands == []
+
+
+async def test_apt_deb_package_hint_without_version_matches_any_installed():
+    """A bare hint mirrors how ``apt.packages`` treats an unpinned name: any
+    installed version satisfies the request."""
+    host = SimulatedHost(name="h", apt_packages={DEB_FILE_NAME: ["130.0.6723.58-1"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.deb(ctx, src=DEB_FILE_PATH, package=DEB_FILE_NAME)]
+    assert not ctx.changed
+    assert ctx.reason == (
+        f"deb {DEB_FILE_NAME} is installed (staged file {DEB_FILE_PATH} absent)"
+    )
+    assert commands == []
+
+
+async def test_apt_deb_package_hint_accepts_a_glob_version():
+    """The pinned version is compared the ``apt.packages`` way, so a wildcard
+    pin (``131.*``) is satisfied by an installed ``131.0.6778.85-1``."""
+    host = SimulatedHost(name="h", apt_packages={DEB_FILE_NAME: [DEB_FILE_VERSION]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.deb(
+            ctx, src=DEB_FILE_PATH, package=DEB_FILE_NAME, version="131.*"
+        )
+    ]
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_apt_deb_package_hint_reports_an_unsatisfied_version_honestly():
+    """A version the database does not satisfy is still a gap the artifact would
+    close -- but with the file gone no ``dpkg -i`` can run, so the operation
+    names the missing artifact instead of planning the three-pass sequence
+    against a path that is not there (issue #55)."""
+    host = SimulatedHost(name="h", apt_packages={DEB_FILE_NAME: ["130.0.6723.58-1"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.deb(
+            ctx, src=DEB_FILE_PATH, package=DEB_FILE_NAME, version=DEB_FILE_VERSION
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == (
+        f"deb {DEB_FILE_NAME} not installed and staged file {DEB_FILE_PATH} absent, "
+        "cannot install"
+    )
+    assert commands == []
+
+
+async def test_apt_deb_package_hint_names_a_missing_package():
+    """The same report when the hinted name is not installed at all: the reason
+    says the package is missing *and* the artifact is absent, so an operator can
+    tell the two halves of the gap apart."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.deb(
+            ctx, src=DEB_FILE_PATH, package=DEB_FILE_NAME, version=DEB_FILE_VERSION
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == (
+        f"deb {DEB_FILE_NAME} not installed and staged file {DEB_FILE_PATH} absent, "
+        "cannot install"
+    )
+    assert commands == []
+
+
+async def test_apt_deb_package_hint_removes_without_the_staged_file():
+    """The row-2 asymmetry the hint closes: ``present=False`` used to no-op
+    silently because only the file carried the name; with ``package=`` the
+    installed package is removed even though the artifact is gone (issue #55)."""
+    host = SimulatedHost(name="h", apt_packages={DEB_FILE_NAME: [DEB_FILE_VERSION]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.deb(
+            ctx, src=DEB_FILE_PATH, present=False, package=DEB_FILE_NAME
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == (
+        f"deb {DEB_FILE_NAME} installed, will remove (staged file {DEB_FILE_PATH} absent)"
+    )
+    assert commands == [AptRemoveCommand(packages=(DEB_FILE_NAME,))]
+
+
+async def test_apt_deb_package_hint_removal_noop_when_version_unmatched():
+    """A pinned version the database does not hold means the wanted state (that
+    version absent) already holds, so the removal is a no-op -- and the reason
+    still records where the name came from."""
+    host = SimulatedHost(name="h", apt_packages={DEB_FILE_NAME: ["130.0.6723.58-1"]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.deb(
+            ctx,
+            src=DEB_FILE_PATH,
+            present=False,
+            package=DEB_FILE_NAME,
+            version=DEB_FILE_VERSION,
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == (
+        f"deb {DEB_FILE_NAME} is not installed (staged file {DEB_FILE_PATH} absent)"
+    )
+    assert commands == []
+
+
+async def test_apt_deb_file_answers_authoritatively_over_the_hint():
+    """The hint is a fallback, never an override: when the ``.deb`` is readable
+    its name and version decide, so a request whose hint names something else is
+    still the file's no-op and an upgrade against a new file still fires."""
+    host = SimulatedHost(
+        name="h",
+        deb_files={DEB_FILE_PATH: DEB_FILE_INFO},
+        apt_packages={DEB_FILE_NAME: [DEB_FILE_VERSION]},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.deb(
+            ctx, src=DEB_FILE_PATH, package="some-other-package", version="9"
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == f"deb {DEB_FILE_PATH} is installed"
+    assert commands == []
+
+    # The file's version rules, so the hinted version cannot suppress the delta.
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.deb(
+            ctx, src=DEB_FILE_PATH, present=False, package="some-other-package"
+        )
+    ]
+    assert ctx.changed
+    assert commands == [AptRemoveCommand(packages=(DEB_FILE_NAME,))]
+
+
+async def test_apt_deb_version_requires_a_package_hint():
+    """A version alone names no package, so the argument error lands at the call
+    site rather than reading as an unexplainable no-op."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    with pytest.raises(ValueError, match="pins the package named by package="):
+        _ = [c async for c in apt.deb(ctx, src=DEB_FILE_PATH, version=DEB_FILE_VERSION)]
+
+
+async def test_apt_deb_converges_after_the_staged_file_is_cleaned_up():
+    """End to end: the first pass installs from the staged ``.deb``, a tmpreaper
+    takes the artifact away, and the second pass -- with the hint -- reports no
+    change instead of the ``CommandError`` the final ``dpkg -i`` pass used to
+    raise on an already-converged host (issue #55)."""
+
+    def deb_deploy(host):
+        yield op(
+            apt.deb,
+            name="Install the vendored package",
+            src=DEB_FILE_PATH,
+            package=DEB_FILE_NAME,
+            version=DEB_FILE_VERSION,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h", deb_files={DEB_FILE_PATH: DEB_FILE_INFO})
+
+    def factory(entry):
+        return host  # reuse ONE host so the second run sees the first's install
+
+    _plans, report, _hosts = await run(
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
+        deb_deploy,
+        host_factory=factory,
+    )
+    (entry,) = report.log
+    assert entry.changed
+    assert entry.commands == tuple(INSTALL_COMMANDS)
+
+    del host.deb_files[DEB_FILE_PATH]  # the artifact is cleaned out of /tmp
+
+    _plans2, report2, _hosts2 = await run(
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
+        deb_deploy,
+        host_factory=factory,
+    )
+    (entry2,) = report2.log
+    assert not entry2.changed
+    assert entry2.commands == ()
+    assert entry2.reason == (
+        f"deb {DEB_FILE_NAME} is installed (staged file {DEB_FILE_PATH} absent)"
+    )
 
 
 async def test_apt_deb_rejects_a_url_src():

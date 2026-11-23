@@ -34,8 +34,10 @@ mirror and installs by hand. The ``src`` is therefore a **remote** path, not a
 controller-side one: upload the file first with ``files.put`` (or place it
 there by any other means). Unlike the baseline -- whose ``dnf.rpm`` can also
 *download* a remote ``.rpm`` mid-deploy -- reemote's ``dnf.rpm`` installs a
-*binary* file that must already be on the host (and ``files.download`` is
-text-only), so a ``src`` with a URL scheme raises ``ValueError``. This example stages the
+*binary* file that must already be on the host, so a ``src`` with a URL scheme
+raises ``ValueError``; stage a URL with ``files.download`` (which fetches
+control-side and installs a binary body
+intact since #23) or, as here, on the host itself. This example stages the
 file with a demo-side ``curl`` one-liner (a raw ``StringCommand``, the same
 pattern as ``server_op_sysctl.py``'s ``sysctl_set`` and ``apt_deb.py``'s
 ``download_deb``) yielded before the install, so the ``.rpm`` really exists on
@@ -52,8 +54,17 @@ the *same* install request twice to show that idempotence across the two
 phases: the prepare phase plans both as changes (nothing is installed yet, so
 both compare against the same pre-deployment state), while the apply phase
 installs on the first and reports the second as a no-op, because the fresh
-per-step fact cache now sees the package the first step installed. A final
-``present=False`` request then removes ``sl`` again, so the example is
+per-step fact cache now sees the package the first step installed. A cleanup
+request then ``rm -f``s the staged ``.rpm`` -- the state a tmpreaper, a
+container-image slimming step or a hand eventually puts a real host in -- and a
+final ``present=False`` request removes ``sl`` anyway, because every ``dnf.rpm``
+request carries ``package="sl"``, the *identity hint* that lets the presence test
+fall back to the installed rpm database when the artifact no longer answers
+(issue #55). Without the hint that last request would silently no-op (only the
+file carried the name) and leave ``sl`` behind. The hint is a fallback and never
+an override -- while the file is readable its ``name``/``version`` decide, so an
+upgrade against a new ``.rpm`` still fires -- and ``version="5.02-1.el9"`` (rpm's
+``VERSION-RELEASE``, compared verbatim) would pin it further. So the example is
 *self-restoring*: it leaves the shared RedHat hosts as it found them and every
 run starts from the same not-installed state (the same cycle the apt examples
 use to avoid sweep-ordering pollution).
@@ -109,12 +120,16 @@ from reemote import (
 )
 
 # The ``.rpm`` file to install, as a path on the *target host*, and the URL
-# the demo-side download step stages it from. ``files.download`` is text-only
-# and a ``.rpm`` is binary, so the example curls the file onto the host itself
-# before ``dnf.rpm`` reads it. SL_RPM is shared by the install and removal requests
+# the demo-side download step stages it from. A ``.rpm`` is binary, so it is
+# curled onto the host here (``files.download`` would fetch it control-side and
+# install the bytes intact) before ``dnf.rpm`` reads it. SL_RPM is shared by the
+# install and removal requests
 # below so they carry identical operation kwargs (only the log ``name`` and
-# ``present`` differ).
+# ``present`` differ). SL_PACKAGE is the identity hint (issue #55) they all
+# carry, so the requests still converge once the cleanup step removes the
+# staged artifact.
 SL_RPM = "/tmp/sl-5.02-1.el9.x86_64.rpm"
+SL_PACKAGE = "sl"
 SL_URL = (
     "https://dl.fedoraproject.org/pub/epel/9/Everything/x86_64/Packages/s/"
     "sl-5.02-1.el9.x86_64.rpm"
@@ -136,8 +151,8 @@ def is_redhat(host: Host) -> bool:
 async def download_rpm(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
     """Stage the ``sl`` ``.rpm`` on the host (demo-side download step).
 
-    reemote's ``dnf.rpm`` takes a *remote* path and a ``.rpm`` is binary
-    (``files.download`` is text-only), so the file must already exist on the
+    reemote's ``dnf.rpm`` takes a *remote* path and a ``.rpm`` is binary, so the
+    file must already exist on the
     target host. This example
     stages it with a stateless one-liner over the public raw ``StringCommand``
     descriptor -- the same demo-side pattern as ``server_op_sysctl.py``'s
@@ -154,46 +169,80 @@ async def download_rpm(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
     yield StringCommand(f"test -f {SL_RPM} || curl -fsSL -o {SL_RPM} {SL_URL}")
 
 
+async def remove_staged_rpm(ctx: OpContext, **kwargs) -> AsyncGenerator[Command]:
+    """Delete the staged ``.rpm`` from the host (demo-side cleanup step).
+
+    The point of the request is to take the artifact away *while the package
+    stays installed*, which is the state a tmpreaper, an image-slimming step or a
+    hand eventually puts a real host in -- and the state the hinted ``dnf.rpm``
+    removal below has to work from. Like the staging step it is a stateless raw
+    ``StringCommand`` (``rm -f`` succeeds whether or not the file is there) and
+    needs no root, since the login user created the file in ``/tmp``.
+    """
+    ctx.changed = True
+    ctx.reason = "will remove the staged sl .rpm from the host"
+    yield StringCommand(f"rm -f {SL_RPM}")
+
+
 def deploy(host: Host) -> Generator[OperationRequest]:
-    """Stage the ``sl`` ``.rpm``, install it twice, then remove it again.
+    """Stage the ``sl`` ``.rpm``, install it twice, drop the artifact, then
+    remove the package.
 
     Branch-free, so the request sequence is identical in the prepare and
     apply phases (a branch on a mutable fact would raise DeterminismError),
     and identical on every host: eligibility is expressed with the
     ``when=is_redhat`` guard each request carries, not with an ``if``.
     The first request stages the file on the host with a demo-side ``curl``
-    (``dnf.rpm`` takes a remote path, and a ``.rpm`` is binary so
-    ``files.download`` does not apply);
+    (``dnf.rpm`` takes a remote path, and a ``.rpm`` is binary so the file has
+    to be put there before it is read);
     it is unprivileged, since writing ``/tmp`` and running ``curl`` need no
     root. The next two requests install the file's package: the first
     installs, the second carries the same arguments and is a guaranteed no-op
     in the apply phase, because the first install is already visible through
-    the fresh per-step fact cache. The last request removes the package again
-    (``present=False``), so the example is self-restoring and leaves the shared
-    RedHat hosts as it found them.
+    the fresh per-step fact cache. All three carry the ``package`` identity
+    hint. The fourth request removes the staged ``.rpm`` itself, and the last
+    removes the package (``present=False``): with the artifact gone the hinted
+    request reads the rpm database instead of no-opping silently, so the
+    example stays self-restoring and leaves the shared RedHat hosts as it found
+    them.
 
     Installing and removing a package write to the root-owned rpm database, so
     the three ``dnf.rpm`` requests are flagged ``sudo=True`` and the driver
-    elevates their commands over SSH; the download step stays unprivileged.
+    elevates their commands over SSH; the staging and cleanup steps stay
+    unprivileged.
     """
     yield op(
         download_rpm,
         name="Stage sl rpm on the host",
         when=is_redhat,
     )
-    yield op(dnf.rpm, name="Install sl rpm", src=SL_RPM, sudo=True, when=is_redhat)
     yield op(
         dnf.rpm,
-        name="Re-install sl rpm (no-op)",
+        name="Install sl rpm",
         src=SL_RPM,
+        package=SL_PACKAGE,
         sudo=True,
         when=is_redhat,
     )
     yield op(
         dnf.rpm,
-        name="Remove sl rpm",
+        name="Re-install sl rpm (no-op)",
+        src=SL_RPM,
+        package=SL_PACKAGE,
+        sudo=True,
+        when=is_redhat,
+    )
+    yield op(
+        remove_staged_rpm,
+        name="Remove the staged sl rpm",
+        when=is_redhat,
+    )
+    yield op(
+        dnf.rpm,
+        name="Remove sl rpm (file gone, via package=)",
         src=SL_RPM,
         present=False,
+        package=SL_PACKAGE,
         sudo=True,
         when=is_redhat,
     )
