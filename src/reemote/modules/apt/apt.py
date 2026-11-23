@@ -1912,6 +1912,8 @@ async def deb(
     wait_for_lock: bool | int = False,
     package: str | None = None,
     version: str | None = None,
+    update_cache: bool = False,
+    cache_valid_time: int = 0,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
     """Add/remove a ``.deb`` file package.
@@ -1936,6 +1938,18 @@ async def deb(
             ``apt.packages`` way. Without it any installed version of
             ``package`` satisfies the request; with it only that version does.
             Requires ``package``. Defaults to None.
+        update_cache (bool, optional): Refresh the package index with
+            ``apt-get update`` after the package is installed or removed --
+            Ansible's ``apt`` ``deb=``/``update_cache: true`` pairing (issue
+            #54). The ``AptUpdateCommand`` is yielded only on a real change
+            and *after* the three-pass install sequence or the removal, so a
+            converged host yields nothing at all. Defaults to False.
+        cache_valid_time (int, optional): Accepted for Ansible spelling
+            parity but inert here: a package change always forces the
+            refresh, because a fresh ``AptUpdateStamp`` predates the change
+            and gating on it would skip the refresh exactly when it is
+            needed. The stamp is never consulted (unlike ``apt.update`` and
+            ``apt.packages``). Defaults to 0.
         **kwargs: Additional keyword arguments.
 
     Yields:
@@ -1976,6 +1990,18 @@ async def deb(
             src="/tmp/vendor-release.deb",
             package="vendor-release",
             version="1.2",
+            sudo=True,
+        )
+
+        # Install a repository-configuration .deb and refresh the index in
+        # the same request -- the update follows the install and a converged
+        # host yields nothing, so no separate (stateless) apt.update is needed
+        yield op(
+            apt.deb,
+            name="Add the vendor repository",
+            src="/tmp/vendor-release.deb",
+            package="vendor-release",
+            update_cache=True,
             sudo=True,
         )
         ```
@@ -2023,6 +2049,18 @@ async def deb(
     # the flag is deprecated in modern apt.
     # ``**kwargs`` absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
+    #
+    # ``update_cache=True`` appends one ``AptUpdateCommand`` after the install
+    # sequence or the removal, on the real-change path only (issue #54,
+    # Ansible's ``apt`` pairing a ``deb=`` file with ``update_cache: true`` --
+    # the file is usually a repository-configuration package whose whole point
+    # is to make new indexes available); a no-op, and the missing-artifact
+    # report, yield nothing, so a converged host never refreshes.
+    # ``cache_valid_time`` is accepted for parity but never read: the change
+    # gate already forces the refresh, and a fresh ``AptUpdateStamp`` predates
+    # the change, so gating on it would skip the refresh exactly when needed --
+    # the same trap and the same rule as the four repository operations
+    # (issue #14).
     if urlparse(src).scheme:
         raise ValueError(
             "apt.deb does not support a URL src (it installs a binary .deb "
@@ -2090,6 +2128,9 @@ async def deb(
             yield DebInstallCommand(src=src, ignore_deps_errors=True)
             yield AptInstallFixCommand(wait_for_lock=wait_for_lock)
             yield DebInstallCommand(src=src)
+            if update_cache:
+                ctx.reason += "; apt update"
+                yield AptUpdateCommand()
     else:
         if installed_name is not None:
             ctx.changed = True
@@ -2101,6 +2142,9 @@ async def deb(
             yield AptRemoveCommand(
                 packages=(installed_name,), wait_for_lock=wait_for_lock
             )
+            if update_cache:
+                ctx.reason += "; apt update"
+                yield AptUpdateCommand()
         elif staged_absent:
             ctx.reason = f"deb {name} is not installed (staged file {src} absent)"
         else:

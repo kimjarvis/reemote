@@ -63,6 +63,16 @@ both compare against the same pre-deployment state), while the apply phase
 installs on the first and reports the second as a no-op, because the fresh
 per-step fact cache now sees the package the first step installed.
 
+Both install requests also carry ``update_cache=True`` (issue #54) -- Ansible's
+pairing of a ``deb=`` task with an index refresh, which matters because the
+``.deb`` a deploy installs is so often a repository-configuration package whose
+purpose is to make new indexes available. The flag appends one ``apt-get
+update`` *after* the three install passes, and only on a real change, so the
+first request installs and refreshes while the second -- converged -- yields
+neither. That is what a standalone ``apt.update`` request cannot do: it reads no
+fact, always reports a change and re-fires anything keyed on ``changed_hosts``,
+so a "converged" deploy would keep refreshing on every run.
+
 The install requests also carry ``package="bat"`` -- the *identity hint* that
 keeps the request converging once the artifact itself is gone (issue #55).
 Without it, presence is derived solely from the file, so a ``.deb`` cleaned out
@@ -208,11 +218,13 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     installs, the second carries the same arguments and is a guaranteed no-op
     in the apply phase, because the first install is already visible through
     the fresh per-step fact cache. All three carry the ``package`` identity
-    hint. The fourth request removes the staged ``.deb`` itself, and the fifth
-    repeats the install: with the artifact gone the hinted request reads the
-    installed package database instead of failing on the missing path, so it
-    reports no change -- Ansible's convergence, without the permanent file in
-    ``/tmp``.
+    hint, and the two install requests carry ``update_cache=True``, so the
+    first also refreshes the index after the install passes while the second
+    yields nothing at all. The fourth request removes the staged ``.deb``
+    itself, and the fifth repeats the install: with the artifact gone the
+    hinted request reads the installed package database instead of failing on
+    the missing path, so it reports no change -- Ansible's convergence, without
+    the permanent file in ``/tmp``.
 
     Installing a package writes to the root-owned dpkg database, so the three
     ``apt.deb`` requests are flagged ``sudo=True`` and the driver elevates
@@ -228,6 +240,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Install bat deb",
         src=BAT_DEB,
         package=BAT_PACKAGE,
+        update_cache=True,
         sudo=True,
         when=is_ubuntu,
     )
@@ -236,6 +249,7 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         name="Re-install bat deb (no-op)",
         src=BAT_DEB,
         package=BAT_PACKAGE,
+        update_cache=True,
         sudo=True,
         when=is_ubuntu,
     )

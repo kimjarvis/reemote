@@ -73,7 +73,8 @@ counts of a simulated `apt-get` operation, parsed from the `--dry-run`
 summary line into a plain `AptSimulationDict` TypedDict-shaped dict.
 Beside the facts live the operations: `apt.deb`, which installs or removes a
 `.deb` file package, reading `DebPackage` and `AptPackages` to decide whether
-the file's package is already installed at the file's exact version;
+the file's package is already installed at the file's exact version, and able to
+refresh the index after a real change (`update_cache`, issue #54);
 `apt.dist_upgrade`, which upgrades every package with `dist-upgrade` when
 `SimulateOperationWillChange` proposes changes; `apt.auto_remove`, the
 standalone cleanup of orphaned dependencies, idempotent on
@@ -422,6 +423,24 @@ neither the file nor a hint is a documented no-op rather than a
 because the apply phase re-reads the fact. `version` without `package` raises
 `ValueError`, and the hint is spelled `package` because `op()` consumes `name`
 as the request label.
+
+`update_cache=True` appends an `apt-get update` (`AptUpdateCommand`) after the
+install sequence *or* the removal, and only when the package actually changed —
+Ansible's pairing of a `deb=` task with `update_cache: true` (issue #54, the
+file-package half #14 left uncovered). The file installed is so often a
+repository-configuration package, whose purpose is to make new indexes
+available, that an install which cannot refresh afterwards leaves its own effect
+unusable. The order matters: the update follows the install it depends on, and a
+no-op — an installed package at the file's version, an absent removal, or the
+missing-artifact report — yields nothing at all, which is what makes the
+converged second pass carry neither the install nor the refresh (a standalone
+`apt.update` request is stateless and would re-fire every run). Refreshing needs
+root, so the request is elevated like the install. `cache_valid_time` is accepted
+for the same Ansible parity but is inert here: a package change always forces the
+refresh, because a fresh `AptUpdateStamp` predates the change and gating on
+freshness would skip the refresh exactly when it is needed (the trap the issue
+names), so the stamp is never consulted — unlike `apt.update` and
+`apt.packages`, whose `cache_valid_time` does gate a stateless refresh.
 
 `apt.dist_upgrade` updates all apt packages, employing `dist-upgrade`
 (the baseline's `apt.dist_upgrade` parity). The `SimulateOperationWillChange`
@@ -792,6 +811,9 @@ as JSON.
 The `apt_deb.py` script beside them demonstrates the `apt.deb` operation: it
 installs a `.deb` already on the host with version idempotence, yielding the
 same request twice so the second is a guaranteed no-op in the apply phase.
+Both requests carry `update_cache=True` (issue #54), so the first also refreshes
+the index after the install passes and the second queues neither install nor
+refresh.
 The `apt_dist_upgrade.py` and `apt_auto_remove.py` scripts demonstrate the
 upgrade-then-cleanup pair the same way — each yields its request twice to
 show simulation-gated idempotence. The `apt_key.py` script demonstrates

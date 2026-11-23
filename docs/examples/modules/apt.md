@@ -76,6 +76,18 @@ rather than a failing install, so on a host that has never run this script the
 first *plan* reads "staged file absent, cannot install" while the apply phase,
 where the `curl` step has already run, does the install.
 
+Both install requests also carry `update_cache=True` (issue #54) — Ansible's
+pairing of a `deb=` task with an index refresh, which matters because the
+`.deb` a deploy installs is so often a repository-configuration package whose
+purpose is to make new indexes available. The flag appends one `AptUpdateCommand`
+(*apt-get update*) *after* the three
+install passes and only on a real change, so the log shows `sudo apt-get update`
+as the fourth command of the first request while the converged second request
+queues neither the install nor the refresh. The alternative — a standalone
+`apt.update` request after the install — is stateless, reports a change on every
+run and re-fires anything keyed on `changed_hosts`, which is why the flag lives
+on the request that made the index stale.
+
 ::: apt_deb
     options:
       members: []

@@ -83,7 +83,11 @@ The ``update_cache`` / ``cache_valid_time`` parameters added to ``apt.repo``,
 ``apt.ppa``, ``apt.key`` and ``apt.sources_file`` (issue #14) are covered in a
 dedicated section: the post-write ``apt-get update`` on a real change, the
 no-op that yields nothing, the default-off behaviour, and the inert
-``cache_valid_time`` (a fresh stamp never suppresses a forced refresh).
+``cache_valid_time`` (a fresh stamp never suppresses a forced refresh). The
+same pair on ``apt.deb`` (issue #54, the file-package half #14 left uncovered)
+is covered in the section after it: post-install and post-removal refresh,
+the no-op and cannot-install paths yielding nothing, default-off parity and
+the inert stamp, plus the end-to-end install-then-converged-no-op run.
 
 ``asyncio_mode = "auto"`` lets the async tests below run without decorators.
 """
@@ -6738,6 +6742,190 @@ async def test_apt_sources_file_cache_valid_time_never_suppresses_a_forced_refre
         AptSourcesFileInstallCommand(spool=SOURCES_SPOOL, dest=DOCKER_DEST),
         AptUpdateCommand(),
     ]
+
+
+# --- apt.deb update_cache (issue #54, #14's uncovered half) --------------------
+
+# Ansible pairs a ``deb=``/``rpm`` file-package task with an index refresh, and
+# the file it installs is usually a repository-configuration package whose whole
+# purpose is to make new indexes available. ``apt.deb`` gained the same
+# ``update_cache`` / inert ``cache_valid_time`` pair as the four repository
+# operations: one ``AptUpdateCommand`` appended *after* the install sequence or
+# the removal, on a real change only -- so the converged second pass carries
+# neither the install nor the refresh, which a standalone (stateless)
+# ``apt.update`` request could never do.
+
+
+def test_apt_deb_exposes_update_cache_as_a_named_parameter():
+    """issue #54: ``update_cache`` and ``cache_valid_time`` are first-class
+    named parameters on ``apt.deb``, no longer swallowed by ``**kwargs``."""
+    params = inspect.signature(apt.deb).parameters
+    assert "update_cache" in params
+    assert params["update_cache"].default is False
+    assert "cache_valid_time" in params
+    assert params["cache_valid_time"].default == 0
+
+
+async def test_apt_deb_update_cache_appends_update_after_install():
+    """issue #54 acceptance: a real install with ``update_cache=True`` yields the
+    three-pass sequence, then ``apt-get update`` -- the refresh following the
+    install that makes the new index available."""
+    host = SimulatedHost(name="h", deb_files={DEB_FILE_PATH: DEB_FILE_INFO})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in apt.deb(ctx, src=DEB_FILE_PATH, update_cache=True)
+    ]
+    assert ctx.changed
+    assert ctx.reason == f"deb {DEB_FILE_PATH} not installed, will install; apt update"
+    assert commands == [*INSTALL_COMMANDS, AptUpdateCommand()]
+
+
+async def test_apt_deb_update_cache_noop_yields_nothing():
+    """The file's package installed at the file's version is a no-op even with
+    ``update_cache=True``: no install, no refresh."""
+    host = SimulatedHost(
+        name="h",
+        deb_files={DEB_FILE_PATH: DEB_FILE_INFO},
+        apt_packages={DEB_FILE_NAME: [DEB_FILE_VERSION]},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in apt.deb(ctx, src=DEB_FILE_PATH, update_cache=True)
+    ]
+    assert not ctx.changed
+    assert ctx.reason == f"deb {DEB_FILE_PATH} is installed"
+    assert commands == []
+
+
+async def test_apt_deb_update_cache_remove_appends_update():
+    """A real removal with ``update_cache=True`` refreshes after the
+    ``apt-get remove``, so the index stops listing the removed package."""
+    host = SimulatedHost(
+        name="h",
+        deb_files={DEB_FILE_PATH: DEB_FILE_INFO},
+        apt_packages={DEB_FILE_NAME: [DEB_FILE_VERSION]},
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.deb(
+            ctx, src=DEB_FILE_PATH, present=False, update_cache=True
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == f"deb {DEB_FILE_PATH} installed, will remove; apt update"
+    assert commands == [
+        AptRemoveCommand(packages=(DEB_FILE_NAME,)),
+        AptUpdateCommand(),
+    ]
+
+
+async def test_apt_deb_update_cache_remove_noop_yields_nothing():
+    """``present=False`` with the package not installed is a no-op, so the
+    refresh is not queued either."""
+    host = SimulatedHost(name="h", deb_files={DEB_FILE_PATH: DEB_FILE_INFO})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.deb(
+            ctx, src=DEB_FILE_PATH, present=False, update_cache=True
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == f"deb {DEB_FILE_PATH} is not installed"
+    assert commands == []
+
+
+async def test_apt_deb_update_cache_cannot_install_yields_nothing():
+    """The hinted missing-artifact report is not a change, so it plans no
+    install and no refresh -- the gate is the real delta, not the flag."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.deb(
+            ctx, src=DEB_FILE_PATH, package=DEB_FILE_NAME, update_cache=True
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == (
+        f"deb {DEB_FILE_NAME} not installed and staged file {DEB_FILE_PATH} absent, "
+        "cannot install"
+    )
+    assert commands == []
+
+
+async def test_apt_deb_update_cache_default_off_keeps_prior_behaviour():
+    """``update_cache`` defaults to False: a real install yields only the
+    three-pass sequence, exactly as before issue #54."""
+    host = SimulatedHost(name="h", deb_files={DEB_FILE_PATH: DEB_FILE_INFO})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.deb(ctx, src=DEB_FILE_PATH)]
+    assert commands == INSTALL_COMMANDS
+
+
+async def test_apt_deb_cache_valid_time_never_suppresses_a_forced_refresh():
+    """A fresh ``AptUpdateStamp`` must NOT gate the refresh a real install
+    forces: ``cache_valid_time`` is accepted for Ansible parity but inert."""
+    fresh = datetime.now(UTC).replace(tzinfo=None) - timedelta(seconds=30)
+    host = SimulatedHost(
+        name="h", deb_files={DEB_FILE_PATH: DEB_FILE_INFO}, apt_update_stamp=fresh
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.deb(
+            ctx, src=DEB_FILE_PATH, update_cache=True, cache_valid_time=3600
+        )
+    ]
+    assert commands == [*INSTALL_COMMANDS, AptUpdateCommand()]
+
+
+async def test_apt_deb_update_cache_end_to_end_then_noop():
+    """Through run(): the apply installs and then refreshes (``sudo apt-get
+    update`` last) and touches the stamp; a second run is a converged no-op that
+    queues neither -- the property the standalone ``apt.update`` workaround
+    could never provide."""
+
+    def deb_deploy(host):
+        yield op(
+            apt.deb,
+            name="Add the vendor repository",
+            src=DEB_FILE_PATH,
+            update_cache=True,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h", deb_files={DEB_FILE_PATH: DEB_FILE_INFO})
+
+    def factory(entry):
+        return host  # reuse ONE host so the second run sees the first's install
+
+    plans, report, _hosts = await run(
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
+        deb_deploy,
+        host_factory=factory,
+    )
+    assert plans["h"][0].changed
+    (entry,) = report.log
+    assert entry.changed
+    assert entry.commands == (*INSTALL_COMMANDS, AptUpdateCommand())
+    assert host.apt_packages == {DEB_FILE_NAME: [DEB_FILE_VERSION]}
+    assert host.apt_update_stamp is not None
+    log = format_log(report)
+    assert f"sudo {DPKG_INSTALL_SHELL}" in log
+    assert "sudo apt-get update" in log
+
+    plans2, report2, _hosts2 = await run(
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
+        deb_deploy,
+        host_factory=factory,
+    )
+    assert not plans2["h"][0].changed
+    (entry2,) = report2.log
+    assert not entry2.changed
+    assert entry2.commands == ()
+    assert entry2.reason == f"deb {DEB_FILE_PATH} is installed"
 
 
 # --- URL signed_by (issue #17, Ansible deb822_repository parity) ---------------
