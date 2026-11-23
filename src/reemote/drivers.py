@@ -31,11 +31,12 @@ whole prepare/apply path is therefore awaited end to end.
 import asyncio
 import inspect
 import shlex
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Generator, Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
-from .actions import _deploy_phase, _env_prefix
+from .actions import _aggregate_action_errors, _deploy_guard, _deploy_phase, _env_prefix
 from .commands import Command, TransferCommand, WaitCommand
 from .core import (
     DeployRequestError,
@@ -56,6 +57,15 @@ from .hosts import (
     HostConnectionError,
     PrivilegeError,
     validate_inventory,
+)
+from .stages import (
+    ActionRequest,
+    Barrier,
+    CheckpointRequest,
+    ControlRequest,
+    FactRequest,
+    RoleRecursionError,
+    StageItem,
 )
 
 
@@ -117,6 +127,11 @@ class LogEntry:
     # transport ran, so the log line matches the wire
     env: tuple[tuple[str, str], ...] = ()
     skipped: bool = False  # True when the request's ``when`` guard failed
+    # report path stamped by ``scoped()`` (design doc section 3.3). It never
+    # reaches a host and is read only by ``format_waves``/checkpoint slicing to
+    # group a line under its role, so it stays empty on the barrier-free
+    # ``run()`` path -- which never scopes an entry.
+    scope: tuple[str, ...] = ()
 
 
 @dataclass
@@ -126,6 +141,125 @@ class ApplyReport:
     @property
     def changed(self) -> bool:
         return any(entry.changed for entry in self.log)
+
+
+@dataclass
+class WaveRuntime:
+    """Per-host state for the wave loop: one generator, resumed many times.
+
+    Unlike ``HostRuntime`` (which the two-phase ``run()`` path drives), a
+    ``WaveRuntime`` holds no separate prepare/apply cursors: the loop pulls one
+    item, and if it is a request materializes and applies it in the same step
+    (design doc section 5.4), so there is no second pass to compare. ``pulled``
+    is the request waiting to be stepped this iteration; ``parked`` is the
+    barrier the generator yielded, held until every active host has parked and
+    the rendezvous runs them all.
+    """
+
+    host: Host
+    gen: Generator[StageItem, Any, Any]
+    started: bool = False  # next(gen) on the first pull, gen.send(value) after
+    pending: Any = None  # value to send into the generator on the next resume
+    parked: Barrier | None = None  # barrier item waiting at the rendezvous
+    pulled: OperationRequest | None = None  # request to plan/apply this step
+    done: bool = False  # the generator returned; the host leaves the loop
+    result: Any = None  # the generator's return value (a role's outputs)
+    counter: _RequestCounter = field(default_factory=_RequestCounter)
+
+
+@dataclass(frozen=True)
+class StageRecord:
+    """One line of the wave report: a request step, or a barrier.
+
+    A step record carries the ``PlannedOperation`` it computed and the
+    ``LogEntry`` it produced (``None`` in dry mode, which plans but never
+    applies); a barrier record carries the barrier and its ``outcome``. Both
+    kinds carry the ``wave`` number and the ``scope`` path so ``format_waves``
+    can group them and ``apply_report`` can slice a checkpoint's wave.
+
+    ``host`` is the host the record belongs to. It is redundant for a step that
+    applied (its ``LogEntry`` already names the host) but is the only host name
+    available for a dry plan line, where ``log`` is ``None`` -- so it is kept on
+    every record for a uniform render.
+
+    ``unknown`` marks a barrier dry mode parked on but never ran; it is a flag
+    rather than a sentinel ``outcome`` because a fact or control callable may
+    legitimately return ``None`` (design doc section 6.3).
+    """
+
+    wave: int
+    scope: tuple[str, ...]
+    host: str = ""
+    planned: PlannedOperation | None = None
+    log: LogEntry | None = None
+    barrier: Barrier | None = None
+    outcome: Any = None
+    unknown: bool = False
+
+
+@dataclass
+class WaveReport:
+    """Per-wave plan/log records plus the merged ``ApplyReport`` of every wave.
+
+    ``records`` is the flat execution log of the run (steps then barriers,
+    wave by wave); ``wave_ids`` lists the waves that actually recorded
+    something, so an empty role emits nothing (design doc section 5.7).
+    ``merged()`` folds every applied entry back into a plain ``ApplyReport`` --
+    the analogue of ``run()``'s report -- so ``changed_hosts`` and any existing
+    consumer work unchanged.
+    """
+
+    records: list[StageRecord] = field(default_factory=list)
+    wave_ids: list[int] = field(default_factory=list)
+
+    def close_wave(self, wave: int) -> None:
+        """Record ``wave`` as closed, but only if it produced any record."""
+        if any(record.wave == wave for record in self.records):
+            self.wave_ids.append(wave)
+
+    def mark_unknown(self, wave: int, runtimes: list["WaveRuntime"]) -> None:
+        """Record every barrier of ``wave`` as planned-but-not-executed.
+
+        Dry mode stops at the first rendezvous, so each parked barrier and
+        everything after it is unknowable (design doc section 6.3).
+        """
+        for rt in runtimes:
+            self.records.append(
+                StageRecord(
+                    wave=wave,
+                    scope=rt.parked.scope,
+                    host=rt.host.name,
+                    barrier=rt.parked,
+                    unknown=True,
+                )
+            )
+
+    def apply_report(self, wave: int, scope: tuple[str, ...]) -> ApplyReport:
+        """The applied entries of one wave, filtered to a ``scope`` prefix.
+
+        This is the checkpoint-facing slice: a ``CheckpointRequest`` sends it
+        back as its barrier result, so ``changed_hosts`` reads only the entries
+        the checkpoint's own role emitted (design doc sections 4.3, 7.3).
+        """
+        report = ApplyReport()
+        for record in self.records:
+            if record.wave != wave or record.log is None:
+                continue
+            if record.scope[: len(scope)] == scope:
+                report.log.append(record.log)
+        return report
+
+    def merged(self) -> ApplyReport:
+        """All applied entries, in wave order -- the analogue of run()'s report."""
+        report = ApplyReport()
+        for record in self.records:
+            if record.log is not None:
+                report.log.append(record.log)
+        return report
+
+    def tree(self) -> str:
+        """The scope/wave tree; a method alias for ``format_waves`` (section 7.2)."""
+        return format_waves(self)
 
 
 async def materialize(host: Host, cache: FactCache, request: OperationRequest):
@@ -803,19 +937,469 @@ async def run(
                 await aclose()
 
 
+async def run_waves(
+    inventory: list[dict],
+    deploy_func: Callable[[Host], Generator[StageItem, Any, Any]],
+    *,
+    host_factory: Callable[[dict], Host] = Host.from_inventory,
+    dry: bool = False,
+) -> tuple[WaveReport, list[Host]]:
+    """Plan and apply a barrier-aware deploy, one wave per prepare/apply cycle.
+
+    This is the resumable-deploy driver (design doc section 5). Each request is
+    materialized and applied in the same step, before the next is pulled, so a
+    wave needs no second invocation and no determinism comparison (section 6):
+    there is no plan/apply window in which the body could diverge. When every
+    active host has parked on a barrier (or finished), the parked barriers run
+    concurrently under one ``asyncio.gather`` -- the rendezvous *is* the fan-out
+    -- and each generator is resumed with its own sanitized result via
+    ``gen.send(value)``.
+
+    ``inventory`` and ``host_factory`` behave exactly as in ``run()``: the list
+    is validated up front and each entry is materialized into a ``Host``. The
+    driver owns those hosts and closes them once in its own ``finally``, so a
+    barrier or a role must never close a connection (section 12, rule 4).
+
+    ``dry=True`` is a one-wave preview: no barrier ever runs, and the first
+    parked barrier is recorded ``unknown`` and stops the loop, because a
+    barrier's outcome may depend on requests that were planned but never
+    applied (section 6.3).
+
+    Returns ``(report, hosts)`` so a caller can render ``report.tree()``, fold
+    ``report.merged()`` into the familiar ``ApplyReport``, and inspect the final
+    host state. A coroutine: steps send commands and barriers gather facts,
+    run actions and await control-side IO, all asynchronously.
+    """
+    validate_inventory(inventory)
+    hosts = [host_factory(entry) for entry in inventory]
+    report = WaveReport()
+    try:
+        runtimes = [WaveRuntime(h, deploy_func(h)) for h in hosts]
+        wave = 0
+
+        while runtimes:
+            # 1. Pull one item per free host. A host is free unless it is
+            #    parked on a barrier or has finished.
+            for rt in runtimes:
+                if rt.parked is None and not rt.done:
+                    _pull(rt)
+
+            # 2. Plan and apply this step's requests, one per host, in lockstep.
+            stepped = [rt for rt in runtimes if rt.pulled is not None]
+            if stepped:
+                outcomes = await asyncio.gather(
+                    *(_step(rt, dry) for rt in stepped), return_exceptions=True
+                )
+                _collect_steps(report, wave, stepped, outcomes)
+                for rt in stepped:
+                    rt.pulled = None
+
+            # 3. Rendezvous: every active host is parked or done. Close the
+            #    wave, then execute every parked barrier concurrently.
+            if all(rt.done or rt.parked is not None for rt in runtimes):
+                parked = [rt for rt in runtimes if rt.parked is not None]
+                if parked and dry:
+                    # A barrier's outcome may depend on requests that were
+                    # planned but never applied, so the preview stops here.
+                    report.mark_unknown(wave, parked)
+                    report.close_wave(wave)
+                    break
+                report.close_wave(wave)
+                if parked:
+                    outcomes = await asyncio.gather(
+                        *(_run_barrier(rt, report, wave) for rt in parked),
+                        return_exceptions=True,
+                    )
+                    # Resume from the sanitised values, never from the raw
+                    # outcomes: an aggregate error has already raised inside
+                    # _collect_barriers, so every value here is data and may be
+                    # sent into a generator.
+                    values = _collect_barriers(report, wave, parked, outcomes)
+                    for rt, value in zip(parked, values):
+                        rt.pending, rt.parked = value, None
+                    wave += 1
+
+            runtimes = [rt for rt in runtimes if not rt.done]
+    finally:
+        # The driver owns the hosts: run()'s finally, moved here.
+        for host in hosts:
+            aclose = getattr(host, "aclose", None)
+            if aclose is not None:
+                await aclose()
+    return report, hosts
+
+
+def _pull(rt: WaveRuntime) -> None:
+    """Resume one host's generator and classify the item it produced.
+
+    Synchronous: resuming a generator does no IO. All the IO of a wave is in
+    ``_step`` (the operations) and ``_run_barrier`` (the barriers), both of
+    which the loop awaits -- so a pull can never interleave with a transport.
+
+    The pull runs inside ``_stage_pull``, which installs both the request tally
+    and the in-deploy guard for the duration of the body's execution. A body
+    that runs out having built more items than it yielded raises the same
+    lost-request ``DeployRequestError`` the legacy phases raise; a body that
+    recurses without a base case (a role that yields from itself) raises
+    ``RoleRecursionError``.
+    """
+    with _stage_pull(rt.counter):
+        try:
+            if not rt.started:
+                item = next(rt.gen)
+                rt.started = True
+            else:
+                item = rt.gen.send(rt.pending)
+        except StopIteration as stop:
+            rt.done, rt.result, rt.pending = True, stop.value, None
+            # Same lost-item guard the legacy phases run when a body runs out:
+            # a request or barrier built with a constructor and never yielded.
+            if rt.counter.unyielded:
+                raise DeployRequestError(
+                    _unyielded_message(
+                        _lost_requests(rt.host.name, rt.counter.unyielded), "wave"
+                    )
+                )
+            return
+        except RecursionError as exc:  # a role that depends on itself
+            raise RoleRecursionError(
+                f"host {rt.host.name}: role composition recursed without a base "
+                "case; a role must not yield from itself (there is no "
+                "de-duplication)"
+            ) from exc
+
+    rt.pending = None
+    # One type check and one tally for both kinds of item.
+    _account_stage(item, rt.counter, rt.host.name)
+    if isinstance(item, OperationRequest):
+        rt.pulled = item
+    else:
+        # _account_stage has already rejected everything outside the union.
+        rt.parked = item
+
+
+def _account_stage(
+    item: Any, counter: _RequestCounter | None, host_name: str
+) -> None:
+    """Type-check one yielded item and charge it to the host's tally.
+
+    The wave counterpart of ``core._account_request`` (design doc section 5.8):
+    it accepts the widened union -- an ``OperationRequest`` or any
+    :data:`~reemote.stages.Barrier` -- and charges ``counter.yielded`` for
+    either, so ``counter.unyielded`` keeps meaning what it means today and a
+    body that builds a request (or a barrier) with a constructor and then drops
+    it is still caught when the generator runs out. ``counter`` is ``None`` for
+    a hand-assembled ``WaveRuntime``, which keeps the type check while leaving
+    the tally untracked -- exactly the compromise ``_account_request`` makes.
+
+    Anything outside the union is a contract error raised here, before the loop
+    can act on it: a role yields requests and barriers, nothing else.
+    """
+    if not isinstance(item, OperationRequest | Barrier):
+        raise DeployRequestError(
+            f"host {host_name}: the deploy body yielded {item!r}, a "
+            f"{type(item).__name__}; a role yields OperationRequests and "
+            "barriers (fact, act, checkpoint, control), nothing else"
+        )
+    if counter is not None:
+        counter.yielded += 1
+
+
+@contextmanager
+def _stage_pull(counter: _RequestCounter) -> Iterator[None]:
+    """Install the request tally AND the in-deploy guard around one pull.
+
+    The guard must be active while the body runs (so a direct ``gather_action``
+    call raises ``ActionInDeployError`` at the call site) and inactive while the
+    driver executes a barrier -- which is why it wraps the pull only, never
+    ``_step`` or ``_run_barrier`` (design doc section 5.3). ``_deploy_guard`` is
+    the same context manager ``_deploy_phase`` holds for the whole of a legacy
+    phase, so a direct ``gather_action`` call raises on the wave path exactly as
+    it does there.
+    """
+    with _tracked_requests(counter), _deploy_guard():
+        yield
+
+
+async def _step(
+    rt: WaveRuntime, dry: bool
+) -> tuple[PlannedOperation, LogEntry | None]:
+    """Materialize one host's pulled request once and apply it in the same step.
+
+    This function is the whole determinism story for the wave path: ``materialize``
+    is called once, its commands are sent in the same step, and there is no
+    second materialization to compare (design doc section 5.4). A fresh
+    ``FactCache`` per step -- exactly as ``run_apply`` does today -- lets an
+    operation that reads a fact see the effect of the requests already applied.
+
+    A request whose ``when`` guard fails returns a ``skipped`` plan and log
+    entry without materializing or sending anything, so it is logged, not
+    omitted, and never queues a handler. In ``dry`` mode the request is planned
+    but not applied, so the log entry is ``None``.
+    """
+    request = rt.pulled
+    guard = request.when_failure(rt.host)
+    if guard is not None:
+        # A skipped request is logged, not omitted: _apply_host_step returns a
+        # skipped LogEntry today and format_log renders it as [skipped: ...].
+        reason = f"when guard {guard.__name__}"
+        return (
+            PlannedOperation(
+                request=request,
+                changed=False,
+                reason=reason,
+                commands=(),
+                skipped=True,
+            ),
+            LogEntry(
+                host=rt.host.name,
+                name=request.name or request.func.__name__,
+                changed=False,
+                reason=reason,
+                skipped=True,
+                scope=request.scope,
+            ),
+        )
+
+    # A fresh cache per step, exactly as run_apply does today, so an operation
+    # that reads a fact sees the effect of the requests already applied.
+    cache = FactCache(rt.host, phase="wave")
+    ctx, commands = await materialize(rt.host, cache, request)
+    planned = PlannedOperation(
+        request=request,
+        changed=ctx.changed,
+        reason=ctx.reason,
+        commands=tuple(commands),
+    )
+    if dry:
+        return planned, None
+
+    # Resolve the tri-state escalation flags to concrete bools, and thread the
+    # request's normalized ``env`` pairs into both the transport and the log so
+    # the entry renders the very prefix that ran -- matching _apply_host_step.
+    sudo = request.sudo.elevates()
+    su = request.su.elevates()
+    doas = request.doas.elevates()
+    sent: list[Command] = []
+    if ctx.changed:
+        for cmd in commands:
+            await send_command(
+                rt.host, cmd, sudo=sudo, su=su, doas=doas, env=request.env
+            )
+            sent.append(cmd)
+    entry = LogEntry(
+        host=rt.host.name,
+        name=request.name or request.func.__name__,
+        changed=ctx.changed,
+        reason=ctx.reason,
+        commands=tuple(sent),
+        sudo=sudo,
+        sudo_user=_privilege_sudo_user(rt.host, sudo),
+        su=su,
+        su_user=_privilege_su_user(rt.host, su),
+        doas=doas,
+        doas_user=_privilege_doas_user(rt.host, doas),
+        env=request.env,
+        scope=request.scope,
+    )
+    return planned, entry
+
+
+async def _run_barrier(rt: WaveRuntime, report: WaveReport, wave: int) -> Any:
+    """Execute one parked host's barrier and return the value to send back.
+
+    No ``gather_fact``/``gather_action`` call appears here: the rendezvous *is*
+    the fan-out (design doc section 5.5). Each host calls its own fact or
+    action, all parked hosts run concurrently under one ``asyncio.gather``, and
+    the action's connection is **not** closed -- the driver owns hosts and
+    closes them once in ``run_waves``'s ``finally``. This is why the loop calls
+    ``action_cls.process(...)`` directly rather than ``_gather_action``, whose
+    ``finally`` closes every host it touched.
+
+    A checkpoint touches no host: its result is the just-closed wave's report,
+    already sliced to the checkpoint's scope, so ``changed_hosts`` only ever
+    reads ``.log``.
+    """
+    barrier = rt.parked
+    if isinstance(barrier, FactRequest):
+        return await barrier.fact_cls.process(rt.host, *barrier.args, **barrier.kwargs)
+    if isinstance(barrier, ActionRequest):
+        return await barrier.action_cls.process(
+            rt.host, *barrier.args, **barrier.kwargs
+        )
+    if isinstance(barrier, ControlRequest):
+        return await barrier.func(*barrier.args, **barrier.kwargs)
+    if isinstance(barrier, CheckpointRequest):
+        return report.apply_report(wave, barrier.scope)
+    raise TypeError(f"unknown barrier {barrier!r}")
+
+
+def _collect_steps(
+    report: WaveReport,
+    wave: int,
+    stepped: list[WaveRuntime],
+    outcomes: Iterable[Any],
+) -> None:
+    """Record one lockstep step: a plan line and a log line per host.
+
+    ``asyncio.gather`` returns in input order, so zipping ``stepped`` with
+    ``outcomes`` keeps the report host-ordered and gives each record its host
+    name (needed to render a dry plan line, whose ``log`` is ``None``).
+    ``PrivilegeError`` is aggregated across the step's hosts exactly as
+    ``run_apply`` does; anything else aborts at once, so a ``CommandError`` or a
+    bug still stops the run (design doc section 5.6).
+    """
+    privilege: list[PrivilegeError] = []
+    for rt, outcome in zip(stepped, outcomes):
+        if isinstance(outcome, BaseException):
+            if isinstance(outcome, PrivilegeError):
+                privilege.append(outcome)
+            else:
+                raise outcome
+            continue
+        planned, log = outcome
+        report.records.append(
+            StageRecord(
+                wave=wave,
+                scope=planned.request.scope,
+                host=rt.host.name,
+                planned=planned,
+                log=log,
+            )
+        )
+    if privilege:
+        raise PrivilegeError.aggregate(privilege)
+
+
+def _collect_barriers(
+    report: WaveReport,
+    wave: int,
+    parked: list[WaveRuntime],
+    outcomes: Iterable[Any],
+) -> list[Any]:
+    """Record each barrier's outcome and return the values to resume with.
+
+    Barrier failures are aggregated across hosts by ``_aggregate_action_errors``
+    -- the very helper ``gather_action``'s fan-out uses -- so the rendezvous
+    reports ``HostConnectionError`` then ``ConnectionTimeoutError`` then
+    ``PrivilegeError`` with identical precedence and re-raises anything else at
+    once (design doc sections 5.6, 11.4). A non-zero **action** exit is data,
+    not an exception, because ``Shell.process`` returns a ``Result``.
+
+    Records are appended for every plain-value outcome first, then the errors
+    are aggregated: on a raise the whole ``run_waves`` call unwinds and the
+    report is discarded, so appending before the raise is not observable. Once
+    ``_aggregate_action_errors`` returns, every outcome is a plain value and may
+    be sent into the generators.
+    """
+    outcome_list = list(outcomes)
+    for rt, outcome in zip(parked, outcome_list):
+        if not isinstance(outcome, BaseException):
+            report.records.append(
+                StageRecord(
+                    wave=wave,
+                    scope=rt.parked.scope,
+                    host=rt.host.name,
+                    barrier=rt.parked,
+                    outcome=outcome,
+                )
+            )
+    _aggregate_action_errors(outcome_list)
+    return outcome_list
+
+
+def format_waves(report: WaveReport) -> str:
+    """Group records by scope path, then by wave, then delegate per line.
+
+    Each ``PlannedOperation`` renders through ``format_plan`` and each
+    ``LogEntry`` through ``format_log``, so a request line is byte-identical to
+    what the example prints today; only the indentation and the wave/barrier
+    headings are new (design doc section 7.2). A barrier is printed inside the
+    wave it closed, after that wave's request lines.
+
+    Scope groups and waves are emitted in first-appearance order, so a composed
+    program reads as one contiguous block per role, each in wave order, without
+    sorting the global wave counter.
+    """
+    lines: list[str] = []
+    scopes: list[tuple[str, ...]] = []
+    for record in report.records:
+        if record.scope not in scopes:
+            scopes.append(record.scope)
+    for scope in scopes:
+        lines.append("/".join(scope) if scope else "(root)")
+        scoped = [record for record in report.records if record.scope == scope]
+        waves: list[int] = []
+        for record in scoped:
+            if record.wave not in waves:
+                waves.append(record.wave)
+        for wave in waves:
+            lines.append(f"  wave {wave}")
+            for record in scoped:
+                if record.wave == wave:
+                    lines.extend(_format_stage_record(record))
+    return "\n".join(lines)
+
+
+def _format_stage_record(record: StageRecord) -> list[str]:
+    """Render one record as tree lines indented four spaces under its wave."""
+    if record.barrier is not None:
+        label = _barrier_label(record.barrier)
+        return [f"    barrier: {label} \u2192 {_barrier_outcome(record)}"]
+    if record.log is not None:
+        block = format_log(ApplyReport(log=[record.log]))
+    elif record.planned is not None:
+        block = format_plan({record.host: [record.planned]})
+    else:
+        return []
+    return [f"    {line}" for line in block.splitlines()]
+
+
+def _barrier_label(barrier: Barrier) -> str:
+    """The report label for a barrier: its ``name``, else a type-derived one."""
+    if barrier.name:
+        return barrier.name
+    if isinstance(barrier, FactRequest):
+        return barrier.fact_cls.__name__
+    if isinstance(barrier, ActionRequest):
+        return barrier.action_cls.__name__
+    if isinstance(barrier, ControlRequest):
+        return getattr(barrier.func, "__name__", "control")
+    if isinstance(barrier, CheckpointRequest):
+        return "checkpoint"
+    return type(barrier).__name__
+
+
+def _barrier_outcome(record: StageRecord) -> str:
+    """The right-hand side of a barrier line: its result, or a dry-mode note."""
+    if record.unknown:
+        return "unknown until run"
+    outcome = record.outcome
+    if isinstance(record.barrier, CheckpointRequest) and isinstance(
+        outcome, ApplyReport
+    ):
+        notified = len({entry.host for entry in outcome.log if entry.changed})
+        return f"{notified} host{'s' if notified != 1 else ''} notified"
+    return outcome if isinstance(outcome, str) else repr(outcome)
+
+
 __all__ = [
     "ApplyReport",
     "DeployRequestError",
     "DeterminismError",
     "LogEntry",
     "PlannedOperation",
+    "StageRecord",
+    "WaveReport",
     "command_shell",
     "format_log",
     "format_plan",
+    "format_waves",
     "gather_fact",
     "materialize",
     "run",
     "run_apply",
     "run_prepare",
+    "run_waves",
     "send_command",
 ]

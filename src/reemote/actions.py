@@ -69,7 +69,7 @@
 
 import asyncio
 import shlex
-from collections.abc import Coroutine, Iterable, Mapping
+from collections.abc import Coroutine, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
@@ -77,15 +77,21 @@ from typing import Any, TypedDict
 
 from .hosts import Host, HostConnectionError, PrivilegeError
 
-# Set only by the drivers (via ``_deploy_phase``) while a deploy is being
+# Set only by the drivers (via ``_deploy_guard``) while a deploy is being
 # prepared or applied. A ContextVar so the flag propagates into the per-host
 # tasks ``asyncio.gather`` spawns, and resets cleanly even when a phase raises.
 _deploy_active: ContextVar[bool] = ContextVar("reemote_deploy_active", default=False)
 
 
 @contextmanager
-def _in_deploy():
-    """Mark the enclosed execution as inside a deploy (drivers only)."""
+def _deploy_guard() -> Iterator[None]:
+    """Mark the enclosed execution as inside a deploy (drivers only).
+
+    The one toggle behind ``ActionInDeployError``: ``_deploy_phase`` holds it
+    for a whole legacy phase, and the wave driver's ``_stage_pull`` holds it
+    around a single generator pull (design doc section 5.3). Both drive paths
+    share this one context manager so the guard cannot drift between them.
+    """
     token = _deploy_active.set(True)
     try:
         yield
@@ -104,7 +110,7 @@ def _deploy_phase(func):
 
     @wraps(func)
     async def wrapper(*args, **kwargs):
-        with _in_deploy():
+        with _deploy_guard():
             return await func(*args, **kwargs)
 
     return wrapper
@@ -608,6 +614,41 @@ def gather_action(
     return _gather_action(hosts, action_cls, *args, group=group, tags=tags, **kwargs)
 
 
+def _aggregate_action_errors(results: Iterable[Any]) -> None:
+    """Raise the aggregated per-host error a concurrent fan-out produced, if any.
+
+    Scans the ``return_exceptions=True`` results of an action or barrier
+    fan-out and merges the three library-level failures across hosts --
+    ``HostConnectionError`` then ``ConnectionTimeoutError`` then
+    ``PrivilegeError``, in that precedence -- raising one aggregate per class
+    that names every affected host. Any other exception is a genuine error and
+    is re-raised unchanged at once. Returns silently when every result is a
+    plain value, so the caller may then treat its results as data.
+
+    Shared by ``_gather_action`` (the control-side fan-out) and the wave
+    driver's ``_collect_barriers`` (the rendezvous fan-out) so both aggregate
+    identically and cannot drift (design doc sections 5.6, 11.4).
+    """
+    connection_errors: list[HostConnectionError] = []
+    timeout_errors: list[ConnectionTimeoutError] = []
+    privilege_errors: list[PrivilegeError] = []
+    for result in results:
+        if isinstance(result, HostConnectionError):
+            connection_errors.append(result)
+        elif isinstance(result, ConnectionTimeoutError):
+            timeout_errors.append(result)
+        elif isinstance(result, PrivilegeError):
+            privilege_errors.append(result)
+        elif isinstance(result, BaseException):
+            raise result
+    if connection_errors:
+        raise HostConnectionError.aggregate(connection_errors)
+    if timeout_errors:
+        raise ConnectionTimeoutError.aggregate(timeout_errors)
+    if privilege_errors:
+        raise PrivilegeError.aggregate(privilege_errors)
+
+
 async def _gather_action(
     hosts: Iterable[Host],
     action_cls: type,
@@ -630,24 +671,7 @@ async def _gather_action(
             aclose = getattr(host, "aclose", None)
             if aclose is not None:
                 await aclose()
-    connection_errors: list[HostConnectionError] = []
-    timeout_errors: list[ConnectionTimeoutError] = []
-    privilege_errors: list[PrivilegeError] = []
-    for result in results:
-        if isinstance(result, HostConnectionError):
-            connection_errors.append(result)
-        elif isinstance(result, ConnectionTimeoutError):
-            timeout_errors.append(result)
-        elif isinstance(result, PrivilegeError):
-            privilege_errors.append(result)
-        elif isinstance(result, BaseException):
-            raise result
-    if connection_errors:
-        raise HostConnectionError.aggregate(connection_errors)
-    if timeout_errors:
-        raise ConnectionTimeoutError.aggregate(timeout_errors)
-    if privilege_errors:
-        raise PrivilegeError.aggregate(privilege_errors)
+    _aggregate_action_errors(results)
     return {host.name: value for host, value in zip(host_list, results)}
 
 

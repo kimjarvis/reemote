@@ -13,10 +13,13 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .commands import Command
 from .hosts import Host
+
+if TYPE_CHECKING:
+    from .stages import StageItem
 
 # A ``when`` guard predicate: reads the host (static inventory data -- name,
 # group, tags, ...) and answers "is this host eligible for the request?".
@@ -258,6 +261,15 @@ class OperationRequest:
     ``WaitCommand`` polls a fact -- and unlike a privilege flag it is not
     tri-state: unset means "add no prefix", and a ``sub_deploy`` wrapper
     leaves it untouched.
+
+    ``scope`` is the report path a surrounding ``scoped()`` stamped on the
+    request (design doc section 3.3): a tuple of role names, outermost first,
+    empty for an unscoped request. It is metadata for the report and the
+    handler keys only -- never part of what executes -- so it is excluded from
+    ``_effective_key`` (two identically operating requests dedupe regardless of
+    scope) but included in ``__hash__`` and equality, since it is part of the
+    request value. A legacy ``run()`` program never sets it, so both of its
+    phases see ``()`` and the determinism guard is unaffected.
     """
 
     func: Callable  # operation function, e.g. dnf.packages
@@ -270,6 +282,7 @@ class OperationRequest:
     # meta-parameter: environment of the command that runs
     env: Mapping[str, str] | Iterable[tuple[str, str]] | None = None
     when: WhenPredicate | tuple[WhenPredicate, ...] | None = None  # eligibility guard(s)
+    scope: tuple[str, ...] = ()  # report path stamped by scoped(), e.g. ("web", "apache")
 
     def __post_init__(self):
         # A dict inside a frozen dataclass is otherwise mutable from outside.
@@ -293,6 +306,9 @@ class OperationRequest:
         # stored value is hashable and the rendered prefix is order-stable
         # (see ``_coerce_env``); a non-string name or value is rejected here.
         object.__setattr__(self, "env", _coerce_env(self.env))
+        # Normalize the report path to a tuple so the stored value is hashable
+        # and ``scoped``'s ``(label,) + request.scope`` always sees a tuple.
+        object.__setattr__(self, "scope", tuple(self.scope))
         # Fail fast on an unhashable argument: deduplication hashes every value,
         # and a deploy is the only place left where the call site is identifiable
         # (see ``UnhashableArgumentError``).
@@ -313,6 +329,7 @@ class OperationRequest:
                 self.doas,
                 self.env,
                 self.when,
+                self.scope,
             )
         )
 
@@ -453,6 +470,21 @@ def _tracked_requests(counter: _RequestCounter) -> Iterator[_RequestCounter]:
         _REQUEST_COUNTER.reset(token)
 
 
+def _charge_built() -> None:
+    """Charge one built stage item to the deploy invocation's counter, if any.
+
+    Extracted from ``op()`` so the barrier constructors in ``stages.py`` share
+    the exact increment: an operation request and a barrier are both "built"
+    the moment their constructor returns, and both are tallied against the
+    deploy invocation building them, so a built-but-unyielded item is caught
+    the same way whichever kind it is. Outside a tracked deploy -- a
+    module-level constant, a test -- there is no counter and this is a no-op.
+    """
+    counter = _current_counter()
+    if counter is not None:
+        counter.built += 1
+
+
 def _account_request(
     item: Any, counter: "_RequestCounter | None", host_name: str, phase: str
 ) -> "OperationRequest":
@@ -472,7 +504,8 @@ def _account_request(
             f"a {type(item).__name__}, not an OperationRequest; yield the "
             "requests op() builds (yield op(dnf.packages, ...)) and never call "
             "an operation from a deploy body, which needs the OpContext only "
-            "the driver holds"
+            "the driver holds -- a barrier (fact/act/checkpoint/control) needs "
+            "run_waves(), not run()"
         )
     if counter is not None:
         counter.yielded += 1
@@ -595,14 +628,33 @@ def op(
     )
     # Charged only after construction succeeds: a request the body failed to
     # build never entered the sequence either, so the two sides stay balanced.
-    counter = _current_counter()
-    if counter is not None:
-        counter.built += 1
+    _charge_built()
     return request
 
 
+def _require_request(item: Any, wrapper: str, host_name: str) -> OperationRequest:
+    """Return ``item`` if it is an ``OperationRequest``, else reject it.
+
+    ``compose`` and ``sub_deploy`` sequence operation requests; neither has a
+    driver to execute a barrier, so a ``fact``/``act``/``checkpoint``/
+    ``control`` reaching one is a structural error and raises
+    ``DeployRequestError`` (design doc section 3.2) -- not the ``AttributeError``
+    its missing ``name``/``sudo``/``func`` attributes would otherwise cause deep
+    in the transform. The two stay correct when composed *inside* a role
+    generator, where ``yield from`` pulls only requests through them, so the
+    only way to trip this is to hand a barrier-yielding deploy to them directly.
+    """
+    if isinstance(item, OperationRequest):
+        return item
+    raise DeployRequestError(
+        f"host {host_name}: {wrapper}() received a {type(item).__name__}; "
+        "compose and sub_deploy sequence OperationRequests only -- compose "
+        "roles with `yield from` in a role generator, where barriers are legal"
+    )
+
+
 def sub_deploy(
-    sub: Callable[[Host], Iterable[OperationRequest]],
+    sub: Callable[[Host], Iterable["StageItem"]],
     *,
     name_prefix: str = "",
     sudo: Privilege | bool = Privilege.UNSET,
@@ -650,6 +702,11 @@ def sub_deploy(
     (``dataclasses.replace`` produces the modified copies): it keeps no
     state between calls and reads nothing but each request, so the prepare
     and apply phases flatten it identically and the determinism guard holds.
+
+    A barrier is rejected, not transformed: ``sub_deploy`` has no driver to
+    execute a ``fact``/``act``/``checkpoint``/``control``, so one reaching it
+    raises ``DeployRequestError`` (see ``_require_request``). Compose roles
+    with ``yield from`` inside a role generator, where barriers are legal.
     """
     sudo_policy = Privilege.coerce(sudo)
     su_policy = Privilege.coerce(su)
@@ -658,6 +715,7 @@ def sub_deploy(
 
     def wrapper(host: Host) -> Generator[OperationRequest]:
         for request in sub(host):
+            request = _require_request(request, "sub_deploy", host.name)
             changes: dict[str, Any] = {}
             if name_prefix:
                 base = request.name or request.func.__name__
@@ -712,7 +770,7 @@ def _effective_key(request: OperationRequest) -> tuple:
 
 
 def compose(
-    *subs: Callable[[Host], Iterable[OperationRequest]],
+    *subs: Callable[[Host], Iterable["StageItem"]],
     dedupe: bool = False,
 ) -> Callable[[Host], Generator[OperationRequest]]:
     """Concatenate sub-deploys into one deploy-shaped callable, in order.
@@ -745,12 +803,19 @@ def compose(
     built-versus-yielded counter as ``dropped``, because it was built on purpose
     and collapsed on purpose -- without it the driver's ``DeployRequestError``
     check would read a dedupe as a lost request.
+
+    A barrier is rejected, not concatenated: like ``sub_deploy``, ``compose``
+    sequences ``OperationRequest`` objects only, so a ``fact``/``act``/
+    ``checkpoint``/``control`` reaching it raises ``DeployRequestError`` (see
+    ``_require_request``). Compose roles with ``yield from`` inside a role
+    generator, where barriers are legal.
     """
 
     def deploy(host: Host) -> Generator[OperationRequest]:
         seen: set[tuple] = set()
         for sub in subs:
             for request in sub(host):
+                request = _require_request(request, "compose", host.name)
                 if dedupe:
                     key = _effective_key(request)
                     if key in seen:
