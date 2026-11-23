@@ -230,6 +230,8 @@ from reemote.modules.server.server import (
     SshKeyPairGenerateCommand,
     SystemdServiceEnabled,
     SystemdServiceState,
+    TcpEndpoint,
+    TcpEndpointInfo,
     Timezone,
     Uptime,
     User,
@@ -258,6 +260,7 @@ from reemote.modules.server.server import (
     _security_limit_spool_path,
     is_active,
     is_listening,
+    is_reachable,
 )
 from tests.simulated_host import SimulatedHost
 
@@ -10207,5 +10210,410 @@ async def test_wait_url_runs_end_to_end_across_hosts():
     assert (
         f"$ wait for HttpEndpoint({URL!r}) <EndpointReady> every 2.0s up to 60.0s"
         in log
+    )
+
+
+# --- TcpEndpoint fact --------------------------------------------------------
+
+# The address and port a multi-machine role names -- the LAN address of a peer
+# node and the service port on it (the geerlingguy.elasticsearch shape).
+PEER = "10.0.0.5"
+PEER_PORT = 9200
+
+
+class CannedProbeHost(CannedShellHost):
+    """A CannedShellHost that also answers the ``bash``/``nc`` availability probes.
+
+    ``TcpEndpoint.process`` picks its probe tool through the ``Which`` fact, so
+    the canned host has to answer each ``command -v`` with the path the tool
+    really has (empty for an absent one) and every other shell with the fixed
+    answer line the probe prints.
+    """
+
+    def __init__(self, answer: str, *, bash: str = "/bin/bash", nc: str = "/bin/nc"):
+        super().__init__(answer)
+        self._paths = {"bash": bash, "nc": nc}
+
+    async def run_shell(self, shell: str, *, check: bool = False) -> str:
+        for name, path in self._paths.items():
+            if shell == Which.command(name):
+                self.shells.append(shell)
+                return path
+        return await super().run_shell(shell)
+
+
+class FlippingTcpHost(Host):
+    """A host whose probe answer turns ``open`` after ``flip_after`` polls.
+
+    Drives the real poll loop without a transport: the host carries no
+    ``tcp_endpoints`` seam, so ``TcpEndpoint.process`` picks its tool through
+    ``Which`` and runs the probe shell. Only the probe reads are counted -- the
+    tool choice happens once, before the loop, and is not a poll.
+    """
+
+    def __init__(self, flip_after: int, *, tool: str = "bash"):
+        super().__init__(name="flipping")
+        self.flip_after = flip_after
+        self.tool = tool
+        self.reads = 0
+
+    async def run_shell(self, shell: str, *, check: bool = False) -> str:
+        for name in ("bash", "nc"):
+            if shell == Which.command(name):
+                return f"/bin/{name}" if name == self.tool else ""
+        self.reads += 1
+        return "open\n" if self.reads >= self.flip_after else "closed\n"
+
+
+def test_tcp_endpoint_command_quotes_the_redirection():
+    # The whole ``</dev/tcp/...`` redirection is one ``bash -c`` argument: as a
+    # bare word it would be the script filename bash tries to execute, and the
+    # probe would answer ``closed`` forever.
+    assert TcpEndpoint.command(PEER, PEER_PORT) == (
+        "bash -c '</dev/tcp/10.0.0.5/9200' >/dev/null 2>&1 "
+        "&& echo open || echo closed"
+    )
+
+
+def test_tcp_endpoint_nc_command_takes_the_address_as_an_argument():
+    assert TcpEndpoint.command(PEER, PEER_PORT, tool="nc") == (
+        "nc -z 10.0.0.5 9200 >/dev/null 2>&1 && echo open || echo closed"
+    )
+
+
+def test_tcp_endpoint_command_accepts_a_hostname_and_an_ipv6_literal():
+    # The values an Ansible ``wait_for`` ``host`` takes, not just IPv4 dots.
+    assert TcpEndpoint.command("peer.internal", 80).startswith("bash -c ")
+    assert "fe80::1" in TcpEndpoint.command("fe80::1", 80)
+
+
+def test_tcp_endpoint_parse_reads_the_answer_line():
+    assert TcpEndpoint.parse("open\n") == TcpEndpointInfo(reachable=True)
+    assert TcpEndpoint.parse("closed\n") == TcpEndpointInfo(reachable=False)
+    # No answer line at all -- the probe never ran -- is not reachable either.
+    assert TcpEndpoint.parse("") == TcpEndpointInfo(reachable=False)
+    # Only the first non-blank line is the answer; a tool that chatters first
+    # still gets its verdict read, and anything but ``open`` is not reachable.
+    assert TcpEndpoint.parse("\n  open\n") == TcpEndpointInfo(reachable=True)
+    assert TcpEndpoint.parse("nc: connect failed\n") == TcpEndpointInfo(
+        reachable=False
+    )
+
+
+def test_tcp_endpoint_rejects_a_bad_address_or_port():
+    # The address reaches the probe twice over -- inside the quoted ``bash -c``
+    # payload and as an ``nc`` argument -- so anything that is not a hostname or
+    # IP literal, and anything a shell could read as an option, is refused.
+    for bad in ("", "10.0.0.5; id", "$(id)", "/etc/passwd", "-z", "peer node"):
+        with pytest.raises(ValueError, match="hostname or IP address"):
+            TcpEndpoint.command(bad, PEER_PORT)
+    with pytest.raises(TypeError, match="host must be a str"):
+        TcpEndpoint.command(PEER_PORT, PEER_PORT)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="port must be between"):
+        TcpEndpoint.command(PEER, 0)
+    with pytest.raises(TypeError, match="port must be an int"):
+        TcpEndpoint.command(PEER, "9200")  # type: ignore[arg-type]
+
+
+async def test_tcp_endpoint_rejects_a_bad_address_on_both_transports():
+    for bad in ("", "10.0.0.5; id", "/etc/passwd"):
+        with pytest.raises(ValueError, match="hostname or IP address"):
+            await TcpEndpoint.process(CannedProbeHost("open"), bad, PEER_PORT)
+        with pytest.raises(ValueError, match="hostname or IP address"):
+            await TcpEndpoint.process(SimulatedHost(name="h"), bad, PEER_PORT)
+
+
+async def test_tcp_endpoint_prefers_the_bash_redirection():
+    host = CannedProbeHost("open\n")
+    assert await TcpEndpoint.process(host, PEER, PEER_PORT) == TcpEndpointInfo(
+        reachable=True
+    )
+    # One tool probe, then the probe itself: bash needs no extra package, so
+    # where it exists nothing else is looked up.
+    assert host.shells == [Which.command("bash"), TcpEndpoint.command(PEER, PEER_PORT)]
+
+
+async def test_tcp_endpoint_falls_back_to_nc_without_bash():
+    host = CannedProbeHost("closed\n", bash="", nc="/bin/nc")
+    assert await TcpEndpoint.process(host, PEER, PEER_PORT) == TcpEndpointInfo(
+        reachable=False
+    )
+    assert host.shells == [
+        Which.command("bash"),
+        Which.command("nc"),
+        TcpEndpoint.command(PEER, PEER_PORT, tool="nc"),
+    ]
+
+
+async def test_tcp_endpoint_reports_a_host_with_neither_tool():
+    # The ``&& echo open || echo closed`` chain that turns the connect's exit
+    # status into the answer line also swallows the shell's 127, so the absence
+    # is checked here instead of reading as an endpoint that never opens.
+    host = CannedProbeHost("closed\n", bash="", nc="")
+    with pytest.raises(CommandNotFoundError, match="neither bash nor nc"):
+        await TcpEndpoint.process(host, PEER, PEER_PORT)
+    assert host.shells == [Which.command("bash"), Which.command("nc")]
+
+
+async def test_tcp_endpoint_reads_the_simulated_seam():
+    record = TcpEndpointInfo(reachable=True)
+    host = SimulatedHost(name="h", tcp_endpoints={(PEER, PEER_PORT): record})
+    assert await TcpEndpoint.process(host, PEER, PEER_PORT) == record
+    # An unlisted endpoint reads as "not reachable", like a refused connect.
+    assert await TcpEndpoint.process(host, PEER, 443) == TcpEndpointInfo(
+        reachable=False
+    )
+
+
+async def test_tcp_endpoint_seam_returns_a_copy():
+    host = SimulatedHost(
+        name="h", tcp_endpoints={(PEER, PEER_PORT): TcpEndpointInfo(reachable=True)}
+    )
+    info = await TcpEndpoint.process(host, PEER, PEER_PORT)
+    info["reachable"] = False
+    assert host.tcp_endpoints[(PEER, PEER_PORT)] == TcpEndpointInfo(reachable=True)
+
+
+# --- is_reachable predicate --------------------------------------------------
+
+
+def test_is_reachable_reads_only_the_record():
+    assert is_reachable(TcpEndpointInfo(reachable=True))
+    assert not is_reachable(TcpEndpointInfo(reachable=False))
+
+
+def test_is_reachable_names_itself_for_the_wait_rendering():
+    # ``WaitForFactCommand.__str__`` prefers a predicate's ``__name__``, which is
+    # why the wait predicates are module-level functions rather than objects.
+    assert is_reachable.__name__ == "is_reachable"
+
+
+# --- server.wait(host=...) ---------------------------------------------------
+
+
+def host_wait_cmd(timeout: float = 0.0, interval: float = 0.0) -> WaitForFactCommand:
+    return WaitForFactCommand(
+        fact_cls=TcpEndpoint,
+        args=(PEER, PEER_PORT),
+        predicate=is_reachable,
+        timeout=timeout,
+        interval=interval,
+    )
+
+
+async def test_wait_with_host_polls_the_tcp_endpoint():
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(
+        host,
+        op(server.wait, port=PEER_PORT, host=PEER, timeout=60.0, interval=2.0),
+    )
+    assert ctx.changed
+    assert (
+        ctx.reason == f"wait for tcp endpoint {PEER}:{PEER_PORT} to accept connections"
+    )
+    assert commands == [host_wait_cmd(timeout=60.0, interval=2.0)]
+
+
+async def test_wait_without_host_still_polls_the_port():
+    # The documented default is untouched by the new option: same fact, same
+    # predicate, same reason, so every existing plan renders exactly as before.
+    host = SimulatedHost(name="h")
+    ctx, commands = await materialize(host, op(server.wait, port=PEER_PORT))
+    (cmd,) = commands
+    assert cmd.fact_cls is Port
+    assert cmd.args == (PEER_PORT, "tcp")
+    assert cmd.predicate is is_listening
+    assert ctx.reason == f"wait for tcp port {PEER_PORT} to be listening"
+
+
+async def test_wait_for_localhost_still_polls_the_port():
+    # The role's own default address is the target's loopback, and its socket
+    # table answers that more cheaply than a connect out to it.
+    for value in (None, "localhost"):
+        host = SimulatedHost(name="h")
+        ctx, commands = await materialize(
+            host, op(server.wait, port=PEER_PORT, host=value)
+        )
+        (cmd,) = commands
+        assert cmd.fact_cls is Port
+        assert ctx.reason == f"wait for tcp port {PEER_PORT} to be listening"
+
+
+async def test_wait_for_a_loopback_address_polls_the_endpoint():
+    # Only the ``localhost`` *name* is special-cased: an explicit loopback
+    # literal is a real connect, which is what asks whether the address accepts
+    # connections rather than whether something holds the port.
+    host = SimulatedHost(name="h")
+    _ctx, commands = await materialize(
+        host, op(server.wait, port=PEER_PORT, host="127.0.0.1")
+    )
+    (cmd,) = commands
+    assert cmd.fact_cls is TcpEndpoint
+    assert cmd.args == ("127.0.0.1", PEER_PORT)
+
+
+def test_wait_with_host_renders_the_fact_and_predicate():
+    assert command_shell(host_wait_cmd(timeout=300.0, interval=1.0)) == (
+        f"wait for TcpEndpoint({PEER!r}, {PEER_PORT}) <is_reachable> "
+        "every 1.0s up to 300.0s"
+    )
+
+
+def test_host_wait_descriptor_is_hashable_and_value_equal():
+    assert host_wait_cmd() == host_wait_cmd()
+    assert hash(host_wait_cmd()) == hash(host_wait_cmd())
+
+
+async def test_wait_with_host_pins_the_protocol_to_tcp():
+    # The probe is a TCP connect, so the socket table's family switch has no
+    # meaning for it and a UDP "connect" would prove nothing -- refused at plan
+    # time rather than silently ignored.
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="test"))
+    with pytest.raises(ValueError, match="must be 'tcp'"):
+        async for _ in server.wait(ctx, port=PEER_PORT, protocol="udp", host=PEER):
+            pass
+
+
+async def test_wait_with_host_rejects_a_bad_address_at_plan_time():
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="test"))
+    with pytest.raises(ValueError, match="hostname or IP address"):
+        async for _ in server.wait(ctx, port=PEER_PORT, host="10.0.0.5; id"):
+            pass
+    with pytest.raises(TypeError, match="host must be a str"):
+        async for _ in server.wait(ctx, port=PEER_PORT, host=PEER_PORT):
+            pass
+
+
+async def test_wait_with_host_polls_until_the_endpoint_answers():
+    host = FlippingTcpHost(flip_after=3)
+    assert (
+        await host_wait_cmd(timeout=60.0).wait(host) == "condition met after 3 poll(s)"
+    )
+    assert host.reads == 3
+
+
+async def test_wait_with_host_times_out_with_the_last_record():
+    host = CannedProbeHost("closed\n")  # refused forever
+    with pytest.raises(
+        WaitTimeoutError, match=r"not met within 0.0s.*'reachable': False"
+    ):
+        await host_wait_cmd().wait(host)
+
+
+async def test_simulated_host_evaluates_a_tcp_endpoint_wait_once():
+    met = SimulatedHost(
+        name="h", tcp_endpoints={(PEER, PEER_PORT): TcpEndpointInfo(reachable=True)}
+    )
+    await send_command(met, host_wait_cmd(timeout=60.0))
+
+    closed = SimulatedHost(
+        name="h", tcp_endpoints={(PEER, 443): TcpEndpointInfo(reachable=True)}
+    )
+    with pytest.raises(WaitTimeoutError, match="'reachable': False"):
+        await send_command(closed, host_wait_cmd(timeout=60.0))
+
+
+def wait_host_deploy(host: Host) -> Generator[OperationRequest]:
+    """The example deploy: wait for an endpoint on another machine."""
+    yield op(
+        server.wait,
+        name="Wait for the peer node",
+        port=PEER_PORT,
+        host=PEER,
+        timeout=30.0,
+        interval=1.0,
+    )
+
+
+def peer_open_factory(entry: dict) -> Host:
+    """``host_factory`` building SimulatedHosts that can reach the peer."""
+    host = SimulatedHost.from_inventory(entry)
+    host.tcp_endpoints = {(PEER, PEER_PORT): TcpEndpointInfo(reachable=True)}
+    return host
+
+
+def peer_closed_factory(entry: dict) -> Host:
+    """``host_factory`` building SimulatedHosts that cannot reach the peer."""
+    host = SimulatedHost.from_inventory(entry)
+    host.tcp_endpoints = {}  # fresh dict per host
+    return host
+
+
+async def test_wait_with_host_runs_end_to_end_across_hosts():
+    plans, report, _hosts = await run(
+        INVENTORY, wait_host_deploy, host_factory=peer_open_factory
+    )
+    reason = f"wait for tcp endpoint {PEER}:{PEER_PORT} to accept connections"
+    label = "Wait for the peer node"
+    assert format_plan(plans).splitlines() == [
+        f"web1: {label:<24} [changed: {reason}]",
+        f"web2: {label:<24} [changed: {reason}]",
+    ]
+    assert report is not None
+    log = format_log(report)
+    assert (
+        f"$ wait for TcpEndpoint({PEER!r}, {PEER_PORT}) <is_reachable> "
+        "every 1.0s up to 30.0s" in log
+    )
+
+
+async def test_wait_with_host_is_deterministic_across_phases():
+    # The endpoint address is an argument, not a fact read, so the apply-phase
+    # request sequence matches the plan and the determinism guard stays quiet.
+    hosts = [
+        SimulatedHost(
+            name="h", tcp_endpoints={(PEER, PEER_PORT): TcpEndpointInfo(reachable=True)}
+        )
+    ]
+    runtimes, plans = await run_prepare(hosts, wait_host_deploy)
+    assert [p.changed for p in plans["h"]] == [True]
+    report = await run_apply(runtimes, plans=plans)
+    assert [e.changed for e in report.log] == [True]
+
+
+async def test_wait_with_host_dry_run_sends_nothing():
+    # These hosts cannot reach the peer, so a clean dry run proves the plan
+    # never runs a probe -- a real run below aborts on it.
+    _plans, report, hosts = await run(
+        INVENTORY, wait_host_deploy, host_factory=peer_closed_factory, dry=True
+    )
+    assert report is None
+    for host in hosts:
+        assert host.tcp_endpoints == {}
+
+
+async def test_wait_with_host_times_out_and_aborts_the_run():
+    with pytest.raises(WaitTimeoutError, match=r"host web1: .*'reachable': False"):
+        await run(INVENTORY, wait_host_deploy, host_factory=peer_closed_factory)
+
+
+async def test_wait_can_poll_a_port_on_one_host_and_an_endpoint_on_another():
+    # The option only picks which fact the same descriptor polls, so the two
+    # routings coexist in one deploy: the local wait still sees the port, the
+    # peer wait still probes the endpoint.
+    def mixed_deploy(host: Host) -> Generator[OperationRequest]:
+        yield op(server.wait, name="Wait for :8080", port=8080, timeout=5.0)
+        yield op(
+            server.wait, name="Wait for the peer", port=PEER_PORT, host=PEER, timeout=5.0
+        )
+
+    def mixed_factory(entry: dict) -> Host:
+        host = SimulatedHost.from_inventory(entry)
+        host.listening_ports = {("tcp", 8080): _LISTENING_8080}
+        host.tcp_endpoints = {(PEER, PEER_PORT): TcpEndpointInfo(reachable=True)}
+        return host
+
+    plans, report, _hosts = await run(
+        INVENTORY, mixed_deploy, host_factory=mixed_factory
+    )
+    assert [p.changed for p in plans["web1"]] == [True, True]
+    assert report is not None
+    log = format_log(report)
+    assert "$ wait for Port(8080, 'tcp') <is_listening> every 1.0s up to 5.0s" in log
+    assert (
+        f"$ wait for TcpEndpoint({PEER!r}, {PEER_PORT}) <is_reachable> "
+        "every 1.0s up to 5.0s" in log
     )
 

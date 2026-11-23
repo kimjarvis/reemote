@@ -506,3 +506,28 @@ from the read-only `server_port.py` fact example.
 ::: server_op_wait
     options:
       members: []
+
+## Waiting for an endpoint on another machine
+
+The same wait, asked of the network instead of the kernel: `server.wait`'s
+`host` option is the address an Ansible `wait_for` task names beside `port`, and
+it only picks *which* fact the very same `WaitForFactCommand` polls. Omitted or
+`"localhost"` keeps the `Port` read above; any other address polls
+`TcpEndpoint`, which runs the TCP connect **on the target** — bash's
+`</dev/tcp/<host>/<port>` redirection where `Which` finds bash, `nc -z` where it
+finds only netcat — and is satisfied by `is_reachable`. So the deploy starts its
+web server under `sudo`, then asks each host to connect to port 80 on *its own
+routable address* rather than on loopback: the stronger claim of the two, since
+a daemon bound to `127.0.0.1` holds the port open and still refuses the
+connection a peer node would make. A refused connection, a timeout and an
+unresolvable name all read as "not reachable" and keep the wait polling, while a
+host with neither `bash` nor `nc` reports `CommandNotFoundError` instead of an
+endpoint that never opens. A non-local `host` therefore pins `protocol` to `tcp`
+and an address that is not a hostname or IP literal raises at plan time — like
+the port check, before anything is sent. The address comes from the inventory
+entry's own `address`, which is static data, so both phases build the identical
+request and the wait stays planned as a change every run.
+
+::: server_wait_host
+    options:
+      members: []

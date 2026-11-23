@@ -89,7 +89,8 @@ a real asyncssh transport is missing:
   / ``smbios_info`` / ``snap_package_info`` / ``ssh_key_pairs`` / ``sysctls`` /
   ``systemd_dependencies`` / ``systemd_failed_units``
   / ``systemd_reload_pending`` / ``systemd_system_state`` / ``systemd_timers`` / ``systemd_unit_files``
-  / ``systemd_unit_properties`` / ``systemd_version`` / ``os_timezone`` / ``os_user`` / ``os_users``
+  / ``systemd_unit_properties`` / ``systemd_version`` / ``http_endpoints``
+  / ``tcp_endpoints`` / ``os_timezone`` / ``os_user`` / ``os_users``
   / ``ufw_applications`` / ``ufw_rules`` / ``ufw_status``
   / ``uptime_seconds`` / ``virtualenv_python_versions`` / ``command_paths``:
   the state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
@@ -120,7 +121,7 @@ a real asyncssh transport is missing:
   ``GroupDetails`` (which reads ``os_groups`` for the names and the parallel
   ``os_group_details`` seam for the gid/members, defaulting a name missing
   there to an unknown gid), ``Groups``,
-  ``HasGui``, ``Home``, ``Hostname``, ``Ip6tablesChains``,
+  ``HasGui``, ``Home``, ``Hostname``, ``HttpEndpoint``, ``Ip6tablesChains``,
   ``Ip6tablesRules``, ``Ip6tablesRulesOrdered``, ``Ip6tablesTables``,
   ``Ip6tablesVersion``, ``IpSets``, ``IptablesChains``, ``IptablesRules``,
   ``IptablesRulesOrdered``, ``IptablesTables``, ``IptablesVersion``,
@@ -158,7 +159,8 @@ a real asyncssh transport is missing:
   ``SnapPackage``, ``SnapPackages``,
   ``SmbiosInfo``, ``SimulateOperationWillChange``, ``SshKeyPair``, ``SwapEnabled``, ``Sysctl``, ``SysctlFile``,
   ``SysctlFiles`` (the two persistence reads project the shared
-  ``remote_files`` seam onto the standard sysctl paths), ``Timezone``,
+  ``remote_files`` seam onto the standard sysctl paths), ``TcpEndpoint``,
+  ``Timezone``,
   ``UfwApplications``, ``UfwRules``, ``UfwStatus``,
   ``Uptime``, ``User``, ``Users`` (the server-local ``_HomeDirectory`` and
   ``_HomeIsLink`` home probes read the shared ``directory_stats`` and
@@ -544,6 +546,8 @@ from reemote.modules.server.server import (
     SetHostnameCommand,
     SetTimezoneCommand,
     SshKeyPairGenerateCommand,
+    TcpEndpoint,
+    TcpEndpointInfo,
     UserAddCommand,
     UserDelCommand,
     UserModCommand,
@@ -1838,6 +1842,17 @@ class SimulatedHost(Host):
     # test that wants an endpoint to become ready seeds it between steps, or
     # lets the simulated ``check_wait`` hold-or-fail at once.
     http_endpoints: dict[str, HttpEndpointInfo] = field(default_factory=dict)
+    # TCP endpoint probes (``(address, port)`` -> the ``TcpEndpointInfo`` record
+    # the fact returns), backing ``TcpEndpoint`` and polled through
+    # ``server.wait(host=...)`` with the ``is_reachable`` predicate. An unlisted
+    # endpoint reads as "not reachable", like a refused connect; the read copies
+    # the record, so a test can seed these directly. A read-only seam: nothing
+    # in the library serves TCP, so no command ever mutates it -- a test that
+    # wants an endpoint to answer seeds it between steps, or lets the simulated
+    # ``check_wait`` hold-or-fail at once.
+    tcp_endpoints: dict[tuple[str, int], TcpEndpointInfo] = field(
+        default_factory=dict
+    )
     # Running processes (PID -> {user, state, cpu_percent, mem_percent,
     # command, args}), backing ``Processes``. Each value is the parsed form
     # the fact returns -- the seam holds the joined record regardless of
@@ -7994,6 +8009,13 @@ class SimulatedHost(Host):
             # no-answer record it returns for an unlisted url.
             (url,) = cmd.args
             value = self.http_endpoints.get(url, HttpEndpointInfo(status=None, body=""))
+        elif cmd.fact_cls is TcpEndpoint:
+            # The same seam ``TcpEndpoint.process`` reads, with the same
+            # not-reachable record it returns for an unlisted endpoint.
+            address, port = cmd.args
+            value = self.tcp_endpoints.get(
+                (address, port), TcpEndpointInfo(reachable=False)
+            )
         else:
             raise TypeError(f"unsupported simulated wait fact: {cmd.fact_cls!r}")
         if not cmd.predicate(value):

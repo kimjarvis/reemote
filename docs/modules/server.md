@@ -73,6 +73,8 @@ back as an error `Result` (exit 127), never an exception. See the
         - PythonVersion
         - PythonVersionInfo
         - SshKeyPair
+        - TcpEndpoint
+        - TcpEndpointInfo
         - Timezone
         - Uptime
         - User
@@ -104,7 +106,7 @@ operations in a single source, so the read side (`Arch`, `AuthorizedKeys`,
 `Date`, `Env`, `EtcHosts`, `FipsEnabled`, `Fstab`, `GroupDetails`, `Groups`, `HasGui`, `Home`, `Hostname`, `InitSystem`, `Kernel`, `KernelModules`,
 `KernelVersion`, `Last`, `LinuxDistribution`, `LinuxGui`, `LinuxName`,
 `Locales`, `LsbRelease`, `Mounts`, `Port`, `Processes`, `PythonVersion`,
-`SshKeyPair`, `Timezone`, `Uptime`, `User`, `Users`, `Which`)
+`SshKeyPair`, `TcpEndpoint`, `Timezone`, `Uptime`, `User`, `Users`, `Which`)
 sits beside the `server.etc_hosts`, `server.fstab`, `server.group`, `server.hostname`, `server.kill`,
 `server.locale`,
 `server.modprobe`, `server.mount`, `server.security_limit`, `server.ssh_keypair`, `server.timezone`, `server.user`,
@@ -115,7 +117,8 @@ operations that consume them. It is also where reemote's
 **waiting** design lives: `server.wait_service` is the first operation that
 blocks until a condition on the host holds, and `server.wait` is the second
 -- it asks the same question of the kernel's socket table through the `Port`
-fact.
+fact, or of an endpoint elsewhere on the network through the `TcpEndpoint` fact
+when its `host` option names one.
 
 ## Facts
 
@@ -961,6 +964,29 @@ deploy that needs a shape `wait_url` does not cover can compose its own
 the `Port`/`is_listening` and `SystemdServiceState`/`is_active` wrappers, and
 the same constraints below apply to all three.
 
+`server.wait` also takes one option neither the baseline nor Ansible's
+`wait_for` pair needs separately: `host`, which is the address an Ansible
+`wait_for` task names alongside `port`. It only picks **which** fact the same
+descriptor polls. Omitted or `"localhost"` keeps polling `Port`, so the
+documented default plan renders exactly as it did before — the socket-table read
+is the cheaper, dependency-free answer for the target's own port. Any other
+address polls `TcpEndpoint` through
+[`is_reachable`][reemote.modules.server.server.is_reachable]: the fact runs the
+TCP connect **on the target** — bash's `</dev/tcp/<host>/<port>` redirection
+where the `Which` fact finds bash, `nc -z` where it does not — and answers
+reachable or not. Because the probe runs there, the address keeps the role's
+meaning (a LAN address, a hostname, a peer node) and an endpoint the controller
+has no route to is still probeable, which is the question
+`geerlingguy.elasticsearch` asks of the `network.host` it binds before it talks
+to the node. A refused connection, a connect timeout and an unresolvable name
+all read as "not reachable" — answers, so the wait keeps polling — while a host
+with neither `bash` nor `nc` cannot answer at all and reports
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError] rather than an
+endpoint that never opens. A non-local `host` pins `protocol` to `tcp` (a
+connect probes one family, and a UDP "connect" would prove nothing), and an
+address that is not a hostname or IP literal raises at plan time, like a bad
+port.
+
 Three constraints follow from the execution model:
 
 - **The operation body never polls.** The prepare phase never sends, and its
@@ -1002,8 +1028,11 @@ and `enabled_services` as the seams the facts read, mutates them on
 library's operation set opens a socket, so no command ever mutates it. The
 `http_endpoints` seam (the `url` → `HttpEndpointInfo` table
 `HttpEndpoint.process` reads) is read-only for the same reason — no command
-serves HTTP — so a test seeds the readiness answer directly. Either
-way the simulated host evaluates a `WaitForFactCommand` *once* without
+serves HTTP — so a test seeds the readiness answer directly, and the
+`tcp_endpoints` seam (the `(address, port)` → `TcpEndpointInfo` table
+`TcpEndpoint.process` reads) is read-only for it too — no command makes a
+remote endpoint answer. In every
+case the simulated host evaluates a `WaitForFactCommand` *once* without
 sleeping: in-memory state never changes on its own, so the condition either
 already holds or the simulated wait raises `WaitTimeoutError` immediately.
 
@@ -1013,6 +1042,7 @@ already holds or the simulated wait raises `WaitTimeoutError` immediately.
       members:
         - is_active
         - is_listening
+        - is_reachable
         - EndpointReady
 
 ## Example

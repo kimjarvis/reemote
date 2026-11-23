@@ -33,7 +33,9 @@
 # ``/proc/self/mountinfo``), ``Port`` (whether a port has a listening socket, with the process
 # and PID that own it, listed by ``ss`` or ``netstat``),
 # ``Processes`` (the running processes keyed by PID, parsed from
-# ``ps``), ``Timezone`` (the system timezone resolved from
+# ``ps``), ``TcpEndpoint`` (whether a TCP connect from the host to an
+# ``address:port`` succeeds, probed through bash's ``/dev/tcp`` or ``nc -z``),
+# ``Timezone`` (the system timezone resolved from
 # ``/etc/localtime``) and ``Uptime`` (the seconds since boot, from
 # ``/proc/uptime``), ``User`` (the
 # current user's name from ``echo $USER``), ``Users`` (the system users
@@ -139,13 +141,17 @@
 # ``server.wait`` mirrors the baseline's ``server.wait`` for ``port``, the only
 # option upstream has: the baseline loops remotely over ``netstat`` until the port
 # appears, reemote describes the wait and lets the driver poll the ``Port``
-# fact until ``is_listening`` holds, bounded by ``timeout``/``interval``.
+# fact until ``is_listening`` holds, bounded by ``timeout``/``interval``. Its
+# ``host`` option is the Ansible ``wait_for`` ``host`` (issue #56): for an
+# address that is not the target's own loopback the same descriptor polls the
+# ``TcpEndpoint`` fact -- a TCP connect probe run *from the target* -- until
+# ``is_reachable`` holds, so the local ``Port`` poll stays the default path.
 #
 # ``WaitForFactCommand`` is the *non-shell* wait descriptor: it carries a fact,
 # its arguments and a predicate, and its ``wait`` polls the fact (bypassing
 # the per-step ``FactCache``) until the predicate holds or the timeout
 # expires. It is generic -- any fact and predicate -- and lives here beside its
-# two consumers, ``server.wait`` and ``server.wait_service``.
+# consumers, ``server.wait``, ``server.wait_service`` and ``server.wait_url``.
 # """
 
 import asyncio
@@ -166,7 +172,7 @@ import distro
 
 from ...commands import Command, TransferCommand, WaitCommand, WaitTimeoutError
 from ...core import OpContext, OperationError
-from ...hosts import Host
+from ...hosts import CommandNotFoundError, Host
 from ..systemd.systemd import (
     SystemctlCommand,
     SystemdServiceEnabled,
@@ -2711,6 +2717,177 @@ class HttpEndpoint:
         # Real transport: curl runs on the host, so a localhost URL means the
         # host's own loopback; the output is parsed the same way.
         stdout = await host.run_shell(cls.command(url))
+        return cls.parse(stdout)
+
+
+#: Characters allowed in a ``TcpEndpoint`` address: a hostname, an IPv4 or a
+#: bare IPv6 literal -- the values an Ansible ``wait_for`` ``host`` takes. The
+#: first character is alphanumeric so the word can never read as an option to
+#: ``nc``, and ``/`` is excluded because the bash form interpolates the address
+#: into a ``/dev/tcp/<address>/<port>`` path.
+_SAFE_ADDRESS_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]*")
+
+
+def _check_host(host: str) -> None:
+    # The address reaches the probe twice over -- inside the quoted ``bash -c``
+    # payload and as an ``nc`` argument -- so it is validated up front (the
+    # baseline validates neither) and rejected identically on both transports.
+    # The word is ``shlex``-quoted as well, so nothing survives here that the
+    # shell could execute.
+    if not isinstance(host, str):
+        raise TypeError(f"host must be a str, got {host!r}")
+    if not _SAFE_ADDRESS_RE.fullmatch(host):
+        raise ValueError(f"host must be a hostname or IP address, got {host!r}")
+
+
+class TcpEndpointInfo(TypedDict):
+    """
+    Attributes:
+        reachable: Whether a TCP connect from the host to the endpoint
+            succeeded -- the answer ``server.wait(host=...)`` polls.
+    """
+
+    # The single record ``TcpEndpoint`` returns. A refused connection, a
+    # timeout and an unresolvable name all collapse into "not reachable", which
+    # is what the Ansible ``wait_for`` probe reports too; only the missing probe
+    # tool is an error rather than an answer (see the fact).
+
+    reachable: bool
+
+
+class TcpEndpoint:
+    """Whether a TCP connect from the host to ``address:port`` succeeds.
+
+    **Commands:**
+
+    ```bash
+    bash -c '</dev/tcp/<address>/<port>' >/dev/null 2>&1 && echo open || echo closed
+    nc -z <address> <port> >/dev/null 2>&1 && echo open || echo closed
+    ```
+
+    **Returns:**
+
+    ```python
+    TcpEndpointInfo
+    ```
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, TypeError, ValueError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/server/server_wait_host.py``.
+    """
+
+    # The target-side half of the Ansible ``wait_for`` ``host``/``port`` parity
+    # (issue #56): the probe runs **on the target**, so the address keeps its
+    # role's meaning -- a LAN address, a hostname or a peer node -- and an
+    # endpoint the controller has no route to is still probeable. Where ``Port``
+    # reads the target's own socket table, this answers "can the target reach
+    # that endpoint", which is the question a role asks before it talks to a
+    # service on another machine.
+    #
+    # Two probe forms, chosen by the ``Which`` fact exactly like ``Port`` picks
+    # ``ss`` over ``netstat``: bash's ``/dev/tcp`` redirection first (bash needs
+    # no extra package where ``nc`` does), ``nc -z`` on a host without it, such
+    # as a minimal Alpine image. A host with neither tool cannot answer the
+    # question at all, and that is raised rather than polled: the
+    # ``&& echo open || echo closed`` chain which turns the connect's exit
+    # status into the answer line also swallows the shell's 127, which
+    # ``Host.run_shell`` would otherwise report as ``CommandNotFoundError`` --
+    # so the absence is checked here, before the probe runs, instead of reading
+    # as an endpoint that never opens.
+    #
+    # Neither form takes a per-attempt connect timeout: bash's redirection has
+    # no option for one and ``nc -w`` disagrees between the netcat flavours, so
+    # a filtered address can stall one attempt on the kernel's connect timeout.
+    # ``timeout`` bounds the whole wait, which is the documented contract, and
+    # Ansible's ``wait_for`` blocks on the same socket connect.
+
+    #: Shell probing one endpoint through bash's ``/dev/tcp`` redirection (the
+    #: preferred branch): ``{inner}`` is the whole ``</dev/tcp/<address>/<port>``
+    #: redirection, quoted as one ``bash -c`` argument, and the ``&&``/``||``
+    #: pair turns the connect's exit status into the answer line ``parse`` reads.
+    COMMAND_BASH = "bash -c {inner} >/dev/null 2>&1 && echo open || echo closed"
+
+    #: Shell probing one endpoint with ``nc -z`` (the fallback when ``Which``
+    #: reports no ``bash``); the address is quoted and the port is an int.
+    COMMAND_NC = (
+        "nc -z {address} {port} >/dev/null 2>&1 && echo open || echo closed"
+    )
+
+    @classmethod
+    def _tool(cls, has_bash: bool) -> str:
+        """Tool name for whether ``bash`` is installed.
+
+        Prefers bash's ``/dev/tcp`` redirection and falls back to ``nc -z``.
+        """
+        return "bash" if has_bash else "nc"
+
+    @classmethod
+    def command(cls, address: str, port: int, tool: str = "bash") -> str:
+        """Shell probing the endpoint, as one tool answers it.
+
+        The address is validated by ``_check_host`` and quoted, and the port by
+        ``_check_port``, so neither can carry anything the shell would execute.
+        """
+        _check_host(address)
+        _check_port(port, "tcp")
+        if tool == "nc":
+            return cls.COMMAND_NC.format(address=shlex.quote(address), port=port)
+        # The ``<`` belongs inside the quoted word: ``bash -c`` runs its argument
+        # as a *command string*, so that argument has to be the redirection
+        # itself. A bare ``/dev/tcp/<address>/<port>`` word would be the script
+        # filename bash tries to execute, and every probe would answer
+        # ``closed``. Keeping the ``<`` also makes ``shlex.quote`` always quote,
+        # since ``<`` is never in its safe set.
+        return cls.COMMAND_BASH.format(
+            inner=shlex.quote(f"</dev/tcp/{address}/{port}")
+        )
+
+    @classmethod
+    def parse(cls, output: str) -> TcpEndpointInfo:
+        """Parse the probe's answer line into the record. Pure.
+
+        The first non-blank line is the answer (both forms redirect the tool's
+        own output away): ``open`` is reachable, anything else -- the ``closed``
+        line, or no line at all -- is not.
+        """
+        for line in output.splitlines():
+            stripped = line.strip()
+            if stripped:
+                return TcpEndpointInfo(reachable=stripped == "open")
+        return TcpEndpointInfo(reachable=False)
+
+    @classmethod
+    async def process(cls, host: Host, address: str, port: int) -> TcpEndpointInfo:
+        # Validate even on the simulated path so a bad address or port is
+        # rejected identically on both transports (like ``Port.process``).
+        _check_host(address)
+        _check_port(port, "tcp")
+        endpoints = getattr(host, "tcp_endpoints", None)
+        if endpoints is not None:
+            # SimulatedHost seam: (address, port) -> TcpEndpointInfo. Copy the
+            # record so callers never mutate the simulated state; an unlisted
+            # endpoint reads as "not reachable", like a refused connect.
+            info = endpoints.get((address, port))
+            if info is not None:
+                return dict(info)  # type: ignore[return-value]
+            return TcpEndpointInfo(reachable=False)
+        # Real transport: the Which fact picks the probe tool, then the answer
+        # line is parsed the same way.
+        has_bash = bool(await Which.process(host, "bash"))
+        tool = cls._tool(has_bash)
+        if tool == "nc" and not await Which.process(host, "nc"):
+            raise CommandNotFoundError(
+                host.name,
+                cls.command(address, port, "bash"),
+                127,
+                "neither bash nor nc is installed",
+            )
+        stdout = await host.run_shell(cls.command(address, port, tool))
         return cls.parse(stdout)
 
 
@@ -6885,6 +7062,20 @@ def is_listening(info: PortInfo) -> bool:
     return info["listening"]
 
 
+def is_reachable(info: TcpEndpointInfo) -> bool:
+    """The ``server.wait(host=...)`` predicate: the TCP connect succeeded.
+
+    Reads only the ``reachable`` flag -- a refused, timed-out or unresolvable
+    endpoint all answer the same way, and the wait is about reaching it, not
+    about why it cannot be reached.
+
+    A module-level function, not a lambda: the deploy generator is re-invoked
+    per phase, and the predicate ends up in the yielded descriptor, so it
+    must be the same object every time.
+    """
+    return info["reachable"]
+
+
 @dataclass(frozen=True)
 class EndpointReady:
     """The HTTP readiness predicate: the endpoint answered as requested.
@@ -6992,17 +7183,25 @@ async def wait(
     ctx: OpContext,
     port: int,
     protocol: Literal["tcp", "udp"] = "tcp",
+    host: str | None = None,
     timeout: float = 300.0,
     interval: float = 1.0,
     **kwargs: Any,
 ) -> AsyncGenerator[Command]:
-    """Wait for a port to start listening.
+    """Wait for a port to start listening, or for an endpoint to answer.
 
     Args:
         ctx (OpContext): Execution context for the operation.
         port (int): Number of the port to wait for.
         protocol (Literal["tcp", "udp"], optional): Protocol family whose
-            sockets count as listening. Defaults to "tcp".
+            sockets count as listening. Defaults to "tcp". Must stay "tcp"
+            when ``host`` names a remote endpoint, which is probed with a TCP
+            connect.
+        host (str | None, optional): Address to reach instead of the target's
+            own socket table -- Ansible's ``wait_for`` ``host`` (a LAN address,
+            a hostname or a peer node). Omitted or ``"localhost"`` polls the
+            local ``Port`` fact; anything else polls ``TcpEndpoint``, which
+            TCP-connects from the target to ``host:port``. Defaults to None.
         timeout (float, optional): Seconds to keep polling before raising
             ``WaitTimeoutError``. Defaults to 300.0.
         interval (float, optional): Seconds between polls. Defaults to 1.0.
@@ -7036,6 +7235,15 @@ async def wait(
             port=53,
             protocol="udp",
         )
+
+        # Wait for an endpoint on another machine, probed from the target
+        yield op(
+            server.wait,
+            name="Wait for the Elasticsearch peer",
+            host="10.0.0.5",
+            port=9200,
+            timeout=300,
+        )
         ```
 
         Examples can be found in ``examples/modules/server/server_op_wait.py``.
@@ -7056,13 +7264,45 @@ async def wait(
     # plan time, rather than from inside the descriptor deep in the apply
     # phase. The wait is unprivileged -- so an owner-less socket (the only kind
     # a restricted user may see) still satisfies it.
+    #
+    # ``host`` is the Ansible ``wait_for`` ``host`` the geerlingguy.elasticsearch
+    # role parameterises (issue #56), and it only picks *which* fact the same
+    # descriptor polls -- the request stays one named in-deploy wait either
+    # way. The target's own loopback (the omitted default, and the role's own
+    # default) keeps polling ``Port``: the socket-table read is the cheaper,
+    # dependency-free answer for a local port, so the documented default plan
+    # renders exactly as it did before. Any other address asks the target to
+    # connect out to it through ``TcpEndpoint``, which is the only faithful
+    # reading of a ``network.host`` the role binds to a LAN address or to a peer
+    # node. Such a probe is a TCP connect, so a non-local ``host`` pins
+    # ``protocol`` to ``tcp`` (the socket-table family switch has no meaning
+    # here, and a UDP "connect" proves nothing) and ``_check_host`` rejects an
+    # address that is not a hostname or IP literal, at plan time like the port.
     _check_port(port, protocol)
     ctx.changed = True
-    ctx.reason = f"wait for {protocol} port {port} to be listening"
+
+    if host is None or host == "localhost":
+        ctx.reason = f"wait for {protocol} port {port} to be listening"
+        yield WaitForFactCommand(
+            fact_cls=Port,
+            args=(port, protocol),
+            predicate=is_listening,
+            timeout=timeout,
+            interval=interval,
+        )
+        return
+
+    if protocol != "tcp":
+        raise ValueError(
+            f"server.wait with host={host!r} probes a TCP endpoint, so protocol "
+            f"must be 'tcp', got {protocol!r}"
+        )
+    _check_host(host)
+    ctx.reason = f"wait for tcp endpoint {host}:{port} to accept connections"
     yield WaitForFactCommand(
-        fact_cls=Port,
-        args=(port, protocol),
-        predicate=is_listening,
+        fact_cls=TcpEndpoint,
+        args=(host, port),
+        predicate=is_reachable,
         timeout=timeout,
         interval=interval,
     )
@@ -7287,6 +7527,8 @@ __all__ = [
     "SystemctlCommand",
     "SystemdServiceEnabled",
     "SystemdServiceState",
+    "TcpEndpoint",
+    "TcpEndpointInfo",
     "Timezone",
     "Uptime",
     "User",
@@ -7302,6 +7544,7 @@ __all__ = [
     "hostname",
     "is_active",
     "is_listening",
+    "is_reachable",
     "kill",
     "locale",
     "modprobe",
