@@ -22,9 +22,10 @@ ways, both of which stay offline:
   and really are hashed. ``op()`` construction sends nothing, so no transport
   is ever reached.
 
-Two deliberately network-free scripts -- the in-memory role demonstration and
-the in-deploy action guard -- are additionally run end to end as subprocesses,
-because they can be executed without touching the demo hosts at all.
+Three deliberately network-free scripts -- the in-memory role demonstration,
+the in-memory proxied apt demonstration and the in-deploy action guard -- are
+additionally run end to end as subprocesses, because they can be executed
+without touching the demo hosts at all.
 """
 
 import ast
@@ -578,6 +579,7 @@ DRIVER_ONLY_ENTRYPOINTS = {
 # during prepare before any transport is opened.
 OFFLINE_EXAMPLES = (
     "examples/demonstrations/composition/composed_group_tag_roles.py",
+    "examples/demonstrations/environment/environment_apt_proxy.py",
     "examples/actions/action_in_deploy_guard.py",
 )
 
@@ -940,16 +942,17 @@ def test_example_builds_hashable_requests_offline(path: pathlib.Path):
     ), f"{rel}: no request built by {entrypoints}"
 
 
-# --- end to end: the two scripts that need no connection ---------------------
+# --- end to end: the scripts that need no connection -------------------------
 
 
 @pytest.mark.parametrize("script", OFFLINE_EXAMPLES)
 def test_offline_example_runs_end_to_end(script: str):
     """Network-free examples run for real, so their whole path is covered.
 
-    ``composed_group_tag_roles`` injects the test framework's ``SimulatedHost``
-    via ``run``'s ``host_factory`` and ``action_in_deploy_guard`` aborts during
-    prepare before any transport opens, so neither touches the demo inventory.
+    ``composed_group_tag_roles`` and ``environment_apt_proxy`` inject the test
+    framework's ``SimulatedHost`` via ``run``'s ``host_factory`` and
+    ``action_in_deploy_guard`` aborts during prepare before any transport
+    opens, so none touches the demo inventory.
     """
     completed = subprocess.run(
         [sys.executable, script],

@@ -35,6 +35,26 @@ guard must both pass. Predicates must be stable module-level functions
 reading only static data, so both phases reach the same decision (see
 [Determinism](guide.md#determinism)).
 
+The `env` meta-parameter is the environment of the command the operation runs
+on the target — Ansible's task-level `environment:`, and the request-level
+counterpart of the `env` keyword the [actions](actions/actions.md) take. A
+mapping or a sequence of `(key, value)` pairs is accepted and normalised at
+construction to a sorted tuple of pairs, which is what keeps a request built
+with a plain `dict` hashable for
+[`compose`][reemote.core.compose]`(..., dedupe=True)` (the value participates in
+equality, hashing and the dedupe key, and never reaches `kwargs`). Both the name
+and the value must be a `str` — the pair is spliced into a shell word, so
+anything else raises `TypeError` at the call site rather than failing at the
+transport. [`command_shell`][reemote.drivers.command_shell] renders it as an
+`env K=V …` prefix on the descriptor's own text, *innermost* — inside the
+`doas`/`sudo`/`su` wrappers, as in
+`sudo env http_proxy=… dnf install -y httpd` — since `sudo` resets the caller's
+environment; a [`TransferCommand`][reemote.commands.TransferCommand] or
+[`WaitCommand`][reemote.commands.WaitCommand] descriptor ignores it, because
+neither starts a process. It is not tri-state like the privilege flags: there is
+no inheritance policy, so [`sub_deploy`][reemote.core.sub_deploy] leaves an
+inner request's own `env` untouched.
+
 [`OperationError`][reemote.core.OperationError] is raised by an operation
 whose prerequisites are not met on a host — `server.timezone`, for instance,
 requires `timedatectl` and is supported on systemd systems only. It aborts

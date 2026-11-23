@@ -384,12 +384,13 @@ def op(
     sudo: Privilege | bool = Privilege.UNSET,
     su:   Privilege | bool = Privilege.UNSET,
     doas: Privilege | bool = Privilege.UNSET,
+    env: Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
     when: WhenPredicate | tuple[WhenPredicate, ...] | None = None,
     **kwargs,                   # the operation's own parameters
 ) -> OperationRequest
 ```
 
-`name`, the three privilege flags and `when` are **metadata** the runner consumes; everything else in `**kwargs` is forwarded to the operation. `name` is never passed to the operation — it is purely a label.
+`name`, the three privilege flags, `env` and `when` are **metadata** the runner consumes; everything else in `**kwargs` is forwarded to the operation. `name` is never passed to the operation — it is purely a label.
 
 ```python
 def deploy(host: Host) -> Generator[OperationRequest, None, None]:
@@ -406,6 +407,21 @@ A few rules keep requests well-behaved:
 The privilege flags are **tri-state**: `True`/`ON` means elevate, `False`/`OFF` means explicitly *unprivileged*, and `Privilege.UNSET` (the default) means "no preference". Sub-deploys use this to fill in defaults without overriding an operation's explicit choice — see [Composing deploys](#composing-deploys).
 
 A `when` guard is a predicate `host -> bool` (or a tuple of them, combined with AND). When a guard is false, the request keeps its slot in the sequence but is *skipped*: no facts are read, no commands are sent. Guards may only read static inventory data (`host.name`, `host.group`, `host.tags`, `host.extra`) — reading a fact inside a guard would break determinism.
+
+`env` is the environment of the command the operation runs on the target — the counterpart of Ansible's task-level `environment:`, and the same keyword the [`Shell`][reemote.actions.Shell] and [`Script`][reemote.actions.Script] actions take. Pass a mapping or a sequence of `(key, value)` pairs; the request stores it as a sorted tuple of pairs, so a plain `dict` argument stays hashable and the rendered text does not depend on insertion order. Both the name and the value must be `str`, or construction raises `TypeError`. The driver renders it as an `env K=V …` prefix placed **innermost**, inside the `doas`/`sudo`/`su` wrappers, because `sudo` resets the caller's environment — outside the escalation the variables would never reach the command:
+
+```python
+yield op(
+    dnf.packages,
+    name="Install zabbix-agent",
+    packages=("zabbix-agent",),
+    sudo=True,
+    env={"http_proxy": "http://proxy.example:3128"},
+)
+# $ sudo env http_proxy=http://proxy.example:3128 dnf install -y zabbix-agent
+```
+
+A command that is not a shell ignores it: a transfer rides the scp channel and a fact poll runs no command, so `TransferCommand` and `WaitCommand` descriptors carry no environment (see [Command descriptors](commands.md)). Unlike a password, an environment value *is* command text, so it appears in the [run log](#running-a-deploy) exactly as it was sent.
 
 ### Composing deploys
 

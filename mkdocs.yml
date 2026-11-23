@@ -66,6 +66,7 @@ plugins:
             - examples/actions
             - examples/demonstrations/composition
             - examples/demonstrations/connectors
+            - examples/demonstrations/environment
             - examples/demonstrations/privilege
           options:
             docstring_style: google
@@ -179,6 +180,7 @@ nav:
       - Demonstrations:
           - Composition: examples/demonstrations/composition.md
           - Connectors: examples/demonstrations/connectors.md
+          - Environment: examples/demonstrations/environment.md
           - Privilege: examples/demonstrations/privilege.md
       - Roles:
           - ansible-datadog: examples/roles/ansible-datadog.md

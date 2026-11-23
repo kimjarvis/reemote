@@ -206,17 +206,24 @@ def _as_text(value: Any) -> str:
     return value
 
 
-def _env_prefix(env: Mapping[str, str] | None) -> str:
+def _env_prefix(
+    env: Mapping[str, str] | Iterable[tuple[str, str]] | None,
+) -> str:
     """Render a shell-quoted ``env K=V ...`` prefix, or ``""`` when unset.
 
     Each key and value is shell-quoted individually so spaces, quotes and
     metacharacters are safe. An empty or ``None`` mapping yields no prefix,
-    leaving the command unchanged.
+    leaving the command unchanged. Besides a mapping this accepts a sequence of
+    ``(key, value)`` pairs, which is the normalized form an
+    ``OperationRequest.env`` stores -- so the deploy path (``command_shell``)
+    and the action path (``Shell``/``Script``) render an environment through
+    one helper and cannot drift apart on quoting.
     """
     if not env:
         return ""
+    items = env.items() if isinstance(env, Mapping) else env
     assignments = " ".join(
-        f"{shlex.quote(key)}={shlex.quote(value)}" for key, value in env.items()
+        f"{shlex.quote(key)}={shlex.quote(value)}" for key, value in items
     )
     return f"env {assignments} "
 

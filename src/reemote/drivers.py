@@ -31,11 +31,11 @@ whole prepare/apply path is therefore awaited end to end.
 import asyncio
 import inspect
 import shlex
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from .actions import _deploy_phase
+from .actions import _deploy_phase, _env_prefix
 from .commands import Command, TransferCommand, WaitCommand
 from .core import (
     DeployRequestError,
@@ -112,6 +112,10 @@ class LogEntry:
     su_user: str | None = None  # su target user from the host's privilege data
     doas: bool = False  # whether the operation's commands were run via doas
     doas_user: str | None = None  # doas target user from the host's privilege data
+    # environment overrides from the request, in the normalized sorted-pair
+    # form; ``format_log`` renders them as the same ``env K=V ...`` prefix the
+    # transport ran, so the log line matches the wire
+    env: tuple[tuple[str, str], ...] = ()
     skipped: bool = False  # True when the request's ``when`` guard failed
 
 
@@ -203,6 +207,7 @@ def command_shell(
     su_user: str | None = None,
     doas: bool = False,
     doas_user: str | None = None,
+    env: Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
 ) -> str:
     """Render the shell string a command descriptor runs as (the loggable form).
 
@@ -231,6 +236,22 @@ def command_shell(
     target -- collapses to a bare ``su -c``. ``doas_user`` is emitted as
     ``doas -n -u <user>`` except that ``None``/``root`` collapses to a bare
     ``doas -n`` (doas is passwordless, so no credential is ever rendered).
+
+    ``env`` (a mapping or the normalized tuple of pairs an
+    ``OperationRequest`` stores) is rendered by ``actions._env_prefix`` -- the
+    same helper the ``Shell``/``Script`` actions use -- as a shell-quoted
+    ``env K=V ...`` prefix placed *innermost*: immediately around the
+    descriptor's own command text, inside every ``doas``/``sudo``/``su``
+    wrapper, so the variables reach the command that runs instead of the
+    outer shell (``sudo env http_proxy=<url> apt-get update``; under ``su``
+    they ride inside the quoted payload). Unlike a password they *are* command
+    text, so they appear in the log line -- which matches the actions' ``env``
+    behaviour and is why a secret belongs in the inventory's ``privilege``
+    section, never in ``env``. ``None``/empty adds no prefix. A descriptor that
+    runs no shell text has no environment to set: ``TransferCommand`` returns
+    before the prefix and ``WaitCommand`` (which polls a fact) skips it, so a
+    silently-ignored ``env`` on those two is the documented contract rather
+    than a rendering gap.
     """
     shell = cmd.shell() if hasattr(cmd, "shell") else str(cmd)
     # A transfer rides the connection's scp channel as the login user; the
@@ -239,9 +260,16 @@ def command_shell(
     # either. An operation whose request is elevated for a *shell* command --
     # e.g. ``dnf.key``, which spools a key by scp then runs an elevated ``rpm
     # --import`` -- still transfers its bytes unprivileged, and the log shows
-    # that truthfully rather than as a misleading ``sudo scp ...``.
+    # that truthfully rather than as a misleading ``sudo scp ...``. The same
+    # reasoning drops ``env``: scp copies bytes, it runs no command whose
+    # environment could be set.
     if isinstance(cmd, TransferCommand):
         return shell
+    # A wait polls a fact through the descriptor's own coroutine and is
+    # likewise unprivileged, so there is no command environment to prefix even
+    # though the descriptor still renders as a loggable line.
+    if not isinstance(cmd, WaitCommand):
+        shell = f"{_env_prefix(env)}{shell}"
     if su:
         # ``su`` defaults to root, so a ``su_user`` of ``None``/``root``
         # collapses to a bare ``su -c``; only a non-root target is named.
@@ -311,7 +339,13 @@ def _privilege_doas_user(host: Host, doas: bool) -> str | None:
 
 
 async def send_command(
-    host: Host, cmd: Command, *, sudo: bool = False, su: bool = False, doas: bool = False
+    host: Host,
+    cmd: Command,
+    *,
+    sudo: bool = False,
+    su: bool = False,
+    doas: bool = False,
+    env: Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
 ) -> None:
     """Execute one command descriptor on a host.
 
@@ -321,8 +355,9 @@ async def send_command(
       seam; when present it applies the command's simulated effect (so
       subsequent fact reads observe the change) and nothing is sent anywhere.
       ``sudo``/``su``/``doas`` are irrelevant here -- privilege has no
-      in-memory effect -- so they are not forwarded. This is the path pytest
-      always takes.
+      in-memory effect -- so they are not forwarded, and ``env`` is no
+      different: the simulation runs no shell, so there is no environment to
+      set. This is the path pytest always takes.
     - Any other host -- a plain library ``Host`` built from a real inventory
       entry -- dispatches on the descriptor kind. A ``TransferCommand`` (e.g.
       ``files.put``'s ``PutCommand``, ``files.get``'s ``GetCommand``) copies
@@ -332,9 +367,10 @@ async def send_command(
       (e.g. ``server.wait_service``'s ``WaitForFactCommand``) likewise runs
       no shell: the driver awaits the descriptor's ``wait``, which polls the
       host until its condition holds or raises ``WaitTimeoutError``; the
-      escalation flags are ignored for it too. Anything else runs
-      the command's shell over asyncssh, using the host's ``connection`` data.
-      An elevated request
+      escalation flags are ignored for it too, and so is ``env``, for the same
+      reason -- no command runs whose environment could be set. Anything else
+      runs the command's shell over asyncssh, using the host's ``connection``
+      data. An elevated request
       (``doas``, ``sudo`` and/or ``su``) goes
       through ``host.run_shell_privileged``, which applies the run-as users and
       any passwords (via askpass helpers) sourced from the inventory, in the
@@ -347,6 +383,16 @@ async def send_command(
       ``PrivilegeError`` instead, which ``run_apply``
       aggregates across hosts exactly as ``run_prepare`` aggregates
       ``HostConnectionError``.
+
+    ``env`` -- the request's environment overrides, as a mapping or the
+    normalized tuple of pairs -- reaches the transport through the *same*
+    rendering the log shows: ``command_shell`` is called once with the flags
+    off and ``env`` set, which produces ``env K=V <shell>``, and the
+    escalation then wraps that text (``host.run_shell_privileged`` adds
+    ``doas``/``sudo``/``su`` around it). Threading the value through this one
+    function -- rather than only the flag-on rendering ``format_log`` uses --
+    is what keeps the loggable prefix and the wire prefix from diverging: the
+    plan/log text and the executed text are built by the same code.
     """
     execute = getattr(host, "execute_command", None)
     if execute is not None:
@@ -358,7 +404,9 @@ async def send_command(
     if isinstance(cmd, WaitCommand):
         await cmd.wait(host)
         return
-    base = command_shell(cmd)  # flags off -> the plain descriptor shell
+    # flags off -> the plain descriptor shell, with the request's environment
+    # prefix; the escalation wrappers are added by run_shell_privileged below.
+    base = command_shell(cmd, env=env)
     if sudo or su or doas:
         await host.run_shell_privileged(base, sudo=sudo, su=su, doas=doas)
     else:
@@ -531,7 +579,9 @@ async def _apply_host_step(rt: HostRuntime) -> LogEntry | None:
     sent: list[Command] = []
     if ctx.changed:
         for cmd in commands:
-            await send_command(rt.host, cmd, sudo=sudo, su=su, doas=doas)
+            await send_command(
+                rt.host, cmd, sudo=sudo, su=su, doas=doas, env=request.env
+            )
             sent.append(cmd)
     return LogEntry(
         host=rt.host.name,
@@ -545,6 +595,9 @@ async def _apply_host_step(rt: HostRuntime) -> LogEntry | None:
         su_user=_privilege_su_user(rt.host, su),
         doas=doas,
         doas_user=_privilege_doas_user(rt.host, doas),
+        # the request's normalized pairs, so the log renders the very prefix the
+        # transport ran (and a skipped entry keeps the inert empty tuple)
+        env=request.env,
     )
 
 
@@ -673,7 +726,16 @@ def format_plan(plans: dict[str, list[PlannedOperation]]) -> str:
 
 
 def format_log(report: ApplyReport) -> str:
-    """Render the apply-phase run log, including generated commands."""
+    """Render the apply-phase run log, including generated commands.
+
+    Each command line is the same ``command_shell`` rendering the transport was
+    handed, so the privilege prefixes and the request's ``env K=V ...`` prefix
+    appear exactly as executed. That is deliberate and it is why an ``env``
+    value is *not* redacted here: like the actions' ``env`` (issue #4) it is
+    ordinary command text, whereas a credential is never command text --
+    ``sudo``/``su`` passwords stay in the askpass plumbing that this rendering
+    deliberately does not see.
+    """
     lines = []
     for entry in report.log:
         if entry.skipped:
@@ -682,7 +744,7 @@ def format_log(report: ApplyReport) -> str:
             lines.append(f"{entry.host}: {entry.name:<24} [changed: {entry.reason}]")
             for cmd in entry.commands:
                 lines.append(
-                    f"    $ {command_shell(cmd, entry.sudo, sudo_user=entry.sudo_user, su=entry.su, su_user=entry.su_user, doas=entry.doas, doas_user=entry.doas_user)}"
+                    f"    $ {command_shell(cmd, entry.sudo, sudo_user=entry.sudo_user, su=entry.su, su_user=entry.su_user, doas=entry.doas, doas_user=entry.doas_user, env=entry.env)}"
                 )
         else:
             lines.append(f"{entry.host}: {entry.name:<24} [no change: {entry.reason}]")

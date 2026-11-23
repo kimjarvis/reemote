@@ -51,6 +51,12 @@ class TransferCommand(Command):
     driver can dispatch on it without importing a namespace module, which
     would be circular: ``modules.files.files`` imports ``core``, and ``core``
     and the drivers sit above ``commands``.
+
+    Because nothing runs as shell text, a request's ``env`` meta-parameter has
+    no effect on a transfer: there is no command whose environment could be
+    set, so ``command_shell`` returns the rendering without the ``env K=V ...``
+    prefix (the privilege flags are ignored for the same reason). This is the
+    documented contract, not a gap to close later.
     """
 
     async def transfer(self, host: Host) -> None:
@@ -89,6 +95,11 @@ class WaitCommand(Command):
     lives here (not beside a concrete descriptor) for the same reason as
     ``TransferCommand``: the driver must dispatch on it without importing a
     namespace module.
+
+    Like a transfer, a wait runs no shell text, so a request's ``env``
+    meta-parameter is ignored for it: ``command_shell`` renders the loggable
+    line without the ``env K=V ...`` prefix, just as ``send_command`` never
+    elevates a poll.
     """
 
     async def wait(self, host: Host) -> str:

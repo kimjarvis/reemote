@@ -8,7 +8,7 @@ See the design document sections 4.1 (OperationRequest), 4.3 (OpContext),
 the phase they are used in; phase awareness lives entirely in the drivers.
 """
 
-from collections.abc import Callable, Generator, Iterable, Iterator
+from collections.abc import Callable, Generator, Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -41,6 +41,56 @@ def _coerce_when(
     if callable(value):
         return (value,)
     return tuple(value)
+
+
+def _coerce_env(
+    value: "Mapping[str, str] | Iterable[tuple[str, str]] | None",
+) -> tuple[tuple[str, str], ...]:
+    """Normalize the accepted ``env`` spellings to a sorted tuple of pairs.
+
+    ``None`` (the default) becomes the empty tuple -- no overrides, the command
+    runs with the environment the login shell gives it -- a ``Mapping``
+    contributes its items, and a sequence of ``(key, value)`` pairs passes
+    through. Reducing either spelling to a *sorted tuple* is what makes the
+    stored value hashable (a ``Mapping`` is not, and
+    ``compose(dedupe=True)`` hashes every part of a request) and phase-stable:
+    the rendered ``env K=V ...`` prefix depends on this order, so a mapping
+    built in a different order in the apply phase still yields an equal
+    request.
+
+    Keys and values must both be ``str``: the pair is quoted straight into a
+    shell prefix, so a non-string is refused here -- while the ``op()`` call
+    site is still on the traceback -- rather than silently rendering a value
+    the caller never meant to stringify. An entry that is not a two-item
+    pair -- a bare string, a triple, a non-sequence -- is refused the same way.
+    """
+    if value is None:
+        return ()
+    items = value.items() if isinstance(value, Mapping) else value
+    pairs: list[tuple[str, str]] = []
+    for item in items:
+        if isinstance(item, str):
+            # A bare string would unpack into two characters (``"KV"`` ->
+            # ``("K", "V")``), so refuse it as the shape error it is.
+            raise TypeError(
+                f"env entries must be (key, value) pairs, got the string {item!r}"
+            )
+        try:
+            key, val = item
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                f"env must be a mapping or a sequence of (key, value) pairs, "
+                f"got the entry {item!r}"
+            ) from exc
+        if not isinstance(key, str) or not isinstance(val, str):
+            raise TypeError(
+                f"env entry {key!r}={val!r} is not a string pair; a request's "
+                "environment is rendered as a shell-quoted 'env K=V ...' "
+                "prefix, so both the name and the value must be str -- "
+                "stringify the value at the call site"
+            )
+        pairs.append((key, val))
+    return tuple(sorted(pairs))
 
 
 class Privilege(Enum):
@@ -190,6 +240,24 @@ class OperationRequest:
     composition-level definitions, like ``func`` itself): an inline
     ``lambda`` in a deploy body is a fresh object on each phase invocation,
     which the determinism guard correctly reports as divergence.
+
+    ``env`` is the environment meta-parameter: variables set for the command
+    the operation runs on the target, the counterpart of an Ansible task's
+    ``environment:`` block. It accepts a mapping or a sequence of
+    ``(key, value)`` pairs and is stored normalized as a sorted tuple of
+    string pairs (see ``_coerce_env``), which keeps the request hashable and
+    makes the rendered prefix order-stable across phases. The driver renders
+    it as a shell-quoted ``env K=V ...`` prefix immediately around the
+    descriptor's own command text -- inside the ``doas``/``sudo``/``su``
+    wrappers, so the variables survive the escalation instead of being
+    consumed by the outer shell (``sudo env http_proxy=... apt-get update``).
+    It is a request-level meta-parameter rather than an operation option
+    precisely because the concern is the executed command, not the operation:
+    no operation signature grows an ``env`` keyword. Descriptors that run no
+    shell text ignore it -- a ``TransferCommand`` rides the scp channel and a
+    ``WaitCommand`` polls a fact -- and unlike a privilege flag it is not
+    tri-state: unset means "add no prefix", and a ``sub_deploy`` wrapper
+    leaves it untouched.
     """
 
     func: Callable  # operation function, e.g. dnf.packages
@@ -199,6 +267,8 @@ class OperationRequest:
     sudo: Privilege = Privilege.UNSET  # meta-parameter: elevate via sudo
     su: Privilege = Privilege.UNSET  # meta-parameter: elevate via su
     doas: Privilege = Privilege.UNSET  # meta-parameter: elevate via doas
+    # meta-parameter: environment of the command that runs
+    env: Mapping[str, str] | Iterable[tuple[str, str]] | None = None
     when: WhenPredicate | tuple[WhenPredicate, ...] | None = None  # eligibility guard(s)
 
     def __post_init__(self):
@@ -219,6 +289,10 @@ class OperationRequest:
         # Normalize the guard(s) to a tuple so the stored value is hashable,
         # value-comparable and conjunction-composable (see ``_coerce_when``).
         object.__setattr__(self, "when", _coerce_when(self.when))
+        # Normalize the environment to a sorted tuple of string pairs, so the
+        # stored value is hashable and the rendered prefix is order-stable
+        # (see ``_coerce_env``); a non-string name or value is rejected here.
+        object.__setattr__(self, "env", _coerce_env(self.env))
         # Fail fast on an unhashable argument: deduplication hashes every value,
         # and a deploy is the only place left where the call site is identifiable
         # (see ``UnhashableArgumentError``).
@@ -237,6 +311,7 @@ class OperationRequest:
                 self.sudo,
                 self.su,
                 self.doas,
+                self.env,
                 self.when,
             )
         )
@@ -463,15 +538,16 @@ def op(
     sudo: Privilege | bool = Privilege.UNSET,
     su: Privilege | bool = Privilege.UNSET,
     doas: Privilege | bool = Privilege.UNSET,
+    env: Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
     when: WhenPredicate | tuple[WhenPredicate, ...] | None = None,
     **kwargs,
 ) -> OperationRequest:
     """Convenience helper for building OperationRequests in deploy scripts.
 
-    ``name``, ``sudo``, ``su``, ``doas`` and ``when`` are meta-parameters
-    consumed by the driver, so they are captured here and never forwarded to
-    ``func``; everything else in ``kwargs`` is passed through to the operation
-    as keyword arguments.
+    ``name``, ``sudo``, ``su``, ``doas``, ``env`` and ``when`` are
+    meta-parameters consumed by the driver, so they are captured here and never
+    forwarded to ``func``; everything else in ``kwargs`` is passed through to
+    the operation as keyword arguments.
 
     ``sudo``/``su``/``doas`` accept a :class:`Privilege` or a plain bool
     (``True`` -> ``ON``, ``False`` -> ``OFF``) and default to ``UNSET`` -- "no
@@ -485,6 +561,15 @@ def op(
     pass), or ``None`` (the default, always eligible). A guarded request stays
     in every host's sequence; the driver skips it on hosts that fail the
     guard. ``OperationRequest`` normalizes the value to a tuple.
+
+    ``env`` sets environment variables for the command the operation runs on
+    the target -- the counterpart of an Ansible task's ``environment:`` block
+    (e.g. a proxy for an ``apt.packages`` install). Pass a mapping or a tuple
+    of ``(key, value)`` pairs; every name and value must be a ``str``, and
+    ``OperationRequest`` normalizes the value to a sorted tuple of pairs, so
+    the request stays hashable and the rendered ``env K=V ...`` prefix is
+    identical in both phases. The driver puts the prefix inside any
+    ``doas``/``sudo``/``su`` wrapper, so the variables survive the escalation.
 
     Collection arguments must be immutable: ``packages=("nginx",)``, never
     ``packages=["nginx"]``. ``OperationRequest`` checks each ``args``/``kwargs``
@@ -505,6 +590,7 @@ def op(
         sudo=Privilege.coerce(sudo),
         su=Privilege.coerce(su),
         doas=Privilege.coerce(doas),
+        env=env,
         when=when,
     )
     # Charged only after construction succeeds: a request the body failed to
@@ -599,14 +685,16 @@ def _effective_key(request: OperationRequest) -> tuple:
 
     ``name`` labels a request in plans and logs but never reaches the host
     (``command_shell`` renders the descriptor plus the resolved
-    ``sudo``/``su``/``doas`` only), so two requests with the same key run
-    identically. The escalation flags contribute their *resolved* decision
-    (``Privilege.elevates``), not the raw tri-state: ``ON`` separates a request
-    from the rest, while ``OFF`` and ``UNSET`` collapse together because both
-    execute unprivileged. The
+    ``sudo``/``su``/``doas`` and the ``env`` prefix only), so two requests with
+    the same key run identically. The escalation flags contribute their
+    *resolved* decision (``Privilege.elevates``), not the raw tri-state: ``ON``
+    separates a request from the rest, while ``OFF`` and ``UNSET`` collapse
+    together because both execute unprivileged. The
     ``when`` guard tuple participates as-is: it changes *whether* a request
     executes, so two otherwise-identical requests with different guards are
-    not duplicates.
+    not duplicates. ``env`` participates as its normalized tuple: it changes
+    the environment the command runs in, so the same operation with and without
+    a proxy is not a duplicate.
     ``OperationRequest`` equality itself stays maximal -- the determinism guard
     pairs full values, tri-state included -- while ``compose``'s deduplication
     uses this projection.
@@ -618,6 +706,7 @@ def _effective_key(request: OperationRequest) -> tuple:
         request.sudo.elevates(),
         request.su.elevates(),
         request.doas.elevates(),
+        request.env,
         request.when,
     )
 
@@ -635,14 +724,15 @@ def compose(
     repositories before the packages they provide).
 
     With ``dedupe=True``, requests collapse by *effective identity* --
-    ``func``, ``args``, ``kwargs``, ``sudo``, ``su``, ``doas`` and ``when``,
-    but not ``name`` (see ``_effective_key``) -- to their first occurrence,
-    which keeps its name.
+    ``func``, ``args``, ``kwargs``, ``sudo``, ``su``, ``doas``, ``env`` and
+    ``when``, but not ``name`` (see ``_effective_key``) -- to their first
+    occurrence, which keeps its name.
     Independently written roles may therefore each declare the same
     prerequisite under a different label or a different ``sub_deploy`` name
     prefix and still collapse to one plan entry; ``sudo``/``su``/``doas`` still
-    separate requests, since they change what executes, and so does ``when``,
-    since it changes whether it executes. ``OperationRequest``
+    separate requests, since they change what executes, and so does ``env``,
+    since it changes the environment they execute in, and ``when``, since it
+    changes whether it executes. ``OperationRequest``
     equality remains maximal (name included), because the determinism guard
     pairs full values.
 

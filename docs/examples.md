@@ -13,7 +13,7 @@ health-check scenario under `files/`,
 `examples/actions/` holds [action](actions.md) demonstrations (bespoke shell,
 staged scripts, connection waits), and
 `examples/demonstrations/<topic>/` holds scenario scripts — `composition/`,
-`connectors/` and `privilege/` — that cross module boundaries.
+`connectors/`, `environment/` and `privilege/` — that cross module boundaries.
 Each explanation
 on the pages below is the example module's **own docstring**, rendered with
 mkdocstrings, so the script stays the single source of truth: update the
@@ -51,6 +51,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 | `examples/demonstrations/privilege/` | [Privilege demonstrations](examples/demonstrations/privilege.md) |
 | `examples/demonstrations/composition/` | [Composing deploys](examples/demonstrations/composition.md) |
 | `examples/demonstrations/connectors/` | [Connector demonstrations](examples/demonstrations/connectors.md) |
+| `examples/demonstrations/environment/` | [Task environments](examples/demonstrations/environment.md) |
 
 !!! warning "The operation examples connect for real"
 
@@ -93,7 +94,10 @@ sub-directory. Pick a page from the navigation, or start from this table:
     The one exception is
     [`composed_group_tag_roles`](examples/demonstrations/composition.md#group-and-tag-roles-from-inventory-data),
     which does the same injection — it runs entirely in memory against
-    `SimulatedHost`, so it opens no connection and needs no real hosts.
+    `SimulatedHost`, so it opens no connection and needs no real hosts. The
+    [`environment_apt_proxy`](examples/demonstrations/environment.md#installing-a-package-through-a-proxy)
+    demonstration does too, for the same reason: its point is the rendered
+    command text, which the in-memory path produces unchanged.
 
     The [`action_in_deploy_guard`](examples/actions.md#the-in-deploy-guard)
     example also opens no connection, though it uses the default factory and a

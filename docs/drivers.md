@@ -51,6 +51,27 @@ rule), which raises
 reported as a privilege problem rather than a broken command. See
 [Privilege: sudo, su and doas](hosts.md#privilege-sudo-su-and-doas).
 
+A request's `env` (see [`op`][reemote.core.op]) rides the same rendering.
+[`send_command`][reemote.drivers.send_command] threads it into the
+[`command_shell`][reemote.drivers.command_shell] call that produces the plain
+descriptor text, so the prefix is on the wire and in the log line rather than in
+one of them alone, and `command_shell` builds it with the same `_env_prefix`
+helper the `Shell`/`Script` actions use — one place quoting names and
+values for both the deploy path and the action path. The prefix goes
+*innermost*, immediately around the descriptor's command text and inside every
+`doas`/`sudo`/`su` wrapper
+(`sudo env http_proxy=http://proxy.example:3128 apt-get update`), because sudo
+resets the caller's environment: applied outside the escalation, the variables
+would be dropped before the operation's command ran. The two non-shell
+descriptor kinds ignore it — a [`TransferCommand`][reemote.commands.TransferCommand]
+rides the scp channel and a [`WaitCommand`][reemote.commands.WaitCommand] polls a
+fact through its own coroutine, so neither has a process to give an environment
+to. An `env` value, unlike a password, *is* command text, so
+[`format_log`][reemote.drivers.format_log] prints it: the [`LogEntry`][reemote.drivers.LogEntry]
+carries the request's normalised pairs and renders the same prefix the transport
+received. The plan is the exception — [`format_plan`][reemote.drivers.format_plan]
+names operations, never commands, so no environment appears in it.
+
 A request whose `when` guard fails on a host is skipped by the driver in both
 phases: prepare records a `skipped`
 [`PlannedOperation`][reemote.drivers.PlannedOperation] without materializing the
