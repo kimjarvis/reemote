@@ -47,16 +47,25 @@ spool directory. The request is flagged ``sudo=True`` for the install; the
 transfer stays unprivileged regardless, so the log shows a plain ``scp``
 line followed by ``sudo sh -c``.
 
-Unlike the baseline's existence-checked ``apt.key``, this one is deliberately
-**non-idempotent** (like ``dnf.key``): it always installs and always reports
-a change, on every run. The stream is compared *by identity* across the
+Unlike the baseline's existence-checked ``apt.key``, the install is
+**idempotent when ``keyid`` names the key** (issue #53): the request passes
+``keyid="0EBFCD88"``, the short id of the Docker key below (the last 8 hex
+digits of its fingerprint ``9DC858229FC7DD38854AE2D88D81803C0EBFCD88``), so
+``apt.key`` reads the ``AptKeys`` fact over APT's three keyring directories
+and skips a key it already reports -- no transfer, no install, and the reason
+``GPG key 0EBFCD88 already in an apt keyring``. That is Ansible's
+``apt_key``/``rpm_key`` ``state=present`` parity and the ``dnf.key`` shape
+since #25. Without ``keyid`` the direction stays deliberately **stateless**
+(the stream's key id is unknown on the controller), so it always installs and
+always reports a change. The stream is compared *by identity* across the
 prepare and apply phases, so it is defined once at module level below --
 building a fresh stream inside the deploy generator would diverge between
 the phases and raise ``DeterminismError``. The stream embeds the real Docker
 Release (CE deb) signing key -- the armored body of
 ``https://download.docker.com/linux/ubuntu/gpg`` -- so the elevated
 ``gpg --dearmor`` produces a valid keyring instead of failing on placeholder
-bytes; swap in your own vendor key's armor to trust a different repository.
+bytes; swap in your own vendor key's armor (and its ``keyid``) to trust a
+different repository.
 
 Like the other apt examples, the request carries ``when=is_ubuntu``: the
 predicate reads only static inventory data (``host.family``) and is a stable
@@ -102,7 +111,10 @@ from reemote import (
 # real Docker Release (CE deb) signing key, ASCII-armored -- the body of
 # https://download.docker.com/linux/ubuntu/gpg -- so ``gpg --dearmor`` on the
 # host yields a valid binary keyring. Replace the armor with your own vendor
-# key to trust a different repository.
+# key to trust a different repository. Its fingerprint is
+# ``9DC858229FC7DD38854AE2D88D81803C0EBFCD88``, so gpg's long id is
+# ``8D81803C0EBFCD88`` and its short id ``0EBFCD88`` -- the ``keyid`` the
+# request below gates on.
 _DOCKER_KEY_ARMOR = """\
 -----BEGIN PGP PUBLIC KEY BLOCK-----
 
@@ -170,7 +182,6 @@ YT90qFF93M3v01BbxP+EIY2/9tiIPbrd
 GPG_KEY = io.BytesIO(_DOCKER_KEY_ARMOR.encode("ascii"))
 
 
-
 def is_ubuntu(host: Host) -> bool:
     """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
 
@@ -191,13 +202,31 @@ def deploy(host: Host) -> Generator[OperationRequest]:
     Branch-free, so the request sequence is identical in the prepare and
     apply phases. Writing under ``/etc/apt/keyrings/`` needs root, so the
     request is flagged ``sudo=True``; the driver elevates the install shell
-    while the spool transfer rides scp as the login user.
+    while the spool transfer rides scp as the login user. Both requests are
+    the same ``keyid``-gated install: the first writes the keyring on a host
+    that lacks the key, and the second is a guaranteed no-op in the apply
+    phase, because the install it follows is visible to it through the fresh
+    per-step fact cache (in the prepare phase, where nothing is sent, both
+    plan as changes). Re-running the whole script on a host that already
+    holds the key is a no-op twice over -- which is exactly what an Ansible
+    ``apt_key state=present`` role relies on and what a keyless
+    (stateless) request could not show.
     """
     yield op(
         apt.key,
         name="Install demo apt GPG keyring",
         src=GPG_KEY,
         dest="reemote-demo.gpg",
+        keyid="0EBFCD88",
+        sudo=True,
+        when=is_ubuntu,
+    )
+    yield op(
+        apt.key,
+        name="Re-install demo apt GPG keyring (no-op)",
+        src=GPG_KEY,
+        dest="reemote-demo.gpg",
+        keyid="0EBFCD88",
         sudo=True,
         when=is_ubuntu,
     )
@@ -210,16 +239,22 @@ async def main() -> None:
         print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
-        # --dry: prepare phase only. The operation reads no fact (it is
-        # non-idempotent), so the plan always shows the install as a change;
-        # no command that mutates a host is sent. A request the ``when``
-        # guard rejects is planned as [skipped: when guard is_ubuntu]
-        # without materializing it.
+        # --dry: prepare phase only. The request consults the ``AptKeys``
+        # fact over SSH (a read-only sweep of the keyring directories), so
+        # the plan shows each host's real decision -- a host already holding
+        # the key plans a no-op, one without it the install -- and no command
+        # that mutates a host is sent. A request the ``when`` guard rejects
+        # is planned as [skipped: when guard is_ubuntu] without materializing
+        # it.
         plans, _, _hosts = await run(inventory, deploy, dry=True)
         print("\n== Plan (prepare phase, --dry) ==")
         print(format_plan(plans))
 
         # Real run: prepare, then apply in lockstep across hosts over SSH.
+        # Each eligible host spools the key over scp and runs the elevated
+        # install only when ``AptKeys`` does not already report key
+        # ``0EBFCD88``; the repeat request that follows sees the install
+        # through the fresh per-step fact cache and plans nothing.
         plans, report, _hosts = await run(inventory, deploy)
         print("\n== Run log (apply phase) ==")
         assert report is not None

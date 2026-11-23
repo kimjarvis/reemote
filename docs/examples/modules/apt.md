@@ -246,15 +246,23 @@ the stream into a dest-derived `/tmp` directory over scp as the login user, then
 keyrings directory, dearmors ASCII-armored content with `gpg --dearmor`
 (binary content is copied verbatim), chmods the keyring `0644` and removes
 the spool directory — so the log shows a plain `scp` line followed by
-`sudo sh -c`. Unlike the baseline's existence-checked `apt.key`, this one is
-deliberately non-idempotent (like `dnf.key`): it always installs and always
-reports a change. The stream is compared by identity across the prepare
+`sudo sh -c`. Unlike the baseline's existence-checked `apt.key`, idempotence
+here comes from `keyid` (issue #53, the `dnf.key` shape since #25): with it,
+the operation first reads
+[`AptKeys`][reemote.modules.apt.apt.AptKeys], and a key APT already trusts is
+a no-op that yields nothing at all — not even the `apt-get update` an
+`update_cache=True` would append; without it the install stays stateless and
+always reports a change. The script therefore yields the same `keyid`-gated
+request twice — in the apply phase the first install is visible to the second
+through the fresh per-step fact cache, so the repeat plans nothing (in the
+prepare phase, where nothing is sent, both plan as changes). The stream is
+compared by identity across the prepare
 and apply phases, so the script defines it once at module level — building
 a fresh stream inside the deploy would raise `DeterminismError`. The embedded
 stream is the real Docker Release (CE deb) signing key (the armored body of
 `https://download.docker.com/linux/ubuntu/gpg`), so the elevated `gpg --dearmor`
 produces a valid keyring rather than failing on placeholder bytes; swap in your
-own vendor key's armor to trust a different repository.
+own vendor key's armor (and its `keyid`) to trust a different repository.
 
 ::: apt_key
     options:

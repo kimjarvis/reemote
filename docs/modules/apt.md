@@ -80,7 +80,8 @@ refresh the index after a real change (`update_cache`, issue #54);
 standalone cleanup of orphaned dependencies, idempotent on
 `AptAutoremovable`; `apt.key`, which installs a GPG key stream as a
 keyring file under `/etc/apt/keyrings/` for `signed-by=` references —
-deliberately non-idempotent, like `dnf.key`; `apt.mark`, which holds
+idempotent when `keyid` names the key (gated on `AptKeys`, like `dnf.key`
+since #25) and stateless without one; `apt.mark`, which holds
 packages back from upgrades (or releases held ones) with
 `apt-mark hold`/`unhold`, idempotent on `AptHeldPackages` — a reemote
 original; `apt.packages`, which
@@ -479,7 +480,19 @@ seekable IO-like stream on the control machine (never a filename or URL —
 a `str` raises `ValueError`; fetch a URL on the controller and pass its
 bytes), and `dest` is the keyring filename or absolute path: a relative
 name resolves under `/etc/apt/keyrings/`, an explicit path is used
-verbatim. The operation is **non-idempotent** — a deliberate deviation
+verbatim. Passing `keyid` makes the install **idempotent** (issue #53, the
+`dnf.key` (#25) and `gpg.import_key` (#11) precedent): the operation reads
+`AptKeys`, which sweeps APT's three keyring directories, and an entry whose
+id matches is a no-op — the reason names the key and nothing is yielded at
+all. The id accepts any spelling GPG prints — an 8-hex short id, the 16-hex
+long id `AptKeys` reports or a full 40-hex fingerprint — case and an `0x`
+prefix being ignored, and nested subkey ids match too, since a keyring
+trusts the whole key. The key's id is never derived from `src`
+controller-side (parsing OpenPGP packets was rejected in #25), and the
+install is never gated on `dest` existing: an armored stream is not the
+binary keyring's bytes, so the file's presence says nothing about which key
+it holds. With no `keyid` (or a blank one) the operation stays
+**stateless** — a deliberate deviation
 from the baseline, which skips installation when the destination file exists:
 it always reports a change and yields two descriptors, an
 `AptKeyUploadCommand` transfer that spools the stream into a dest-derived
@@ -499,7 +512,9 @@ removal is expressible with the `files` primitives. `dest` is required
 because an anonymous stream provides no name to derive one from.
 `update_cache=True` appends an `apt-get update` (`AptUpdateCommand`) after
 the install — Ansible's `apt_repository` `update_cache: true` spelling
-(issue #14); since the key install is non-idempotent it always refreshes.
+(issue #14); without `keyid` the key install is stateless, so the refresh
+always follows it, while a `keyid`-gated no-op yields nothing at all and a
+converged deploy never refreshes.
 `cache_valid_time` is accepted for the same spelling parity but is inert
 here: a key install always forces the refresh, because a fresh
 `AptUpdateStamp` predates the change and gating on it would skip the
@@ -819,7 +834,9 @@ upgrade-then-cleanup pair the same way — each yields its request twice to
 show simulation-gated idempotence. The `apt_key.py` script demonstrates
 `apt.key`: it installs a module-level key stream as
 `/etc/apt/keyrings/reemote-demo.gpg`, unprivileged spool transfer plus
-elevated install in one request. The `apt_mark.py` script demonstrates
+elevated install in one request, and pins the vendor key's `keyid` (issue
+#53) so yielding the same request twice makes the second a guaranteed
+no-op in the apply phase. The `apt_mark.py` script demonstrates
 `apt.mark`: it holds the baseline packages back from upgrades with
 `apt-mark hold`, yielding the same request twice so the second is a
 guaranteed no-op in the apply phase. The `apt_packages.py` script demonstrates

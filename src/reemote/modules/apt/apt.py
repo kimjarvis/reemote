@@ -62,10 +62,12 @@
 # idempotent on ``AptAutoremovable``. ``apt.key`` mirrors the install half
 # of the baseline's ``apt.key``: a GPG key stream is spooled over scp and
 # installed as a keyring file for ``signed-by=`` references, dearmored on
-# the target when the content is ASCII-armored; it is deliberately
-# non-idempotent (always installs, like a ``dnf.key`` import without
-# ``keyid``), and the baseline's
-# ``keyserver``/``keyid`` fetch and ``present=False`` removal are dropped.
+# the target when the content is ASCII-armored; the install is idempotent
+# when ``keyid`` names the key (gated on ``AptKeys``, the ``dnf.key``
+# (issue #25) and ``gpg.import_key`` (issue #11) precedent, issue #53) and
+# stays stateless without one -- the stream's key id is unknown
+# controller-side. The baseline's ``keyserver`` fetch (a target-side
+# ``gpg --recv-keys``) and its ``present=False`` removal are dropped.
 # ``apt.mark`` is a reemote original -- the baseline ships no operation managing
 # package hold states -- holding packages back from upgrades (or releasing
 # held ones) with ``apt-mark hold``/``unhold``, idempotent on
@@ -2338,6 +2340,45 @@ def _key_spool_path(dest: str) -> str:
     return f"/tmp/reemote-apt-key-{digest}/key.gpg"
 
 
+def _clean_keyid(keyid: str) -> str:
+    """Strip a ``0x``/``0X`` prefix and surrounding whitespace, uppercase a key id.
+
+    The ``gpg._clean_keyid`` spelling: Ansible roles pass either a bare hex id
+    or the ``0x``-prefixed form, and GPG prints both ids and fingerprints in
+    uppercase, so the comparison is normalized once here.
+    """
+    return keyid.strip().replace("0x", "").replace("0X", "").upper()
+
+
+def _matches_keyid(entry: AptKey, clean_key: str) -> bool:
+    """Whether one ``AptKeys`` entry is the key ``keyid`` names.
+
+    The ``gpg._matches_keyid`` rule, widened across the entry's own ids: GPG
+    reports a key's 16-hex long id (``AptKey["id"]``) and, when it prints one,
+    the full fingerprint (``AptKey["fingerprint"]``), while a caller pins
+    whichever form it knows -- an 8-hex short id, the 16-hex long id or the
+    40-hex fingerprint. A short id is therefore a suffix of either, a long id
+    equals (or ends) the fingerprint, and a fingerprint ends the fingerprint;
+    subkeys count too, since a keyring trusts the whole key. A garbage id
+    simply matches nothing and the install proceeds.
+    """
+    candidates = [entry["id"]]
+    fingerprint = entry.get("fingerprint")
+    if fingerprint:
+        candidates.append(fingerprint)
+    for subkey in entry.get("subkeys", []):
+        candidates.append(subkey["id"])
+        if subkey.get("fingerprint"):
+            candidates.append(subkey["fingerprint"])
+    known = {candidate.upper() for candidate in candidates}
+    return any(
+        candidate == clean_key
+        or candidate.endswith(clean_key)
+        or clean_key.endswith(candidate)
+        for candidate in known
+    )
+
+
 @dataclass(frozen=True)
 class AptKeyUploadCommand(TransferCommand):
     """Spool the GPG key stream to a ``/tmp`` path on the target host.
@@ -2387,7 +2428,7 @@ class AptKeyInstallCommand(Command):
     bytes, regardless of any file extension) is converted to the binary form
     APT's ``signed-by=`` expects with ``gpg --batch --yes --dearmor``
     (``--yes`` overwrites an existing keyring -- ``--batch`` alone refuses,
-    which would break the always-install contract on a second run), binary
+    which would break the repeat-install contract on a second run), binary
     content is copied verbatim; finally the keyring is chmod'ed ``0644``
     (the baseline's fixed ``mode`` for apt keys) and the spool file removed.
     All paths are shell-quoted.
@@ -2418,6 +2459,7 @@ async def key(
     ctx: OpContext,
     src: IO[Any],
     dest: str,
+    keyid: str | None = None,
     update_cache: bool = False,
     cache_valid_time: int = 0,
     **kwargs: Any,
@@ -2434,12 +2476,23 @@ async def key(
             a relative name is resolved under ``/etc/apt/keyrings/`` so a
             sources entry can reference it via ``signed-by=`` (the modern,
             non-deprecated replacement for ``apt-key add``).
+        keyid (str | None, optional): 8 hex digits (GPG's short key id), 16
+            (the long form ``AptKeys`` reports) or a full 40-digit
+            fingerprint, case and an ``0x`` prefix ignored. Optional, and it
+            makes the install **idempotent**: a key ``AptKeys`` already reports
+            in one of APT's keyrings is not re-installed (the ``dnf.key``
+            (#25) and ``gpg.import_key`` (#11) precedent, Ansible's
+            ``apt_key``/``rpm_key`` ``state=present`` parity). Without it the
+            install stays stateless and always runs, because the stream's key
+            id is unknown on the controller. Defaults to None.
         update_cache (bool, optional): Refresh the package index with
             ``apt-get update`` after the keyring is installed -- Ansible's
             ``apt_repository`` ``update_cache: true`` spelling (issue #14).
-            ``apt.key`` is non-idempotent (it always installs), so the
-            ``AptUpdateCommand`` always follows the install when this is set;
-            it is yielded *after* the install, never before. Defaults to False.
+            Without ``keyid`` ``apt.key`` is stateless (it always
+            installs), so the ``AptUpdateCommand`` then always follows the
+            install when this is set; it is yielded *after* the install, never
+            before. A ``keyid``-gated no-op yields nothing at all, so a
+            converged deploy never refreshes. Defaults to False.
         cache_valid_time (int, optional): Accepted for Ansible spelling
             parity but inert here: installing a key always forces the
             refresh, because a fresh ``AptUpdateStamp`` predates the change
@@ -2449,7 +2502,9 @@ async def key(
         **kwargs: Additional keyword arguments.
 
     Yields:
-        Command: Generated apt GPG keyring commands.
+        Command: The key transfer and keyring install commands (plus the
+            optional refresh) unless ``keyid`` names a key ``AptKeys`` already
+            reports, in which case nothing is yielded.
 
     **Raises:**
 
@@ -2473,12 +2528,24 @@ async def key(
             sudo=True,
         )
 
+        # keyid makes it idempotent: a key already in an apt keyring is skipped
+        # (no transfer, no install) instead of re-dearmored on every run
+        yield op(
+            apt.key,
+            name="Install the signing key if missing",
+            src=KEY_STREAM,
+            dest="example.gpg",
+            keyid="0EBFCD88",
+            sudo=True,
+        )
+
         # Install and refresh the index afterwards (update_cache appends apt-get update)
         yield op(
             apt.key,
             name="Install the key and update the index",
             src=KEY_STREAM,
             dest="example.gpg",
+            keyid="0EBFCD88",
             update_cache=True,
             sudo=True,
         )
@@ -2489,11 +2556,23 @@ async def key(
 
     # baseline ``apt.key`` parity, install half only.
     #
-    # This is **non-idempotent**: it always installs, so it always reports a
-    # change and yields its commands on every run -- a deliberate deviation
+    # The install is **idempotent when ``keyid`` names the key** (issue #53):
+    # the same-namespace ``AptKeys`` fact lists the keys of APT's three
+    # keyring directories and a matching entry short-circuits to a no-op --
+    # Ansible's ``apt_key``/``rpm_key`` ``state=present`` parity, the
+    # ``dnf.key`` (#25) and ``gpg.import_key`` (#11) shape. Without ``keyid``
+    # it stays **stateless**: it always installs, so it always reports a change
+    # and yields its commands on every run -- a deliberate deviation
     # from the baseline's ``apt.key``, which skips installation when the destination
     # file already exists (and, like the existence check, its mode-repair step
-    # is dropped). It yields *two* descriptors from the one request -- an
+    # is dropped). The id is never derived from ``src`` on the controller:
+    # reading it would mean parsing OpenPGP packets (armored vs binary,
+    # multi-key bundles, a parser dependency this library does not carry), the
+    # same rejection #25 recorded for ``dnf.key``. Nor is the gate ``dest``
+    # existence: that is the baseline check deliberately dropped here, and a
+    # content comparison cannot work either -- an armored ``src`` becomes a
+    # binary ``dest``, so the two byte strings never match. It yields *two*
+    # descriptors from the one request -- an
     # ``AptKeyUploadCommand`` transfer that spools the stream to a ``/tmp`` path
     # over scp, then an ``AptKeyInstallCommand`` running the elevated install:
     # create the destination directory, dearmor the key with ``gpg`` when the
@@ -2515,16 +2594,20 @@ async def key(
     # after the directory resolution (upstream's "``.gpg`` extension is
     # enforced" applies only to *derived* names, not explicit ones).
     # ``mode`` is fixed at ``0644`` as the baseline's ``apt.key`` hard-codes it.
-    # The baseline's ``keyserver``/``keyid`` fetch (a target-side ``gpg --recv-keys``
+    # The baseline's ``keyserver`` fetch (a target-side ``gpg --recv-keys``
     # into a temporary ``GNUPGHOME``) and its ``present=False`` removal (whole
     # keyring file, or individual keys with empty-file pruning) are deliberately
     # dropped: keys arrive as streams from the controller, and removal is
-    # expressible with the ``files`` primitives. ``**kwargs`` absorbs the baseline's
-    # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    # expressible with the ``files`` primitives. ``keyid`` survives, but only as
+    # this operation's idempotence gate, never as a fetch mechanism.
+    # ``**kwargs`` absorbs the baseline's global arguments (``op()`` already
+    # strips ``name``/``sudo``/``su``).
     #
     # ``update_cache=True`` appends one ``AptUpdateCommand`` after the install
-    # (issue #14, Ansible's ``apt_repository`` ``update_cache: true``); the key
-    # install is non-idempotent, so it always refreshes. ``cache_valid_time`` is
+    # (issue #14, Ansible's ``apt_repository`` ``update_cache: true``); an
+    # ungated install always refreshes, while a ``keyid``-gated no-op yields
+    # nothing -- not even the refresh, per #14's rule that a converged deploy
+    # never refreshes. ``cache_valid_time`` is
     # accepted for parity but never read: the install already forces the refresh,
     # and a fresh ``AptUpdateStamp`` predates it, so gating on freshness would skip
     # the refresh exactly when needed -- the trap the issue names.
@@ -2542,6 +2625,16 @@ async def key(
         raise ValueError("apt.key requires a non-empty dest keyring filename or path")
     if not dest.startswith("/"):
         dest = f"/etc/apt/keyrings/{dest}"
+    if keyid and keyid.strip():
+        # The keyid gate: normalize the requested id (``0x`` prefix, case,
+        # surrounding space) and ask ``AptKeys`` which keys APT already
+        # trusts. A blank keyid is no gate at all (the ``gpg.import_key``
+        # ``if keyid:`` shape), so the install simply runs.
+        wanted = _clean_keyid(keyid)
+        keys = await ctx.facts.get(AptKeys)
+        if any(_matches_keyid(entry, wanted) for entry in keys):
+            ctx.reason = f"GPG key {wanted} already in an apt keyring"
+            return
     ctx.changed = True
     ctx.reason = f"install GPG key from {getattr(src, 'name', '<stream>')} to {dest}"
     spool = _key_spool_path(dest)

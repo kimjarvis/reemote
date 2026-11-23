@@ -50,10 +50,15 @@ as the standalone forms of those prefixes: the stateless update (dropped
 the ``apt.auto_remove`` split), against the baseline's ``apt.update`` /
 ``apt.upgrade`` operation fixtures, plus the shared SimulatedHost
 mutations and end-to-end / dry-run runs. ``apt.key`` is covered as the
-non-idempotent stream install it is: yield order, dest resolution, str-src
+stream install it is: yield order, dest resolution, str-src
 and empty-dest rejection, the unprivileged spool transfer versus the
 elevated ``sh -c`` install, the SimulatedHost spool-then-install effect and
-end-to-end / dry-run / determinism-guard runs. ``apt.mark`` is covered as
+end-to-end / dry-run / determinism-guard runs. Its ``keyid`` idempotence gate
+(issue #53, Ansible ``apt_key``/``rpm_key`` ``state=present`` parity) is
+covered in a dedicated section: key-id normalization and matching against
+``AptKeys``, the gated no-op (including ``update_cache`` staying silent), the
+stateless paths kept for back-compatibility and the second-deploy no-op run.
+``apt.mark`` is covered as
 the reemote original it is (the baseline ships no hold-state operation):
 hold/unhold descriptor rendering, fact-gated idempotence in both
 directions against ``AptHeldPackages``, the SimulatedHost hold/unhold
@@ -92,6 +97,7 @@ the inert stamp, plus the end-to-end install-then-converged-no-op run.
 ``asyncio_mode = "auto"`` lets the async tests below run without decorators.
 """
 
+import hashlib
 import inspect
 import io
 import json
@@ -150,8 +156,10 @@ from reemote.modules.apt.apt import (
     DebPackageInfo,
     SimulateOperationWillChange,
     _add_repo_line,
+    _clean_keyid,
     _is_version_glob,
     _key_spool_path,
+    _matches_keyid,
     _pin_satisfied_by,
     _pin_satisfied_by_any,
     _remove_repo_line,
@@ -2907,9 +2915,9 @@ VENDOR_SPOOL = _key_spool_path(VENDOR_DEST)
 
 
 async def test_apt_key_yields_upload_then_install():
-    """apt.key is non-idempotent: it always reports a change and yields the
-    spool transfer followed by the elevated install, reading no fact. A
-    relative dest resolves under /etc/apt/keyrings/."""
+    """Without ``keyid`` apt.key is stateless: it always reports a change and
+    yields the spool transfer followed by the elevated install, reading no
+    fact. A relative dest resolves under /etc/apt/keyrings/."""
     host = SimulatedHost(name="h")
     stream = io.BytesIO(GPG_KEY_BYTES)
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
@@ -3123,6 +3131,237 @@ async def test_apt_key_fresh_stream_per_phase_trips_determinism():
     runtimes, plans = await run_prepare([host], key_deploy)
     with pytest.raises(DeterminismError):
         await run_apply(runtimes, plans=plans)
+
+
+# --- apt.key keyid gate (issue #53, Ansible apt_key state=present parity) ------
+
+# The Docker Release (CE deb) signing key that ``examples/modules/apt/apt_key.py``
+# installs, in the shape ``AptKeys`` reports it: gpg's colon records give the
+# 16-hex long id on the ``pub`` line and the full fingerprint on the ``fpr``
+# line that follows, so a caller may pin any of the three forms.
+DOCKER_KEY_ENTRY: AptKey = {
+    "id": "8D81803C0EBFCD88",
+    "validity": "-",
+    "length": 4096,
+    "fingerprint": "9DC858229FC7DD38854AE2D88D81803C0EBFCD88",
+    "subkeys": [],
+}
+
+# The same key's subkey, which ``AptKeys`` nests inside the primary entry.
+DOCKER_SUBKEY = {
+    "id": "7EA0A9C3F273FCD8",
+    "validity": "-",
+    "length": 4096,
+    "fingerprint": "D3306A018370199E527AE7997EA0A9C3F273FCD8",
+}
+
+
+def test_clean_keyid_normalizes_the_ansible_spellings():
+    """An ``0x`` prefix, surrounding space and either case all reduce to gpg's
+    uppercase bare hex, so the reason and the comparison are stable."""
+    assert _clean_keyid("0x0ebfcd88") == "0EBFCD88"
+    assert _clean_keyid("  8D81803C0EBFCD88  ") == "8D81803C0EBFCD88"
+
+
+def test_matches_keyid_accepts_every_id_form():
+    """The short id, the long id and the full fingerprint each name the key,
+    while an unrelated id matches nothing."""
+    for wanted in ("0EBFCD88", "8D81803C0EBFCD88", DOCKER_KEY_ENTRY["fingerprint"]):
+        assert _matches_keyid(DOCKER_KEY_ENTRY, wanted), wanted
+    assert not _matches_keyid(DOCKER_KEY_ENTRY, "C0B21F32")
+
+
+def test_matches_keyid_includes_the_nested_subkeys():
+    """A keyring trusts the whole key, so a subkey's id or fingerprint gates the
+    install too -- ``AptKeys`` nests subkeys instead of listing them."""
+    entry = {**DOCKER_KEY_ENTRY, "subkeys": [dict(DOCKER_SUBKEY)]}
+    assert _matches_keyid(entry, "F273FCD8")
+    assert _matches_keyid(entry, DOCKER_SUBKEY["fingerprint"])
+
+
+async def test_apt_key_keyid_already_present_is_noop():
+    """issue #53 acceptance: ``keyid`` naming a key ``AptKeys`` reports makes the
+    install a no-op -- no change, zero commands and a reason naming the key.
+    ``update_cache=True`` rides the change, so a converged host is not
+    refreshed either (#14's rule)."""
+    host = SimulatedHost(name="h", apt_keys=[dict(DOCKER_KEY_ENTRY)])
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.key(
+            ctx,
+            src=stream,
+            dest="docker.gpg",
+            keyid="0ebfcd88",
+            update_cache=True,
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "GPG key 0EBFCD88 already in an apt keyring"
+    assert commands == []
+    assert host.remote_files == {}
+
+
+async def test_apt_key_keyid_accepts_a_long_keyid():
+    """The 16-hex long id ``AptKey["id"]`` carries is the other natural pin."""
+    host = SimulatedHost(name="h", apt_keys=[dict(DOCKER_KEY_ENTRY)])
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in apt.key(ctx, src=stream, dest="docker.gpg", keyid="8D81803C0EBFCD88")
+    ]
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_apt_key_keyid_accepts_a_full_fingerprint():
+    """A pinned 40-hex fingerprint gates through the ``fpr`` record ``AptKeys``
+    attached to the key (the role variable an Ansible ``apt_key`` migration
+    keeps)."""
+    host = SimulatedHost(name="h", apt_keys=[dict(DOCKER_KEY_ENTRY)])
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in apt.key(
+            ctx,
+            src=stream,
+            dest="docker.gpg",
+            keyid="0x9DC858229FC7DD38854AE2D88D81803C0EBFCD88",
+        )
+    ]
+    assert not ctx.changed
+    assert commands == []
+
+
+async def test_apt_key_keyid_absent_still_installs():
+    """The gate only skips keys the fact actually reports: an id that matches
+    nothing leaves the always-install behavior intact (back-compat)."""
+    host = SimulatedHost(name="h", apt_keys=_key_entries(UBUNTU_APT_KEYS))
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in apt.key(ctx, src=stream, dest="docker.gpg", keyid="0EBFCD88")
+    ]
+    assert ctx.changed
+    assert ctx.reason == f"install GPG key from <stream> to {KEYRING_DEST}"
+    assert commands == [
+        AptKeyUploadCommand(src=stream, dest=KEY_SPOOL),
+        AptKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST),
+    ]
+
+
+async def test_apt_key_without_keyid_stays_stateless():
+    """Without ``keyid`` the install reads no fact and always runs, even with the
+    key sitting in a keyring -- the stream's id is unknown on the controller
+    (the ``dnf.key`` #25 rejection of OpenPGP parsing)."""
+    host = SimulatedHost(name="h", apt_keys=[dict(DOCKER_KEY_ENTRY)])
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.key(ctx, src=stream, dest="docker.gpg")]
+    assert ctx.changed
+    assert commands == [
+        AptKeyUploadCommand(src=stream, dest=KEY_SPOOL),
+        AptKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST),
+    ]
+
+
+async def test_apt_key_blank_keyid_stays_stateless():
+    """A blank ``keyid`` is no gate (the ``gpg.import_key`` ``if keyid:`` shape):
+    the install runs rather than comparing an empty id against the keyrings."""
+    host = SimulatedHost(name="h", apt_keys=[dict(DOCKER_KEY_ENTRY)])
+    stream = io.BytesIO(GPG_KEY_BYTES)
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in apt.key(ctx, src=stream, dest="docker.gpg", keyid="   ")]
+    assert ctx.changed
+    assert commands == [
+        AptKeyUploadCommand(src=stream, dest=KEY_SPOOL),
+        AptKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST),
+    ]
+
+
+async def test_apt_key_keyid_second_deploy_is_noop():
+    """Through ``run()``, twice over one persistent host: the first deploy
+    installs (the simulated seam records a stub key whose id is the content
+    hash's last 16 digits), and the identical second deploy is a full no-op --
+    no transfer, no install, ``changed=False``. This is what makes an
+    ``rpm_key``/``apt_key`` role's second pass converge instead of
+    re-dearmoring the key on every run."""
+    stub_id = hashlib.sha256(GPG_KEY_BYTES).hexdigest().upper()[:40][-16:]
+    stream = io.BytesIO(GPG_KEY_BYTES)
+
+    def key_deploy(host):
+        yield op(
+            apt.key,
+            name="Install the vendor key",
+            src=stream,
+            dest="docker.gpg",
+            keyid=stub_id,
+            update_cache=True,
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h")
+
+    def factory(entry):
+        return host
+
+    _plans, report, _hosts = await run(
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
+        key_deploy,
+        host_factory=factory,
+    )
+    (entry,) = report.log
+    assert entry.changed
+    assert entry.commands == (
+        AptKeyUploadCommand(src=stream, dest=KEY_SPOOL),
+        AptKeyInstallCommand(spool=KEY_SPOOL, dest=KEYRING_DEST),
+        AptUpdateCommand(),
+    )
+    assert [key["id"] for key in host.apt_keys] == [stub_id]
+    _plans, report, _hosts = await run(
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
+        key_deploy,
+        host_factory=factory,
+    )
+    (entry,) = report.log
+    assert not entry.changed
+    assert entry.commands == ()
+    assert entry.reason == f"GPG key {stub_id} already in an apt keyring"
+    assert len(host.apt_keys) == 1
+    assert host.apt_update_stamp is not None
+
+
+async def test_apt_key_keyid_dry_run_plans_noop_when_present():
+    """``dry=True`` with the key already in a keyring plans the no-op
+    (``changed=False``, zero commands) and sends nothing -- the plan a
+    converged host sees."""
+    stream = io.BytesIO(GPG_KEY_BYTES)
+
+    def key_deploy(host):
+        yield op(
+            apt.key,
+            name="Install the vendor key",
+            src=stream,
+            dest="docker.gpg",
+            keyid="0EBFCD88",
+            sudo=True,
+        )
+
+    host = SimulatedHost(name="h", apt_keys=[dict(DOCKER_KEY_ENTRY)])
+    plans, report, _hosts = await run(
+        [{"host": "h", "family": "Ubuntu", "connection": {}}],
+        key_deploy,
+        host_factory=lambda entry: host,
+        dry=True,
+    )
+    assert report is None
+    (planned,) = plans["h"]
+    assert not planned.changed
+    assert planned.commands == ()
+    assert host.remote_files == {}
+    assert host.existing_files == set()
 
 
 # --- apt.mark operation (a reemote original) ----------------------------------
@@ -6637,8 +6876,9 @@ async def test_apt_ppa_cache_valid_time_never_suppresses_a_forced_refresh():
 
 
 async def test_apt_key_update_cache_appends_update_after_install():
-    """issue #14: ``apt.key`` is non-idempotent, so ``update_cache=True``
-    always appends ``apt-get update`` after the install pair."""
+    """issue #14: ``apt.key`` without ``keyid`` is stateless, so
+    ``update_cache=True`` always appends ``apt-get update`` after the install
+    pair."""
     host = SimulatedHost(name="h")
     stream = io.BytesIO(GPG_KEY_BYTES)
     ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))

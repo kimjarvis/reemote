@@ -3458,7 +3458,7 @@ class SimulatedHost(Host):
         The entry carries the ``filename`` of the ``.list`` file a real
         ``apt-add-repository`` would write (``<owner>-ubuntu-<repo>-<codename>.list``).
         The signing key ``apt-add-repository`` also imports is not modeled,
-        like ``install_apt_key`` leaves ``apt_keys`` to the test.
+        unlike ``install_apt_key``, which records its key in ``apt_keys``.
         """
         url = self._ppa_url(src)
         if any(source["url"] == url for source in self.apt_sources):
@@ -3674,10 +3674,17 @@ class SimulatedHost(Host):
         ``chmod 0644``), so ``FileExists``, ``File`` and the content-read
         facts all see the installed file consistently. The simulated install
         models no ``gpg --dearmor``: armored content is stored verbatim (the
-        real command would write its binary conversion), and the ``apt_keys``
-        seam is not derived from it -- that seam holds the already-parsed
-        ``AptKeys`` answer a test seeds directly. An absent spool path
-        installs nothing.
+        real command would write its binary conversion).
+
+        A stub ``AptKey`` entry also lands in ``apt_keys`` so ``AptKeys``
+        reports the installed keyring and a ``keyid``-gated repeat install
+        plans a no-op (the ``import_key``/``import_gpg_key`` precedent, issue
+        #53). The simulation models no OpenPGP parsing: the stub's fingerprint
+        is derived from the content hash (stable across phases) and its id is
+        that fingerprint's last 16 digits -- a test wanting a realistic key id
+        seeds ``apt_keys`` directly. An already-present id is left alone (the
+        real keyring would simply hold the same key twice at worst); an absent
+        spool path installs nothing.
         """
         data = self.remote_files.pop(spool, None)
         if data is None:
@@ -3690,6 +3697,17 @@ class SimulatedHost(Host):
             "mode": 644,
             "size": len(data),
         }
+        fingerprint = hashlib.sha256(data).hexdigest().upper()[:40]
+        if not any(entry["id"] == fingerprint[-16:] for entry in self.apt_keys):
+            self.apt_keys.append(
+                {
+                    "id": fingerprint[-16:],
+                    "validity": "-",
+                    "length": 4096,
+                    "fingerprint": fingerprint,
+                    "subkeys": [],
+                }
+            )
 
     def _store_gpg_keyring_file(self, dest: str, data: bytes) -> None:
         """Record a keyring file write consistently across every consulted seam.

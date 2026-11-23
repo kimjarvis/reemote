@@ -2411,7 +2411,7 @@ async def restorecon(
     # labels -- this is the remedy. Deliberately **stateless** (the chosen
     # design): restorecon is cheap, silent on an already-correct tree and
     # the natural follow-up to a mapping change, so it always reports a
-    # change and always yields, like ``apt.key``'s non-idempotence. A
+    # change and always yields, like ``apt.key`` without ``keyid``. A
     # fact-driven "would anything change?" preflight (matchpathcon over
     # the tree) costs more than the relabel itself.
     #
