@@ -37,9 +37,11 @@ answerable without loss). ``-n`` keeps addresses numeric -- a fact never
 blocks on DNS. Pass a table name and/or a chain name to ``gather_fact``
 (``gather_fact(hosts, IptablesRulesOrdered, "nat", "PREROUTING")``) to
 narrow the listing; the default reads every chain of ``filter``. Reading
-the tables needs CAP_NET_ADMIN, so the command retries through
-passwordless ``sudo -n``: a root login or a NOPASSWD sudoers rule reads
-the full list, any other login reads ``[]``.
+the tables needs CAP_NET_ADMIN, so the read is two-tier: the login-user
+command, a passwordless ``sudo -n`` retry, and -- when both are refused
+-- an elevated re-read through the inventory's configured privilege
+(``sudo_user``/``sudo_password``), so a password-sudo host reads the full
+list instead of the empty ``[]`` an unprivileged login fell back to.
 
 Every host's connection is closed with ``aclose`` once the facts are
 gathered. ``gather_fact`` and ``process`` are coroutines, so ``main`` is
@@ -64,6 +66,7 @@ from reemote import (
     HostConnectionError,
     InventoryError,
     IptablesRulesOrdered,
+    PrivilegeError,
     gather_fact,
     validate_inventory,
 )
@@ -118,7 +121,7 @@ async def main() -> None:
         # whole report -- and it fails before any host is materialized.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    except (CommandError, HostConnectionError) as exc:
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # The library reports an unreachable host or a failed fact command as a
         # typed error whose message already names the host. Print that message
         # -- no traceback -- and exit non-zero so the failure stays

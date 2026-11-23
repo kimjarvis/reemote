@@ -33,8 +33,11 @@ applications:`` header (the profiles packages install into
 ``/etc/ufw/applications.d/``, e.g. ``Nginx Full`` or ``OpenSSH``), in
 listing order. These are exactly the names ``ufw.rule(app=...)``
 references to open every port a profile declares in one rule. A host
-with no profiles reads ``[]``. Reading the list needs root on some
-hosts, so the command retries through passwordless ``sudo -n``.
+with no profiles reads ``[]`` (real state, not a refusal). Reading the
+list needs root on some hosts, so the read is two-tier: a passwordless
+``sudo -n`` retry, then an elevated re-read through the inventory's
+configured privilege when the login is denied -- a refusal the elevation
+cannot satisfy raises ``PrivilegeError``.
 
 Every host's connection is closed with ``aclose`` once the facts are
 gathered. ``gather_fact`` and ``process`` are coroutines, so ``main`` is
@@ -58,6 +61,7 @@ from reemote import (
     Host,
     HostConnectionError,
     InventoryError,
+    PrivilegeError,
     UfwApplications,
     gather_fact,
     validate_inventory,
@@ -111,7 +115,7 @@ async def main() -> None:
         # whole report -- and it fails before any host is materialized.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    except (CommandError, HostConnectionError) as exc:
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # The library reports an unreachable host or a failed fact command as a
         # typed error whose message already names the host. Print that message
         # -- no traceback -- and exit non-zero so the failure stays

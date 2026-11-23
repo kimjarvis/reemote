@@ -37,6 +37,8 @@ and a dry run).
 """
 
 import shlex
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -51,7 +53,7 @@ from reemote.drivers import (
     run_prepare,
     send_command,
 )
-from reemote.hosts import Host
+from reemote.hosts import CommandNotFoundError, Host, PrivilegeError
 from reemote.modules import iptables
 from reemote.modules.iptables.iptables import (
     _ICMP_TYPES,
@@ -94,16 +96,45 @@ from tests.simulated_host import SimulatedHost
 
 
 class CannedShellHost(Host):
-    """Returns fixed stdout from ``run_shell`` instead of connecting."""
+    """Answers the transport seam with canned results instead of connecting.
 
-    def __init__(self, stdout: str):
+    The probe tier (the bare read and its ``sudo -n`` retry, one shell
+    string) answers ``stdout`` with ``exit_status``/``stderr``; a
+    ``sudo``-wrapped elevated re-read answers ``elevated_stdout`` when
+    one is set (the denied-login fallback shape, the mysql precedent).
+    """
+
+    def __init__(
+        self,
+        stdout: str,
+        *,
+        exit_status: int = 0,
+        stderr: str = "",
+        elevated_stdout: str | None = None,
+    ):
         super().__init__(name="canned")
         self._stdout = stdout
-        self.last_shell: str | None = None
+        self._exit_status = exit_status
+        self._stderr = stderr
+        self._elevated_stdout = elevated_stdout
+        self.shells: list[str] = []
 
-    async def run_shell(self, shell: str) -> str:
-        self.last_shell = shell
-        return self._stdout
+    @property
+    def last_shell(self) -> str | None:
+        """The most recent shell the fact issued (the old recorder name)."""
+        return self.shells[-1] if self.shells else None
+
+    async def _run_shell(self, shell: str) -> Any:
+        self.shells.append(shell)
+        if shell.startswith("sudo ") and self._elevated_stdout is not None:
+            return SimpleNamespace(
+                exit_status=0, stdout=self._elevated_stdout, stderr=""
+            )
+        return SimpleNamespace(
+            exit_status=self._exit_status,
+            stdout=self._stdout,
+            stderr=self._stderr,
+        )
 
 
 def make_ctx(host: Host) -> OpContext:
@@ -237,22 +268,19 @@ IP6TABLES_RULES_FACT: list[IptablesRule] = [
     },
 ]
 
-# The privileged-read shells the save facts issue (the sudo -n retry).
+# The privileged-read shells the save facts issue (the probe: the bare
+# read plus the passwordless sudo -n retry; a denial re-reads elevated).
 SAVE_FILTER_SHELL = (
-    "iptables-save -t filter 2> /dev/null "
-    "|| sudo -n iptables-save -t filter 2> /dev/null || true"
+    "iptables-save -t filter || sudo -n iptables-save -t filter"
 )
 SAVE_MANGLE_SHELL = (
-    "iptables-save -t mangle 2> /dev/null "
-    "|| sudo -n iptables-save -t mangle 2> /dev/null || true"
+    "iptables-save -t mangle || sudo -n iptables-save -t mangle"
 )
 IP6_SAVE_FILTER_SHELL = (
-    "ip6tables-save -t filter 2> /dev/null "
-    "|| sudo -n ip6tables-save -t filter 2> /dev/null || true"
+    "ip6tables-save -t filter || sudo -n ip6tables-save -t filter"
 )
 IP6_SAVE_MANGLE_SHELL = (
-    "ip6tables-save -t mangle 2> /dev/null "
-    "|| sudo -n ip6tables-save -t mangle 2> /dev/null || true"
+    "ip6tables-save -t mangle || sudo -n ip6tables-save -t mangle"
 )
 
 
@@ -294,18 +322,86 @@ async def test_save_facts_quote_the_table_argument():
     host = CannedShellHost("")
     assert await IptablesRules.process(host, "nat;reboot") == []
     assert host.last_shell == (
-        "iptables-save -t 'nat;reboot' 2> /dev/null "
-        "|| sudo -n iptables-save -t 'nat;reboot' 2> /dev/null || true"
+        "iptables-save -t 'nat;reboot' || sudo -n iptables-save -t 'nat;reboot'"
     )
 
 
 async def test_save_facts_empty_output_reads_as_empty():
-    """An unprivileged login (the ``|| true`` guard swallows the error)
-    reads the empty defaults, not an exception."""
+    """An empty ``iptables-save`` is real state (a ruleset-less table):
+    a zero-exiting read fills the empty defaults, not an exception.
+    Empty output alone never reads as a denial (issue #52)."""
     assert await IptablesRules.process(CannedShellHost("")) == []
     assert await IptablesChains.process(CannedShellHost("")) == {}
     assert await Ip6tablesRules.process(CannedShellHost("")) == []
     assert await Ip6tablesChains.process(CannedShellHost("")) == {}
+
+
+async def test_denied_save_read_reloads_elevated():
+    """The two-tier contract (issue #52): a login the probe denies
+    (failed read, failed passwordless ``sudo -n``) re-reads the same
+    command elevated, and the elevated answer is what parses."""
+    host = CannedShellHost(
+        "",
+        exit_status=1,
+        stderr="sudo: a password is required",
+        elevated_stdout=IPTABLES_SAVE_FILTER,
+    )
+    assert await IptablesRules.process(host) == IPTABLES_RULES_FACT
+    assert host.shells[0] == SAVE_FILTER_SHELL
+    assert host.shells[-1].startswith("sudo ")
+    assert "iptables-save -t filter" in host.shells[-1]
+
+
+async def test_denied_chains_read_reloads_elevated():
+    """The mangle chains fact rides the same two tiers."""
+    host = CannedShellHost(
+        "",
+        exit_status=1,
+        stderr="sudo: a password is required",
+        elevated_stdout=MANGLE_SAVE_OUTPUT,
+    )
+    assert await IptablesChains.process(host, "mangle") == CHAINS_FACT
+    assert len(host.shells) == 2
+
+
+async def test_missing_binary_raises_command_not_found():
+    """A missing ``iptables-save`` never reads as the empty default
+    (issue #52's swallowed-127 fix): the probe's failure text raises
+    ``CommandNotFoundError``."""
+    host = CannedShellHost(
+        "", exit_status=1, stderr="sudo: iptables-save: command not found"
+    )
+    with pytest.raises(CommandNotFoundError):
+        await IptablesRules.process(host)
+
+
+async def test_elevated_refusal_propagates():
+    """Refusal-on-refusal fails loud (the mysql precedent): when the
+    elevated re-read is refused too the ``PrivilegeError`` propagates
+    instead of silently reading the empty default."""
+    host = CannedShellHost("", exit_status=1, stderr="sudo: a password is required")
+    with pytest.raises(PrivilegeError):
+        await IptablesRules.process(host)
+
+
+async def test_denied_seam_rules_read_reloads_elevated_offline():
+    """The SimulatedHost seam honours ``firewall_reads_denied``: the
+    unprivileged tier answers the denial sentinel, the elevated re-read falls
+    back to the in-memory state -- the two-tier contract, offline, copied."""
+    rule: IptablesRule = {"chain": "INPUT", "jump": "ACCEPT"}
+    host = SimulatedHost(name="h", iptables_rules={"filter": [rule]})
+    host.firewall_reads_denied = True
+    result = await IptablesRules.process(host)
+    assert result == [rule]
+    result[0]["jump"] = "DROP"
+    assert host.iptables_rules["filter"][0]["jump"] == "ACCEPT"
+
+
+async def test_denied_seam_chains_read_reloads_elevated_offline():
+    """The chains seam runs the same denied-then-elevated dance offline."""
+    host = SimulatedHost(name="h", iptables_chains={"filter": {"INPUT": "ACCEPT"}})
+    host.firewall_reads_denied = True
+    assert await IptablesChains.process(host) == {"INPUT": "ACCEPT"}
 
 
 # --- Parser edge cases ---------------------------------------------------------------
@@ -430,20 +526,18 @@ def test_rules_ordered_skips_rows_without_a_chain_header():
 
 async def test_rules_ordered_real_transport_shells():
     """With a chain the listing narrows via ``-L INPUT``; without one
-    ``-L`` lists the whole table. Both ride the sudo -n retry."""
+    ``-L`` lists the whole table. Both ride the probe's sudo -n retry."""
     host = CannedShellHost(ORDERED_OUTPUT)
     assert await IptablesRulesOrdered.process(host, "filter", "INPUT") == ORDERED_FACT[:2]
     assert host.last_shell == (
-        "iptables -t filter -L INPUT -n -v -x --line-numbers 2> /dev/null "
-        "|| sudo -n iptables -t filter -L INPUT -n -v -x --line-numbers "
-        "2> /dev/null || true"
+        "iptables -t filter -L INPUT -n -v -x --line-numbers "
+        "|| sudo -n iptables -t filter -L INPUT -n -v -x --line-numbers"
     )
     host = CannedShellHost(ORDERED_OUTPUT)
     assert await IptablesRulesOrdered.process(host) == ORDERED_FACT
     assert host.last_shell == (
-        "iptables -t filter -L -n -v -x --line-numbers 2> /dev/null "
-        "|| sudo -n iptables -t filter -L -n -v -x --line-numbers "
-        "2> /dev/null || true"
+        "iptables -t filter -L -n -v -x --line-numbers "
+        "|| sudo -n iptables -t filter -L -n -v -x --line-numbers"
     )
 
 
@@ -613,14 +707,12 @@ def test_ip_sets_parses_the_list_blocks():
 
 
 async def test_ip_sets_real_transport_and_empty_output():
-    """The listing rides the sudo -n retry; an unprivileged or
-    ipset-less host reads {}."""
+    """The listing rides the probe's sudo -n retry; an empty (or
+    ipset-less, zero-exiting) read gives {}."""
     host = CannedShellHost(IPSET_LIST_OUTPUT)
     sets = await IpSets.process(host)
     assert sets["blacklist"]["members"] == ["10.0.0.5", "192.168.100.0/24"]
-    assert host.last_shell == (
-        "ipset list 2> /dev/null || sudo -n ipset list 2> /dev/null || true"
-    )
+    assert host.last_shell == "ipset list || sudo -n ipset list"
     assert await IpSets.process(CannedShellHost("")) == {}
 
 
@@ -638,7 +730,7 @@ async def test_iptables_persistence_synced_and_drifted():
     assert host.last_shell is not None
     assert host.last_shell.startswith("sh -c ")
     assert "iptables-save" in host.last_shell
-    assert "sudo -n iptables-save" in host.last_shell
+    assert "sudo -n sh -c" in host.last_shell
     assert "/etc/iptables/rules.v4" in host.last_shell
 
 

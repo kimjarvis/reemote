@@ -24,16 +24,21 @@
 # ``_FirewalldLockdown`` and ``_FirewalldPanicMode``.
 #
 # Privilege note: ``firewall-cmd`` queries need root or a polkit
-# authorization on most deployments. Following the iptables precedent
-# (itself the hardware.SmbiosInfo precedent), every fact read retries
-# its command through passwordless ``sudo -n`` at the shell level
-# (never the elevation layer -- facts stay side-effect free and
-# prompt-free): the contract is full data for a root login or a
-# NOPASSWD sudoers rule, and the empty default otherwise,
-# indistinguishable from genuinely-absent state. The operations below
-# flag their commands ``sudo=True`` at the ``op()`` call site; their
-# fact reads ride the same ``sudo -n`` retry, so idempotence reporting
-# works on a sudoers fleet.
+# authorization on most deployments. Every fact read is two-tier
+# (the files.FileContents/mysql precedent): an in-shell probe (the
+# bare command, then the passwordless ``sudo -n`` retry -- never
+# prompts, creates no askpass file, safe under the across-host
+# fan-out) whose failures are classified, not masked, and an elevated
+# re-read through the privilege layer when the probe was denied. The
+# contract: full data for a root login, a NOPASSWD sudoers rule or an
+# elevation-configured host; a stopped daemon and a genuinely empty
+# listing are real state, never elevation triggers; a missing
+# ``firewall-cmd`` raises ``CommandNotFoundError``; and a refusal at
+# the elevated tier propagates (``PrivilegeError``/``CommandError``)
+# rather than silently reading empty. The operations below flag their
+# commands ``sudo=True`` at the ``op()`` call site; their fact reads
+# ride the same two tiers, so idempotence reporting works on a
+# password-sudo fleet.
 #
 # Operation side: firewalld keeps TWO configurations -- runtime (live,
 # lost on reload/reboot) and permanent (on disk, applied by reload).
@@ -59,10 +64,10 @@
 # Zone-membership operations skip a scope whose fact shows no such
 # zone, with an explicit reason, rather than yielding a command that
 # would certainly fail: create the zone with ``firewalld.zone`` first
-# (and ``firewalld.reload`` to materialize it at runtime). An
-# unprivileged fact read ({} without root/NOPASSWD) therefore reports
-# "zone not found" no-ops -- the same degradation class as the
-# iptables facts' empty defaults.
+# (and ``firewalld.reload`` to materialize it at runtime). A denied
+# fact read no longer degrades to "zone not found" no-ops -- the
+# elevated re-read answers it with real state (the privilege note
+# above).
 #
 # Deliberately absent (decided with the developer): a ``config``
 # operation bundling default_zone/lockdown -- the standalone
@@ -89,22 +94,89 @@ from typing import Any, TypedDict
 
 from ...commands import Command
 from ...core import OpContext
-from ...hosts import Host
+from ...hosts import CommandNotFoundError, Host
 
 # --- Shared helpers ----------------------------------------------------------
 
 
-def _privileged_read(command: str) -> str:
+class _ReadDenied:
+    """Sentinel type: a root read the login user (and ``sudo -n``) were denied."""
+
+
+_DENIED = _ReadDenied()
+
+# Error-signature fragments (checked against the lowercased combined
+# stdout/stderr of a failed probe) distinguishing a refused read from
+# legitimate empty state -- an empty listing is real state, so plain
+# emptiness never marks a denial. ``not authorized`` is polkit's
+# refusal word; ``a password is required`` is sudo -n's.
+_DENIAL_MARKERS = (
+    "permission denied",
+    "operation not permitted",
+    "must be root",
+    "need to be root",
+    "need root",
+    "a password is required",
+    "not authorized",
+)
+
+
+def _root_read_shell(command: str) -> str:
     """Wrap a root-read command with the passwordless ``sudo -n`` retry.
 
-    The iptables/hardware.SmbiosInfo precedent for facts that need root
-    or a polkit authorization: try unprivileged first, retry through
-    ``sudo -n`` (never prompts, creates no askpass file, safe under the
-    across-host fan-out), and mask every failure with ``|| true`` so a
-    host that grants neither reads the fact's empty default instead of
-    raising.
+    The cheap probe tier (the iptables precedent, failure-masking
+    removed): try the command as the login user, retry through
+    ``sudo -n``, and let the nonzero exit and its stderr reach
+    ``_root_read`` for classification -- only the ``firewall-cmd``
+    shells below additionally gate legitimate nonzero answers in
+    (``_failure_gate``).
     """
-    return f"{command} 2> /dev/null || sudo -n {command} 2> /dev/null || true"
+    return f"{command} || sudo -n {command}"
+
+
+async def _root_read(host: Host, command: str) -> str | _ReadDenied:
+    """Run the probe tier and classify its outcome.
+
+    A zero exit is the answer whatever it prints (a stopped daemon's
+    wrappers gate their own nonzero answers to 0). On a nonzero
+    exit: a missing binary raises ``CommandNotFoundError`` (the
+    swallowed 127 this replaces), ``not running`` is real state read
+    as the (empty) stdout, a denial marker returns the ``_DENIED``
+    sentinel so the caller re-reads elevated, and anything else keeps
+    the old ``|| true`` tolerance -- the answer plus stderr on a
+    zero-exiting wrapper.
+    """
+    shell = _root_read_shell(command)
+    result = await host.run_shell_result(shell)
+    if result.exit_status != 0:
+        combined = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
+        if (
+            result.exit_status == 127
+            or "command not found" in combined
+            or ": not found" in combined
+        ):
+            raise CommandNotFoundError(
+                host.name, shell, result.exit_status, result.stderr
+            )
+        if "not running" in combined:
+            # A stopped daemon answers every login the same way; it is
+            # state, not a refusal, and never elevates.
+            return result.stdout or ""
+        if any(marker in combined for marker in _DENIAL_MARKERS):
+            return _DENIED
+    return result.stdout or ""
+
+
+def _seam_denied(host: Host, privileged: bool) -> bool:
+    """Whether the simulated host should answer the denial sentinel.
+
+    SimulatedHost's ``firewall_reads_denied`` field models a login
+    that can read neither the firewall state nor through passwordless
+    ``sudo -n``; it is honored only on the unprivileged tier, so the
+    elevated re-read falls back to the seam state and proceeds
+    offline.
+    """
+    return not privileged and bool(getattr(host, "firewall_reads_denied", False))
 
 
 def _permanent_flag(permanent: bool) -> str:
@@ -112,23 +184,98 @@ def _permanent_flag(permanent: bool) -> str:
     return "--permanent " if permanent else ""
 
 
+# The gate's denial branch: one case pattern per marker (the strings
+# contain no shell metacharacters beyond the wildcards added here).
+_DENIED_CASE = "|".join(f'*"{marker}"*' for marker in _DENIAL_MARKERS)
+
+
+def _failure_gate(capture: str) -> str:
+    """The POSIX-sh fragment classifying one failed ``firewall-cmd`` call.
+
+    ``firewall-cmd`` exits nonzero for several legitimate answers -- a
+    stopped daemon (``--state``, exit 1) and a negative query
+    (``--query-...``, exit 1) -- as well as for refusals, so a wrapper
+    cannot treat every nonzero exit as an elevation trigger. The gate
+    re-runs ``capture`` capturing combined output, echoes it to stderr
+    where ``_root_read`` can see it, and exits: 127 for a missing
+    binary, 0 for a stopped daemon or any other unclassifiable failure
+    (the old ``|| true`` tolerance -- e.g. a pre-0.9 daemon's unknown
+    ``--get-policies``), 1 for a denial marker so the ``sudo -n``
+    retry and the elevated re-read fire. Every case branch exits, so
+    the gate doubles as the failure terminator of its wrapper.
+    """
+    return (
+        f'err=$({capture} 2>&1); echo "$err" >&2; '
+        'el=$(printf "%s" "$err" | tr "A-Z" "a-z"); '
+        'case "$el" in '
+        '*"command not found"*|*": not found"*) exit 127;; '
+        '*"not running"*) exit 0;; '
+        f'{_DENIED_CASE}) exit 1;; '
+        '*) exit 0;; '
+        'esac'
+    )
+
+
+def _status_command() -> str:
+    """The shell gathering the daemon state and version in one round-trip.
+
+    The ``state:``/``version:`` markers keep the two payloads apart
+    (the one-stdout multi-command pitfall) and print before any
+    gating, so a stopped daemon still reports its version; a nonzero
+    ``--state`` exit then rides ``_failure_gate``.
+    """
+    gate = _failure_gate("firewall-cmd --state")
+    inner = (
+        "state=$(firewall-cmd --state); rc=$?; "
+        "version=$(firewall-cmd --version); "
+        'echo "state: $state"; echo "version: $version"; '
+        "if [ $rc -ne 0 ]; then "
+        f"{gate}; fi; exit 0"
+    )
+    return f"sh -c {shlex.quote(inner)}"
+
+
+def _query_command(option: str) -> str:
+    """The shell querying one yes/no runtime switch.
+
+    ``--query-...`` exits 1 for a legitimate ``no``, so the answer is
+    captured and only a nonzero exit rides ``_failure_gate``: the
+    ``no`` and not-running cases exit 0 (the parse reads False from
+    the gated output), a denial exits 1 to escalate the tier and a
+    missing binary exits 127.
+    """
+    gate = _failure_gate(f"firewall-cmd {option}")
+    inner = f'out=$(firewall-cmd {option} 2>&1) || {{ {gate}; }}; echo "$out"'
+    return f"sh -c {shlex.quote(inner)}"
+
+
 def _info_listing_command(
-    list_option: str, info_option: str, marker: str, permanent: bool = False
+    list_option: str, info_option: str, marker: str, permanent: bool | str = False
 ) -> str:
     """The shell enumerating definitions and printing each one's info block.
 
     ``firewall-cmd`` has no whole-table detail verb for services, ipsets
     or policies, so one POSIX-sh loop lists the names (``--get-...``)
     and prints a ``<marker>: <name>`` separator plus the per-name
-    ``--info-...`` block for each. Both firewall-cmd invocations ride
-    the passwordless ``sudo -n`` retry; an older daemon that does not
-    know the list option (policies before firewalld 0.9) prints nothing
-    and the loop body never runs, reading as {}.
+    ``--info-...`` block for each. The WHOLE loop is the privileged
+    read: the probe and the elevated re-read wrap the ``sh -c``
+    composite, not the inner commands. A failed listing rides
+    ``_failure_gate`` -- a stopped daemon or an older daemon that does
+    not know the list option (policies before firewalld 0.9) exits 0
+    with no names printed and reads {}, a denial escalates the tier.
+    Per-name info failures stay tolerated (``|| true``): they cannot
+    happen when the listing itself was permitted. ``permanent``
+    selects the configuration scope; a string is used verbatim as the
+    option infix (the ``"<permanent>"`` documentation template).
     """
-    flag = _permanent_flag(permanent)
-    names = _privileged_read(f"firewall-cmd {flag}{list_option}")
-    info = _privileged_read(f'firewall-cmd {flag}{info_option} "$s"')
-    inner = f'for s in $({names}); do echo "{marker}: $s"; {info}; done'
+    flag = permanent if isinstance(permanent, str) else _permanent_flag(permanent)
+    list_command = f"firewall-cmd {flag}{list_option}"
+    gate = _failure_gate(list_command)
+    inner = (
+        f"names=$({list_command}) || {{ {gate}; }}; "
+        f'for s in $names; do echo "{marker}: $s"; '
+        f'firewall-cmd {flag}{info_option} "$s" || true; done'
+    )
     return f"sh -c {shlex.quote(inner)}"
 
 
@@ -215,8 +362,8 @@ _ZONE_MEMBER_FIELDS = {
 
 # A port opening: a single port or a range, over one of firewalld's
 # four transport protocols. Static validation -- it never depends on
-# fact state, so an unprivileged (empty) fact read still plans the
-# change rather than raising.
+# fact state, so planning the change is independent of how (or
+# whether) the facts read.
 _PORT_RE = re.compile(r"^\d+(-\d+)?/(tcp|udp|sctp|dccp)$")
 
 # The zone targets firewall-cmd accepts for --set-target.
@@ -230,15 +377,15 @@ class FirewalldStatusInfo(TypedDict):
     """
     Attributes:
         running: Whether the daemon answered ``running`` to
-            ``firewall-cmd --state``; False for a stopped daemon, a
-            missing binary or an unprivileged read.
+            ``firewall-cmd --state``; False for a stopped daemon. A
+            missing ``firewall-cmd`` raises ``CommandNotFoundError``.
         version: The daemon release string (e.g. ``2.1.1``), ``""``
             when ``firewall-cmd --version`` printed nothing.
     """
 
     # The single record ``FirewalldStatus`` returns. Both fields are
-    # always present; the empty defaults make a stopped or unreadable
-    # daemon indistinguishable from a missing one, the module header's
+    # always present; a stopped daemon is real state (``running``
+    # False), while a missing binary raises -- the module header's
     # privilege contract.
 
     running: bool
@@ -251,7 +398,7 @@ class FirewalldStatus:
     **Commands:**
 
     ```bash
-    sh -c 'echo "state: $(firewall-cmd --state 2> /dev/null || sudo -n firewall-cmd --state 2> /dev/null || true)"; echo "version: $(firewall-cmd --version 2> /dev/null || sudo -n firewall-cmd --version 2> /dev/null || true)"'
+    sh -c 'state=$(firewall-cmd --state); rc=$?; version=$(firewall-cmd --version); echo "state: $state"; echo "version: $version"; if [ $rc -ne 0 ]; then err=$(firewall-cmd --state 2>&1); echo "$err" >&2; el=$(printf "%s" "$err" | tr "A-Z" "a-z"); case "$el" in *"command not found"*|*": not found"*) exit 127;; *"not running"*) exit 0;; *"permission denied"*|*"operation not permitted"*|*"must be root"*|*"need to be root"*|*"need root"*|*"a password is required"*|*"not authorized"*) exit 1;; *) exit 0;; esac; fi; exit 0'
     ```
 
     **Returns:**
@@ -263,7 +410,7 @@ class FirewalldStatus:
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -278,21 +425,24 @@ class FirewalldStatus:
     # fields (IPv4/IPv6/IPSet/bridge support) are D-Bus properties with
     # no firewall-cmd equivalent and are deliberately dropped -- the
     # version string is what capability gating needs. ``--state``
-    # prints ``running`` or ``not running``; both probes ride the
-    # passwordless sudo -n retry and the || true guard masks exit 127,
-    # so only HostConnectionError can surface.
+    # prints ``running`` or ``not running`` and exits 1 for the
+    # stopped daemon -- real state, gated in-shell so it never
+    # elevates; a denied read rides the passwordless ``sudo -n``
+    # retry and then the elevated re-read (the module header's
+    # privilege note), and a missing ``firewall-cmd`` raises
+    # ``CommandNotFoundError``.
     #
     # SimulatedHost seam note: the ``firewalld_status`` field stores the
     # whole record; an unseeded host reads {"running": False,
-    # "version": ""}.
+    # "version": ""}. The ``firewall_reads_denied`` field makes the
+    # unprivileged tier answer the denial sentinel; the elevated
+    # re-read then returns to the seam for the answer.
 
-    #: Shell gathering both answers over SSH, behind echo markers.
-    COMMAND = (
-        "sh -c 'echo \"state: $(firewall-cmd --state 2> /dev/null "
-        "|| sudo -n firewall-cmd --state 2> /dev/null || true)\"; "
-        'echo "version: $(firewall-cmd --version 2> /dev/null '
-        "|| sudo -n firewall-cmd --version 2> /dev/null || true)\"'"
-    )
+    #: Shell gathering both answers over SSH, behind echo markers: a
+    #: stopped daemon exits 0 through the in-shell failure gate, a
+    #: nonzero denial exit rides the ``sudo -n`` retry tier (a denied
+    #: login re-reads elevated).
+    COMMAND = _status_command()
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> FirewalldStatusInfo:
@@ -308,12 +458,36 @@ class FirewalldStatus:
 
     @classmethod
     async def process(cls, host: Host) -> FirewalldStatusInfo:
+        status = await cls._read(host, privileged=False)
+        if status is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated. The run-as user and any password come from the
+            # inventory privilege data, never from the fact.
+            status = await cls._read(host, privileged=True)
+        return status
+
+    @classmethod
+    async def _read(
+        cls, host: Host, *, privileged: bool
+    ) -> FirewalldStatusInfo | _ReadDenied:
         state = getattr(host, "firewalld_status", None)
         if state is not None:
-            # SimulatedHost seam: read the in-memory state directly.
+            # SimulatedHost seam: read the in-memory state directly; the
+            # denial sentinel is answered only on the unprivileged tier,
+            # so the elevated re-read falls back to this state (the
+            # elevation succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return dict(state)  # type: ignore[return-value]
-        # Real transport: gather over asyncssh from the host's connection.
-        stdout = await host.run_shell(cls.COMMAND)
+        # Real transport: the probe gathers directly or through
+        # passwordless sudo -n; a denial surfaces the sentinel for the
+        # elevated re-read.
+        if privileged:
+            stdout = await host.run_shell_privileged(cls.COMMAND, sudo=True)
+        else:
+            stdout = await _root_read(host, cls.COMMAND)
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines())
 
 
@@ -323,7 +497,7 @@ class FirewalldDefaultZone:
     **Commands:**
 
     ```bash
-    firewall-cmd --get-default-zone 2> /dev/null || sudo -n firewall-cmd --get-default-zone 2> /dev/null || true
+    firewall-cmd --get-default-zone || sudo -n firewall-cmd --get-default-zone
     ```
 
     **Returns:**
@@ -335,7 +509,7 @@ class FirewalldDefaultZone:
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -345,19 +519,27 @@ class FirewalldDefaultZone:
 
     # A reemote original (the DefaultZone proposal): the first
     # non-empty line of --get-default-zone, stripped; a stopped daemon
-    # or an unprivileged read prints nothing and reads "" (the empty
-    # default, not None -- the scalar-fact convention). The default
-    # zone is a single global setting, identical at runtime and in the
-    # permanent configuration, so the fact takes no permanent argument.
+    # prints its refusal to stderr and reads "" (the empty default,
+    # not None -- the scalar-fact convention, and real state: the
+    # refusal text carries no denial marker, so a stopped daemon
+    # never elevates). A read denied to the login user and by
+    # passwordless ``sudo -n`` re-reads elevated (the module header's
+    # privilege note). The default zone is a single global setting,
+    # identical at runtime and in the permanent configuration, so the
+    # fact takes no permanent argument.
     #
     # SimulatedHost seam note: the ``firewalld_default_zone`` field
-    # stores the zone name; an unseeded host reads "".
+    # stores the zone name; an unseeded host reads "". The
+    # ``firewall_reads_denied`` field makes the unprivileged tier
+    # answer the denial sentinel; the elevated re-read then returns to
+    # the seam for the answer.
 
-    #: Shell gathering the default zone over SSH, with the passwordless
-    #: ``sudo -n`` retry for the root read.
+    #: Shell gathering the default zone over SSH: the bare read plus
+    #: the passwordless ``sudo -n`` retry tier (a denial re-reads
+    #: elevated).
     COMMAND = (
-        "firewall-cmd --get-default-zone 2> /dev/null "
-        "|| sudo -n firewall-cmd --get-default-zone 2> /dev/null || true"
+        "firewall-cmd --get-default-zone "
+        "|| sudo -n firewall-cmd --get-default-zone"
     )
 
     @classmethod
@@ -370,12 +552,35 @@ class FirewalldDefaultZone:
 
     @classmethod
     async def process(cls, host: Host) -> str:
+        zone = await cls._read(host, privileged=False)
+        if zone is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated. The run-as user and any password come from the
+            # inventory privilege data, never from the fact.
+            zone = await cls._read(host, privileged=True)
+        return zone
+
+    @classmethod
+    async def _read(cls, host: Host, *, privileged: bool) -> str | _ReadDenied:
         state = getattr(host, "firewalld_default_zone", None)
         if state is not None:
-            # SimulatedHost seam: read the in-memory state directly.
+            # SimulatedHost seam: read the in-memory state directly; the
+            # denial sentinel is answered only on the unprivileged tier,
+            # so the elevated re-read falls back to this state (the
+            # elevation succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return str(state)
-        # Real transport: gather over asyncssh from the host's connection.
-        stdout = await host.run_shell(cls.COMMAND)
+        # Real transport: the probe reads directly or through
+        # passwordless sudo -n; a denial surfaces the sentinel for the
+        # elevated re-read.
+        command = "firewall-cmd --get-default-zone"
+        if privileged:
+            stdout = await host.run_shell_privileged(command, sudo=True)
+        else:
+            stdout = await _root_read(host, command)
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines())
 
 
@@ -460,7 +665,7 @@ class FirewalldZones:
     **Commands:**
 
     ```bash
-    firewall-cmd <permanent>--list-all-zones 2> /dev/null || sudo -n firewall-cmd <permanent>--list-all-zones 2> /dev/null || true
+    firewall-cmd <permanent>--list-all-zones || sudo -n firewall-cmd <permanent>--list-all-zones
     ```
 
     **Returns:**
@@ -472,7 +677,7 @@ class FirewalldZones:
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -494,20 +699,24 @@ class FirewalldZones:
     #
     # SimulatedHost seam note: the ``firewalld_zones`` field stores the
     # runtime name -> record map and ``firewalld_permanent_zones`` the
-    # permanent one; an unseeded scope reads {}.
+    # permanent one; an unseeded scope reads {}. The
+    # ``firewall_reads_denied`` field makes the unprivileged tier
+    # answer the denial sentinel; the elevated re-read then returns to
+    # the seam for the answer.
 
     #: Shell template gathering all zone blocks over SSH
-    #: (``<permanent>`` is ``--permanent `` or empty), with the
-    #: passwordless ``sudo -n`` retry for the root read.
+    #: (``<permanent>`` is ``--permanent `` or empty): the bare read
+    #: plus the passwordless ``sudo -n`` retry tier (a denial re-reads
+    #: elevated; a stopped daemon reads {}).
     COMMAND = (
-        "firewall-cmd <permanent>--list-all-zones 2> /dev/null "
-        "|| sudo -n firewall-cmd <permanent>--list-all-zones 2> /dev/null || true"
+        "firewall-cmd <permanent>--list-all-zones "
+        "|| sudo -n firewall-cmd <permanent>--list-all-zones"
     )
 
     @classmethod
     def command(cls, permanent: bool = False) -> str:
-        """The shell for one configuration scope."""
-        return _privileged_read(
+        """The probe shell for one configuration scope."""
+        return _root_read_shell(
             f"firewall-cmd {_permanent_flag(permanent)}--list-all-zones"
         )
 
@@ -531,18 +740,45 @@ class FirewalldZones:
         }
 
     @classmethod
-    async def process(cls, host: Host, permanent: bool = False) -> dict[str, FirewalldZone]:
+    async def process(
+        cls, host: Host, permanent: bool = False
+    ) -> dict[str, FirewalldZone]:
+        zones = await cls._read(host, permanent, privileged=False)
+        if zones is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated. The run-as user and any password come from the
+            # inventory privilege data, never from the fact.
+            zones = await cls._read(host, permanent, privileged=True)
+        return zones
+
+    @classmethod
+    async def _read(
+        cls, host: Host, permanent: bool, *, privileged: bool
+    ) -> dict[str, FirewalldZone] | _ReadDenied:
         seam = "firewalld_permanent_zones" if permanent else "firewalld_zones"
         state = getattr(host, seam, None)
         if state is not None:
             # SimulatedHost seam: read the in-memory state directly,
-            # copying each record including its member lists.
+            # copying each record including its member lists; the denial
+            # sentinel is answered only on the unprivileged tier, so the
+            # elevated re-read falls back to this state (the elevation
+            # succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return {
                 name: _copy_record(record)  # type: ignore[misc]
                 for name, record in state.items()
             }
-        # Real transport: gather over asyncssh from the host's connection.
-        stdout = await host.run_shell(cls.command(permanent))
+        # Real transport: the probe reads directly or through
+        # passwordless sudo -n; a denial surfaces the sentinel for the
+        # elevated re-read.
+        command = f"firewall-cmd {_permanent_flag(permanent)}--list-all-zones"
+        if privileged:
+            stdout = await host.run_shell_privileged(command, sudo=True)
+        else:
+            stdout = await _root_read(host, command)
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines())
 
 
@@ -584,7 +820,7 @@ class FirewalldServices:
     **Commands:**
 
     ```bash
-    sh -c 'for s in $(firewall-cmd --permanent --get-services 2> /dev/null || sudo -n firewall-cmd --permanent --get-services 2> /dev/null || true); do echo "service: $s"; firewall-cmd --permanent --info-service "$s" 2> /dev/null || sudo -n firewall-cmd --permanent --info-service "$s" 2> /dev/null || true; done'
+    sh -c 'names=$(firewall-cmd --permanent --get-services) || { err=$(firewall-cmd --permanent --get-services 2>&1); echo "$err" >&2; el=$(printf "%s" "$err" | tr "A-Z" "a-z"); case "$el" in *"command not found"*|*": not found"*) exit 127;; *"not running"*) exit 0;; *"permission denied"*|*"operation not permitted"*|*"must be root"*|*"need to be root"*|*"need root"*|*"a password is required"*|*"not authorized"*) exit 1;; *) exit 0;; esac; }; for s in $names; do echo "service: $s"; firewall-cmd --permanent --info-service "$s" || true; done'
     ```
 
     **Returns:**
@@ -596,7 +832,7 @@ class FirewalldServices:
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -613,18 +849,18 @@ class FirewalldServices:
     # permanent argument: definitions are permanent-only by design.
     #
     # SimulatedHost seam note: the ``firewalld_services`` field stores
-    # name -> record; an unseeded host reads {}.
+    # name -> record; an unseeded host reads {}. The
+    # ``firewall_reads_denied`` field makes the unprivileged tier
+    # answer the denial sentinel; the elevated re-read then returns to
+    # the seam for the answer.
 
-    #: Shell enumerating the service definitions over SSH (one loop,
-    #: marker-separated info blocks), with the passwordless ``sudo -n``
-    #: retry for the root read.
-    COMMAND = (
-        "sh -c 'for s in $(firewall-cmd --permanent --get-services 2> /dev/null "
-        "|| sudo -n firewall-cmd --permanent --get-services 2> /dev/null || true); "
-        'do echo "service: $s"; '
-        'firewall-cmd --permanent --info-service "$s" 2> /dev/null '
-        '|| sudo -n firewall-cmd --permanent --info-service "$s" 2> /dev/null || true; '
-        "done'"
+    #: Shell enumerating the service definitions over SSH (one loop --
+    #: the failure gate classifies a refused listing, a stopped or
+    #: missing daemon and an ordinary failure alike; the whole loop is
+    #: the privileged read, probed with the passwordless ``sudo -n``
+    #: retry and re-read elevated on a denial).
+    COMMAND = _info_listing_command(
+        "--get-services", "--info-service", "service", permanent=True
     )
 
     @classmethod
@@ -651,16 +887,40 @@ class FirewalldServices:
 
     @classmethod
     async def process(cls, host: Host) -> dict[str, FirewalldService]:
+        services = await cls._read(host, privileged=False)
+        if services is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated. The run-as user and any password come from the
+            # inventory privilege data, never from the fact.
+            services = await cls._read(host, privileged=True)
+        return services
+
+    @classmethod
+    async def _read(
+        cls, host: Host, *, privileged: bool
+    ) -> dict[str, FirewalldService] | _ReadDenied:
         state = getattr(host, "firewalld_services", None)
         if state is not None:
             # SimulatedHost seam: read the in-memory state directly,
-            # copying each record including its member lists.
+            # copying each record including its member lists; the denial
+            # sentinel is answered only on the unprivileged tier, so the
+            # elevated re-read falls back to this state (the elevation
+            # succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return {
                 name: _copy_record(record)  # type: ignore[misc]
                 for name, record in state.items()
             }
-        # Real transport: gather over asyncssh from the host's connection.
-        stdout = await host.run_shell(cls.COMMAND)
+        # Real transport: the probe runs the whole loop directly or
+        # through passwordless sudo -n; a denial surfaces the sentinel
+        # for the elevated re-read.
+        if privileged:
+            stdout = await host.run_shell_privileged(cls.COMMAND, sudo=True)
+        else:
+            stdout = await _root_read(host, cls.COMMAND)
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines())
 
 
@@ -693,7 +953,7 @@ class FirewalldIpSets:
     **Commands:**
 
     ```bash
-    sh -c 'for s in $(firewall-cmd <permanent>--get-ipsets 2> /dev/null || sudo -n firewall-cmd <permanent>--get-ipsets 2> /dev/null || true); do echo "ipset: $s"; firewall-cmd <permanent>--info-ipset "$s" 2> /dev/null || sudo -n firewall-cmd <permanent>--info-ipset "$s" 2> /dev/null || true; done'
+    sh -c 'names=$(firewall-cmd <permanent>--get-ipsets) || { err=$(firewall-cmd <permanent>--get-ipsets 2>&1); echo "$err" >&2; el=$(printf "%s" "$err" | tr "A-Z" "a-z"); case "$el" in *"command not found"*|*": not found"*) exit 127;; *"not running"*) exit 0;; *"permission denied"*|*"operation not permitted"*|*"must be root"*|*"need to be root"*|*"need root"*|*"a password is required"*|*"not authorized"*) exit 1;; *) exit 0;; esac; }; for s in $names; do echo "ipset: $s"; firewall-cmd <permanent>--info-ipset "$s" || true; done'
     ```
 
     **Returns:**
@@ -705,7 +965,7 @@ class FirewalldIpSets:
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -725,18 +985,18 @@ class FirewalldIpSets:
     #
     # SimulatedHost seam note: the ``firewalld_ipsets`` field stores the
     # runtime name -> record map and ``firewalld_permanent_ipsets`` the
-    # permanent one; an unseeded scope reads {}.
+    # permanent one; an unseeded scope reads {}. The
+    # ``firewall_reads_denied`` field makes the unprivileged tier
+    # answer the denial sentinel; the elevated re-read then returns to
+    # the seam for the answer.
 
     #: Shell template enumerating the ipset containers over SSH
-    #: (``<permanent>`` is ``--permanent `` or empty), with the
-    #: passwordless ``sudo -n`` retry for the root read.
-    COMMAND = (
-        "sh -c 'for s in $(firewall-cmd <permanent>--get-ipsets 2> /dev/null "
-        "|| sudo -n firewall-cmd <permanent>--get-ipsets 2> /dev/null || true); "
-        'do echo "ipset: $s"; '
-        'firewall-cmd <permanent>--info-ipset "$s" 2> /dev/null '
-        '|| sudo -n firewall-cmd <permanent>--info-ipset "$s" 2> /dev/null || true; '
-        "done'"
+    #: (``<permanent>`` is ``--permanent `` or empty): the whole loop is
+    #: the privileged read, probed with the passwordless ``sudo -n``
+    #: retry and re-read elevated on a denial; the in-shell failure
+    #: gate answers a stopped daemon {} and a missing binary 127.
+    COMMAND = _info_listing_command(
+        "--get-ipsets", "--info-ipset", "ipset", "<permanent>"
     )
 
     @classmethod
@@ -763,18 +1023,45 @@ class FirewalldIpSets:
         return ipsets
 
     @classmethod
-    async def process(cls, host: Host, permanent: bool = False) -> dict[str, FirewalldIpSet]:
+    async def process(
+        cls, host: Host, permanent: bool = False
+    ) -> dict[str, FirewalldIpSet]:
+        ipsets = await cls._read(host, permanent, privileged=False)
+        if ipsets is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated. The run-as user and any password come from the
+            # inventory privilege data, never from the fact.
+            ipsets = await cls._read(host, permanent, privileged=True)
+        return ipsets
+
+    @classmethod
+    async def _read(
+        cls, host: Host, permanent: bool, *, privileged: bool
+    ) -> dict[str, FirewalldIpSet] | _ReadDenied:
         seam = "firewalld_permanent_ipsets" if permanent else "firewalld_ipsets"
         state = getattr(host, seam, None)
         if state is not None:
             # SimulatedHost seam: read the in-memory state directly,
-            # copying each record including its options and entries.
+            # copying each record including its options and entries; the
+            # denial sentinel is answered only on the unprivileged tier,
+            # so the elevated re-read falls back to this state (the
+            # elevation succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return {
                 name: _copy_record(record)  # type: ignore[misc]
                 for name, record in state.items()
             }
-        # Real transport: gather over asyncssh from the host's connection.
-        stdout = await host.run_shell(cls.command(permanent))
+        # Real transport: the probe runs the whole loop directly or
+        # through passwordless sudo -n; a denial surfaces the sentinel
+        # for the elevated re-read.
+        command = cls.command(permanent)
+        if privileged:
+            stdout = await host.run_shell_privileged(command, sudo=True)
+        else:
+            stdout = await _root_read(host, command)
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines())
 
 
@@ -817,7 +1104,7 @@ class FirewalldPolicies:
     **Commands:**
 
     ```bash
-    sh -c 'for s in $(firewall-cmd <permanent>--get-policies 2> /dev/null || sudo -n firewall-cmd <permanent>--get-policies 2> /dev/null || true); do echo "policy: $s"; firewall-cmd <permanent>--info-policy "$s" 2> /dev/null || sudo -n firewall-cmd <permanent>--info-policy "$s" 2> /dev/null || true; done'
+    sh -c 'names=$(firewall-cmd <permanent>--get-policies) || { err=$(firewall-cmd <permanent>--get-policies 2>&1); echo "$err" >&2; el=$(printf "%s" "$err" | tr "A-Z" "a-z"); case "$el" in *"command not found"*|*": not found"*) exit 127;; *"not running"*) exit 0;; *"permission denied"*|*"operation not permitted"*|*"must be root"*|*"need to be root"*|*"need root"*|*"a password is required"*|*"not authorized"*) exit 1;; *) exit 0;; esac; }; for s in $names; do echo "policy: $s"; firewall-cmd <permanent>--info-policy "$s" || true; done'
     ```
 
     **Returns:**
@@ -829,7 +1116,7 @@ class FirewalldPolicies:
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -840,27 +1127,30 @@ class FirewalldPolicies:
     # A reemote original (the Policies proposal): the marker-loop shape
     # over --get-policies/--info-policy, with the ``permanent`` argument
     # selecting the configuration. Version gating falls out of the
-    # guarded loop for free: a daemon older than 0.9 does not know
-    # --get-policies, the || true guard masks its error, the name list
-    # is empty and the fact reads {} -- no capability probe needed.
+    # failure gate for free: a daemon older than 0.9 does not know
+    # --get-policies, the gate exits 0 on its unrecognized-option
+    # message, the name list stays empty and the fact reads {} -- no
+    # capability probe needed, and no elevation either (an unknown
+    # option is not a denial).
     # Policy *management* operations are deliberately absent (the
     # proposal lists visibility only); the rich-rule and zone
     # operations cover the common cases.
     #
     # SimulatedHost seam note: the ``firewalld_policies`` field stores
     # the runtime name -> record map and ``firewalld_permanent_policies``
-    # the permanent one; an unseeded scope reads {}.
+    # the permanent one; an unseeded scope reads {}. The
+    # ``firewall_reads_denied`` field makes the unprivileged tier
+    # answer the denial sentinel; the elevated re-read then returns to
+    # the seam for the answer.
 
     #: Shell template enumerating the policies over SSH
-    #: (``<permanent>`` is ``--permanent `` or empty), with the
-    #: passwordless ``sudo -n`` retry for the root read.
-    COMMAND = (
-        "sh -c 'for s in $(firewall-cmd <permanent>--get-policies 2> /dev/null "
-        "|| sudo -n firewall-cmd <permanent>--get-policies 2> /dev/null || true); "
-        'do echo "policy: $s"; '
-        'firewall-cmd <permanent>--info-policy "$s" 2> /dev/null '
-        '|| sudo -n firewall-cmd <permanent>--info-policy "$s" 2> /dev/null || true; '
-        "done'"
+    #: (``<permanent>`` is ``--permanent `` or empty): the whole loop is
+    #: the privileged read, probed with the passwordless ``sudo -n``
+    #: retry and re-read elevated on a denial; the in-shell failure
+    #: gate answers a stopped daemon or an old daemon {} and a missing
+    #: binary 127.
+    COMMAND = _info_listing_command(
+        "--get-policies", "--info-policy", "policy", "<permanent>"
     )
 
     @classmethod
@@ -890,18 +1180,45 @@ class FirewalldPolicies:
         return policies
 
     @classmethod
-    async def process(cls, host: Host, permanent: bool = False) -> dict[str, FirewalldPolicy]:
+    async def process(
+        cls, host: Host, permanent: bool = False
+    ) -> dict[str, FirewalldPolicy]:
+        policies = await cls._read(host, permanent, privileged=False)
+        if policies is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated. The run-as user and any password come from the
+            # inventory privilege data, never from the fact.
+            policies = await cls._read(host, permanent, privileged=True)
+        return policies
+
+    @classmethod
+    async def _read(
+        cls, host: Host, permanent: bool, *, privileged: bool
+    ) -> dict[str, FirewalldPolicy] | _ReadDenied:
         seam = "firewalld_permanent_policies" if permanent else "firewalld_policies"
         state = getattr(host, seam, None)
         if state is not None:
             # SimulatedHost seam: read the in-memory state directly,
-            # copying each record including its member lists.
+            # copying each record including its member lists; the denial
+            # sentinel is answered only on the unprivileged tier, so the
+            # elevated re-read falls back to this state (the elevation
+            # succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return {
                 name: _copy_record(record)  # type: ignore[misc]
                 for name, record in state.items()
             }
-        # Real transport: gather over asyncssh from the host's connection.
-        stdout = await host.run_shell(cls.command(permanent))
+        # Real transport: the probe runs the whole loop directly or
+        # through passwordless sudo -n; a denial surfaces the sentinel
+        # for the elevated re-read.
+        command = cls.command(permanent)
+        if privileged:
+            stdout = await host.run_shell_privileged(command, sudo=True)
+        else:
+            stdout = await _root_read(host, command)
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines())
 
 
@@ -912,15 +1229,17 @@ class _FirewalldLockdown:
     public fact surface (the proposal lists no lockdown visibility).
     """
 
-    # --query-lockdown prints yes/no (and exits 1 for no, which the
-    # || true guard masks). Lockdown is a runtime switch here; the
-    # boot-time setting is firewalld.conf's Lockdown= key.
+    # --query-lockdown prints yes/no and exits 1 for the legitimate
+    # ``no``; _query_command gates that answer in-shell (and the
+    # stopped daemon's refusal) so only a denial nonzero-exits the
+    # probe and a missing binary exits 127. Lockdown is a runtime
+    # switch here; the boot-time setting is firewalld.conf's
+    # Lockdown= key.
 
-    #: Shell querying the lockdown state over SSH.
-    COMMAND = (
-        "firewall-cmd --query-lockdown 2> /dev/null "
-        "|| sudo -n firewall-cmd --query-lockdown 2> /dev/null || true"
-    )
+    #: Shell querying the lockdown state over SSH: the yes/no answer
+    #: is gated in-shell, a denial nonzero-exits the ``sudo -n``
+    #: retry tier (a denied login re-reads elevated).
+    COMMAND = _query_command("--query-lockdown")
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> bool:
@@ -929,11 +1248,35 @@ class _FirewalldLockdown:
 
     @classmethod
     async def process(cls, host: Host) -> bool:
+        lockdown = await cls._read(host, privileged=False)
+        if lockdown is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated. The run-as user and any password come from the
+            # inventory privilege data, never from the fact.
+            lockdown = await cls._read(host, privileged=True)
+        return lockdown
+
+    @classmethod
+    async def _read(cls, host: Host, *, privileged: bool) -> bool | _ReadDenied:
         state = getattr(host, "firewalld_lockdown", None)
         if state is not None:
-            # SimulatedHost seam: read the in-memory state directly.
+            # SimulatedHost seam: read the in-memory state directly,
+            # copying each record including its member lists; the denial
+            # sentinel is answered only on the unprivileged tier, so the
+            # elevated re-read falls back to this state (the elevation
+            # succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return bool(state)
-        stdout = await host.run_shell(cls.COMMAND)
+        # Real transport: the probe queries directly or through
+        # passwordless sudo -n; a denial surfaces the sentinel for the
+        # elevated re-read.
+        if privileged:
+            stdout = await host.run_shell_privileged(cls.COMMAND, sudo=True)
+        else:
+            stdout = await _root_read(host, cls.COMMAND)
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines())
 
 
@@ -944,15 +1287,17 @@ class _FirewalldPanicMode:
     fact surface.
     """
 
-    # --query-panic prints yes/no (exit 1 for no, masked by || true).
-    # Panic mode drops ALL network traffic, including the SSH session
-    # a deploy rides -- the operation's docstring warns accordingly.
+    # --query-panic prints yes/no and exits 1 for the legitimate
+    # ``no``; _query_command gates that answer in-shell (and the
+    # stopped daemon's refusal) so only a denial nonzero-exits the
+    # probe and a missing binary exits 127. Panic mode drops ALL
+    # network traffic, including the SSH session a deploy rides -- the
+    # operation's docstring warns accordingly.
 
-    #: Shell querying the panic state over SSH.
-    COMMAND = (
-        "firewall-cmd --query-panic 2> /dev/null "
-        "|| sudo -n firewall-cmd --query-panic 2> /dev/null || true"
-    )
+    #: Shell querying the panic state over SSH: the yes/no answer is
+    #: gated in-shell, a denial nonzero-exits the ``sudo -n`` retry
+    #: tier (a denied login re-reads elevated).
+    COMMAND = _query_command("--query-panic")
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> bool:
@@ -961,11 +1306,35 @@ class _FirewalldPanicMode:
 
     @classmethod
     async def process(cls, host: Host) -> bool:
+        panic = await cls._read(host, privileged=False)
+        if panic is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated. The run-as user and any password come from the
+            # inventory privilege data, never from the fact.
+            panic = await cls._read(host, privileged=True)
+        return panic
+
+    @classmethod
+    async def _read(cls, host: Host, *, privileged: bool) -> bool | _ReadDenied:
         state = getattr(host, "firewalld_panic_mode", None)
         if state is not None:
-            # SimulatedHost seam: read the in-memory state directly.
+            # SimulatedHost seam: read the in-memory state directly,
+            # copying each record including its member lists; the denial
+            # sentinel is answered only on the unprivileged tier, so the
+            # elevated re-read falls back to this state (the elevation
+            # succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return bool(state)
-        stdout = await host.run_shell(cls.COMMAND)
+        # Real transport: the probe queries directly or through
+        # passwordless sudo -n; a denial surfaces the sentinel for the
+        # elevated re-read.
+        if privileged:
+            stdout = await host.run_shell_privileged(cls.COMMAND, sudo=True)
+        else:
+            stdout = await _root_read(host, cls.COMMAND)
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines())
 
 
@@ -1127,10 +1496,10 @@ async def zone(
     # --permanent"), so they are managed in the permanent scope alone and
     # the runtime copy inherits them on the next firewalld.reload. A None
     # property is unmanaged, never reset. The target word is validated statically
-    # (ValueError) so an unprivileged empty fact read still plans the
-    # change. Rules *inside* the zone are the membership operations'
-    # job (port, zone_service, ...), not this one's. The commands need
-    # root: flag the request ``sudo=True``. ``**kwargs`` absorbs
+    # (ValueError), independent of the fact read. Rules *inside* the
+    # zone are the membership operations' job (port, zone_service,
+    # ...), not this one's. The commands need root: flag the request
+    # ``sudo=True``. ``**kwargs`` absorbs
     # any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     if target is not None and target not in _ZONE_TARGETS:
@@ -2579,10 +2948,10 @@ async def default_zone(
     # FirewalldDefaultZone fact. --set-default-zone is inherently
     # dual-scope (it applies immediately and persists), so there is no
     # permanent flag. Zone existence is deliberately NOT validated
-    # against the fact (the iptables.policy precedent): an unprivileged
-    # empty read would then spuriously raise; an unknown zone fails at
-    # apply time with CommandError. Only the empty string is a static
-    # ValueError. The command needs root: flag the request
+    # against the fact (the iptables.policy precedent): the fact may
+    # answer after the deployment planned, and an unknown zone fails
+    # at apply time with CommandError. Only the empty string is a
+    # static ValueError. The command needs root: flag the request
     # ``sudo=True``.
     if not zone:
         raise ValueError("zone must not be empty")

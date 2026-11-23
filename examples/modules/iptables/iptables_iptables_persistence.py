@@ -34,11 +34,14 @@ the snapshot file (default ``/etc/iptables/rules.v4``, the
 iptables-persistent location; pass another path to ``gather_fact``) with
 comment lines stripped on both sides -- the save header's timestamp
 changes every run, so raw equality would always drift. ``True`` means
-synced; an absent file, any difference, or an empty live read (a login
-granted neither root nor passwordless sudo) reads ``False``. The probe
-is read-only and fully exit-masked; a meaningful ``True`` needs a root
-login or a NOPASSWD sudoers rule. ``iptables.save`` reads this same fact
-to skip the write when the snapshot already matches.
+synced; an absent file or any difference reads ``False``. The live read is
+two-tier like the other table facts (the module's privilege note): a login
+denied at both the direct attempt and passwordless ``sudo -n`` re-reads
+elevated through the inventory's configured privilege, so a password-sudo
+host gets a truthful comparison instead of the ``False`` a masked empty read
+used to produce; a refusal the elevation cannot satisfy raises
+``PrivilegeError``. ``iptables.save`` reads this same fact to skip the write
+when the snapshot already matches.
 
 Every host's connection is closed with ``aclose`` once the facts are
 gathered. ``gather_fact`` and ``process`` are coroutines, so ``main`` is
@@ -63,6 +66,7 @@ from reemote import (
     HostConnectionError,
     InventoryError,
     IptablesPersistence,
+    PrivilegeError,
     gather_fact,
     validate_inventory,
 )
@@ -117,7 +121,7 @@ async def main() -> None:
         # whole report -- and it fails before any host is materialized.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    except (CommandError, HostConnectionError) as exc:
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # The library reports an unreachable host or a failed fact command as a
         # typed error whose message already names the host. Print that message
         # -- no traceback -- and exit non-zero so the failure stays

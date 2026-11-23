@@ -24,15 +24,20 @@
 # just gathers the raw value.
 #
 # Privilege note: ``iptables-save``, ``iptables -L`` and ``ipset list``
-# need CAP_NET_ADMIN on the target. Following the hardware.SmbiosInfo
-# precedent, every root-read fact retries its command through
-# passwordless ``sudo -n`` at the shell level (never the elevation
-# layer -- facts stay side-effect free and prompt-free): the contract
-# is full data for a root login or a NOPASSWD sudoers rule, and the
-# empty default otherwise, indistinguishable from genuinely-absent
-# state. The operations below flag their commands ``sudo=True`` at the
-# ``op()`` call site; their fact reads ride the same ``sudo -n`` retry,
-# so idempotence reporting works on a sudoers fleet.
+# need CAP_NET_ADMIN on the target. Every root-read fact is two-tier:
+# the cheap tier runs the command and a passwordless ``sudo -n`` retry
+# in one shell (never prompts, side-effect free, safe under the
+# across-host fan-out), and when that tier reports a *denial* -- a
+# permission error or sudo asking for a password -- the fact re-reads
+# elevated through ``run_shell_privileged`` (the files.FileContents and
+# mysql._MysqlFact precedent; the run-as user and any password come
+# from the inventory privilege data, never from an operation). The
+# contract is truthful data on every host the configured elevation can
+# reach: a denial the elevation cannot clear raises ``PrivilegeError``
+# rather than reading an empty default, and a missing binary raises
+# ``CommandNotFoundError`` instead of parsing as empty state. The
+# operations below flag their commands ``sudo=True`` at the ``op()``
+# call site.
 #
 # Operation side: ``iptables.chain`` and ``iptables.rule`` are the
 # two operations (chain create/delete/policy, rule add/insert/delete with
@@ -84,7 +89,7 @@ from typing import Any, NotRequired, TypedDict
 
 from ...commands import Command
 from ...core import OpContext
-from ...hosts import Host
+from ...hosts import CommandNotFoundError, Host
 
 # --- Shared helpers ----------------------------------------------------------
 
@@ -214,16 +219,83 @@ def _binary(version: int) -> str:
     raise ValueError(f"version must be 4 or 6 (got {version!r})")
 
 
-def _privileged_read(command: str) -> str:
-    """Wrap a root-read command with the passwordless ``sudo -n`` retry.
+class _ReadDenied:
+    """Sentinel type: a root read the login user (and ``sudo -n``) were denied."""
 
-    The ``hardware.SmbiosInfo`` precedent for facts that need
-    CAP_NET_ADMIN: try unprivileged first, retry through ``sudo -n``
-    (never prompts, creates no askpass file, safe under the across-host
-    fan-out), and mask every failure with ``|| true`` so a host that
-    grants neither reads the fact's empty default instead of raising.
+
+#: The single sentinel instance ``_root_read`` returns when the probe failed
+#: with a *denial* signature; the fact's ``process`` re-reads elevated on it.
+#: A private object, so no command output can ever compare equal to it.
+_DENIED = _ReadDenied()
+
+#: Case-insensitive fragments that identify a refusal to read as root, as
+#: opposed to a legitimate empty state or an ordinary command failure: the
+#: xtables/ipset permission errors and ``sudo -n``'s password exhaustion.
+#: The elevated re-read never triggers on plain emptiness (an empty
+#: ruleset is real state) or on a bare non-zero exit (an unsupported
+#: old-daemon flag is an ordinary failure the parser still tolerates).
+_DENIAL_MARKERS = (
+    "permission denied",
+    "operation not permitted",
+    "must be root",
+    "need to be root",
+    "need root",
+    "a password is required",
+)
+
+
+def _root_read_shell(command: str) -> str:
+    """Wrap a root-read command with the cheap passwordless ``sudo -n`` tier.
+
+    The first tier still runs as the login user, so a root login or a
+    NOPASSWD sudoers rule answers in one round trip without ever
+    touching the elevation layer (facts stay side-effect free and
+    prompt-free). Nothing is masked: the denial text and the exit
+    status survive for ``_root_read`` to classify, and a missing binary
+    is no longer hidden behind ``|| true``.
     """
-    return f"{command} 2> /dev/null || sudo -n {command} 2> /dev/null || true"
+    return f"{command} || sudo -n {command}"
+
+
+async def _root_read(host: Host, command: str) -> str | _ReadDenied:
+    """Run one root-read probe over the raw transport and classify it.
+
+    A missing binary surfaces as ``CommandNotFoundError`` (either tier
+    reports the absence as ``command not found``), and a denial --
+    permission error or ``sudo -n`` asking for a password -- surfaces as
+    the ``_DENIED`` sentinel, which the fact's ``process`` turns into
+    one elevated re-read through ``run_shell_privileged``. Every other
+    outcome, including a successful read of genuinely empty state and
+    an ordinary non-zero failure without a denial signature, returns
+    the stdout for the fact's parser to handle as before.
+    """
+    shell = _root_read_shell(command)
+    result = await host.run_shell_result(shell)
+    if result.exit_status != 0:
+        combined = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
+        if (
+            result.exit_status == 127
+            or "command not found" in combined
+            or ": not found" in combined
+        ):
+            raise CommandNotFoundError(
+                host.name, shell, result.exit_status, result.stderr
+            )
+        if any(marker in combined for marker in _DENIAL_MARKERS):
+            return _DENIED
+    return result.stdout or ""
+
+
+def _seam_denied(host: Host, privileged: bool) -> bool:
+    """Whether the SimulatedHost seam should answer the denial sentinel.
+
+    The ``firewall_reads_denied`` field models a login that can read the
+    firewall state neither directly nor through passwordless sudo; only
+    the unprivileged tier honours it, so the elevated re-read of the
+    same seam succeeds offline exactly as ``run_shell_privileged`` does
+    over SSH.
+    """
+    return not privileged and bool(getattr(host, "firewall_reads_denied", False))
 
 
 def _normalize_host(value: str, version: int) -> str:
@@ -350,15 +422,22 @@ def _persistence_command(binary: str, path: str) -> str:
     ``iptables-save`` header carries a fresh timestamp on every run, so
     a raw diff would always report drift. Command substitution keeps the
     whole probe POSIX-sh safe (no bash process substitution) and
-    side-effect free. An empty live read (an unprivileged login, or a
-    missing binary) reports drift rather than a false match against an
-    empty file; the trailing ``|| echo drifted`` masks every exit status,
-    so only ``HostConnectionError`` can surface from the transport.
+    side-effect free. Inner failures propagate (``|| exit $?``) instead
+    of being masked, so the surrounding ``_root_read`` wrapper can
+    classify them: a missing binary or a denied live read surfaces for
+    the ``sudo -n`` retry and the elevated re-read, and an unreadable
+    snapshot says so on stderr rather than silently comparing against
+    empty content (an *absent* snapshot is not an error -- it reads
+    empty and compares as drifted). An empty live ruleset is real
+    state: it matches only an empty or absent snapshot.
     """
+    quoted = shlex.quote(path)
     inner = (
-        f"live=$( ({binary}-save 2>/dev/null || sudo -n {binary}-save 2>/dev/null) "
-        "| sed '/^#/d'); "
-        f"saved=$(sed '/^#/d' {shlex.quote(path)} 2>/dev/null || true); "
+        f"live=$({binary}-save) || exit $?; "
+        f"live=$(printf '%s\\n' \"$live\" | sed '/^#/d'); "
+        f"if [ -e {quoted} ] && [ ! -r {quoted} ]; then "
+        f"echo {quoted}: Permission denied >&2; exit 1; fi; "
+        f"saved=$(sed '/^#/d' {quoted} 2>/dev/null || true); "
         '[ -n "$live" ] && [ "$live" = "$saved" ] && echo synced || echo drifted'
     )
     return f"sh -c {shlex.quote(inner)}"
@@ -373,7 +452,7 @@ class IptablesChains:
     **Commands:**
 
     ```bash
-    iptables-save -t <table> 2> /dev/null || sudo -n iptables-save -t <table> 2> /dev/null || true
+    iptables-save -t <table> || sudo -n iptables-save -t <table>
     ```
 
     **Returns:**
@@ -385,7 +464,7 @@ class IptablesChains:
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -403,23 +482,22 @@ class IptablesChains:
     # Deliberate design choices: the ``table`` argument is
     # shell-quoted rather than interpolated raw, there is no
     # command-existence gate, and the bare
-    # ``iptables-save -t <table>`` gains the passwordless ``sudo -n``
-    # retry (the hardware.SmbiosInfo precedent) because reading the
-    # tables needs CAP_NET_ADMIN -- full data for a root login or a
-    # NOPASSWD sudoers rule, {} otherwise (the module header's
-    # privilege note). The ``|| true`` guard masks exit 127, so only
-    # ``HostConnectionError`` can surface.
+    # ``iptables-save -t <table>`` gains the two-tier root read (the
+    # module header's privilege note): the in-shell passwordless
+    # ``sudo -n`` retry, then an elevated re-read through
+    # ``run_shell_privileged`` on a denial. A missing binary raises
+    # ``CommandNotFoundError`` instead of parsing as empty state.
     #
     # SimulatedHost seam note: the ``iptables_chains`` field stores
-    # table -> {chain: policy}; an unseeded table reads as {}.
+    # table -> {chain: policy}; an unseeded table reads as {}. The
+    # ``firewall_reads_denied`` field makes the unprivileged tier
+    # answer the denial sentinel; the elevated re-read then returns to
+    # the seam for the answer.
 
     #: Shell template gathering the chains over SSH (``<table>`` is the
-    #: requested table, default ``filter``), with the passwordless
-    #: ``sudo -n`` retry for the CAP_NET_ADMIN read.
-    COMMAND = (
-        "iptables-save -t <table> 2> /dev/null "
-        "|| sudo -n iptables-save -t <table> 2> /dev/null || true"
-    )
+    #: requested table, default ``filter``): the bare read plus the
+    #: passwordless ``sudo -n`` retry tier (a denial re-reads elevated).
+    COMMAND = "iptables-save -t <table> || sudo -n iptables-save -t <table>"
 
     #: The save binary this fact family runs (the IPv6 sibling flips it).
     BINARY = "iptables-save"
@@ -439,15 +517,36 @@ class IptablesChains:
 
     @classmethod
     async def process(cls, host: Host, table: str = "filter") -> dict[str, str]:
+        chains = await cls._read(host, table, privileged=False)
+        if chains is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated. The run-as user and any password come from the
+            # inventory privilege data, never from the fact.
+            chains = await cls._read(host, table, privileged=True)
+        return chains
+
+    @classmethod
+    async def _read(
+        cls, host: Host, table: str, *, privileged: bool
+    ) -> dict[str, str] | _ReadDenied:
         state = getattr(host, cls.SEAM, None)
         if state is not None:
-            # SimulatedHost seam: read the in-memory state directly.
+            # SimulatedHost seam: read the in-memory state directly, with
+            # copy-on-read; the denial sentinel is answered only on the
+            # unprivileged tier, so the elevated re-read falls back to
+            # this state (the elevation succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return dict(state.get(table, {}))
-        # Real transport: gather over asyncssh from the host's connection,
-        # retrying the CAP_NET_ADMIN read through passwordless sudo -n.
-        stdout = await host.run_shell(
-            _privileged_read(f"{cls.BINARY} -t {shlex.quote(table)}")
-        )
+        # Real transport: the probe reads directly or through passwordless
+        # sudo -n; a denial surfaces the sentinel for the elevated re-read.
+        command = f"{cls.BINARY} -t {shlex.quote(table)}"
+        if privileged:
+            stdout = await host.run_shell_privileged(command, sudo=True)
+        else:
+            stdout = await _root_read(host, command)
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines())
 
 
@@ -457,7 +556,7 @@ class Ip6tablesChains(IptablesChains):
     **Commands:**
 
     ```bash
-    ip6tables-save -t <table> 2> /dev/null || sudo -n ip6tables-save -t <table> 2> /dev/null || true
+    ip6tables-save -t <table> || sudo -n ip6tables-save -t <table>
     ```
 
     **Returns:**
@@ -469,7 +568,7 @@ class Ip6tablesChains(IptablesChains):
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -480,12 +579,9 @@ class Ip6tablesChains(IptablesChains):
     # The IPv6 sibling of ``IptablesChains``: the parse is inherited
     # verbatim and only the save binary and the SimulatedHost seam field flip.
 
-    #: Shell template gathering the chains over SSH (IPv6), with the
-    #: passwordless ``sudo -n`` retry.
-    COMMAND = (
-        "ip6tables-save -t <table> 2> /dev/null "
-        "|| sudo -n ip6tables-save -t <table> 2> /dev/null || true"
-    )
+    #: Shell template gathering the chains over SSH (IPv6): the bare
+    #: read plus the passwordless ``sudo -n`` retry tier.
+    COMMAND = "ip6tables-save -t <table> || sudo -n ip6tables-save -t <table>"
 
     #: The save binary this fact family runs (IPv6).
     BINARY = "ip6tables-save"
@@ -554,7 +650,7 @@ class IptablesRules:
     **Commands:**
 
     ```bash
-    iptables-save -t <table> 2> /dev/null || sudo -n iptables-save -t <table> 2> /dev/null || true
+    iptables-save -t <table> || sudo -n iptables-save -t <table>
     ```
 
     **Returns:**
@@ -566,7 +662,7 @@ class IptablesRules:
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -586,19 +682,20 @@ class IptablesRules:
     #
     # Deliberate design choices: the ``table`` argument is
     # shell-quoted, there is no command-existence gate, and the save
-    # command gains the passwordless ``sudo -n`` retry (the module
-    # header's privilege note); the ``|| true`` guard masks exit 127.
+    # command gains the two-tier root read (the module header's
+    # privilege note); a missing binary raises
+    # ``CommandNotFoundError``.
     #
     # SimulatedHost seam note: the ``iptables_rules`` field stores
-    # table -> [rule definitions]; an unseeded table reads as [].
+    # table -> [rule definitions]; an unseeded table reads as []. The
+    # ``firewall_reads_denied`` field makes the unprivileged tier
+    # answer the denial sentinel; the elevated re-read then returns to
+    # the seam for the answer.
 
     #: Shell template gathering the rules over SSH (``<table>`` is the
-    #: requested table, default ``filter``), with the passwordless
-    #: ``sudo -n`` retry for the CAP_NET_ADMIN read.
-    COMMAND = (
-        "iptables-save -t <table> 2> /dev/null "
-        "|| sudo -n iptables-save -t <table> 2> /dev/null || true"
-    )
+    #: requested table, default ``filter``): the bare read plus the
+    #: passwordless ``sudo -n`` retry tier (a denial re-reads elevated).
+    COMMAND = "iptables-save -t <table> || sudo -n iptables-save -t <table>"
 
     #: The save binary this fact family runs (the IPv6 sibling flips it).
     BINARY = "iptables-save"
@@ -613,16 +710,36 @@ class IptablesRules:
 
     @classmethod
     async def process(cls, host: Host, table: str = "filter") -> list[IptablesRule]:
+        rules = await cls._read(host, table, privileged=False)
+        if rules is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated from the inventory privilege data.
+            rules = await cls._read(host, table, privileged=True)
+        return rules
+
+    @classmethod
+    async def _read(
+        cls, host: Host, table: str, *, privileged: bool
+    ) -> list[IptablesRule] | _ReadDenied:
         state = getattr(host, cls.SEAM, None)
         if state is not None:
             # SimulatedHost seam: read the in-memory state directly,
-            # copying each definition including its extras pairs.
+            # copying each definition including its extras pairs; the
+            # denial sentinel is answered only on the unprivileged tier,
+            # so the elevated re-read falls back to this state (the
+            # elevation succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return [_copy_rule(rule) for rule in state.get(table, [])]
-        # Real transport: gather over asyncssh from the host's connection,
-        # retrying the CAP_NET_ADMIN read through passwordless sudo -n.
-        stdout = await host.run_shell(
-            _privileged_read(f"{cls.BINARY} -t {shlex.quote(table)}")
-        )
+        # Real transport: the probe reads directly or through passwordless
+        # sudo -n; a denial surfaces the sentinel for the elevated re-read.
+        command = f"{cls.BINARY} -t {shlex.quote(table)}"
+        if privileged:
+            stdout = await host.run_shell_privileged(command, sudo=True)
+        else:
+            stdout = await _root_read(host, command)
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines())
 
 
@@ -632,7 +749,7 @@ class Ip6tablesRules(IptablesRules):
     **Commands:**
 
     ```bash
-    ip6tables-save -t <table> 2> /dev/null || sudo -n ip6tables-save -t <table> 2> /dev/null || true
+    ip6tables-save -t <table> || sudo -n ip6tables-save -t <table>
     ```
 
     **Returns:**
@@ -644,7 +761,7 @@ class Ip6tablesRules(IptablesRules):
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -655,12 +772,9 @@ class Ip6tablesRules(IptablesRules):
     # The IPv6 sibling of ``IptablesRules``: the parse is inherited
     # verbatim and only the save binary and the SimulatedHost seam field flip.
 
-    #: Shell template gathering the rules over SSH (IPv6), with the
-    #: passwordless ``sudo -n`` retry.
-    COMMAND = (
-        "ip6tables-save -t <table> 2> /dev/null "
-        "|| sudo -n ip6tables-save -t <table> 2> /dev/null || true"
-    )
+    #: Shell template gathering the rules over SSH (IPv6): the bare
+    #: read plus the passwordless ``sudo -n`` retry tier.
+    COMMAND = "ip6tables-save -t <table> || sudo -n ip6tables-save -t <table>"
 
     #: The save binary this fact family runs (IPv6).
     BINARY = "ip6tables-save"
@@ -717,7 +831,7 @@ class IptablesRulesOrdered:
     **Commands:**
 
     ```bash
-    iptables -t <table> -L <chain> -n -v -x --line-numbers 2> /dev/null || sudo -n iptables -t <table> -L <chain> -n -v -x --line-numbers 2> /dev/null || true
+    iptables -t <table> -L <chain> -n -v -x --line-numbers || sudo -n iptables -t <table> -L <chain> -n -v -x --line-numbers
     ```
 
     **Returns:**
@@ -729,7 +843,7 @@ class IptablesRulesOrdered:
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -753,21 +867,23 @@ class IptablesRulesOrdered:
     # returned (``IptablesChains`` answers policies).
     #
     # Reading the tables needs CAP_NET_ADMIN, so the listing rides the
-    # passwordless ``sudo -n`` retry (the module header's privilege
-    # note); a login granted neither answers [].
+    # two-tier root read (the module header's privilege note): the
+    # in-shell passwordless ``sudo -n`` retry, then an elevated re-read
+    # on a denial; a missing binary raises ``CommandNotFoundError``.
     #
     # SimulatedHost seam note: the ``iptables_ordered_rules`` field
     # stores table -> [entries across all chains]; the ``chain`` argument
     # filters that list, and the rule/flush/zero mutators keep the
-    # numbers renumbered per chain.
+    # numbers renumbered per chain. The ``firewall_reads_denied`` field
+    # makes the unprivileged tier answer the denial sentinel; the
+    # elevated re-read then returns to the seam for the answer.
 
     #: Shell template gathering the numbered rows over SSH (``<chain>``
-    #: is omitted when the whole table is listed), with the passwordless
-    #: ``sudo -n`` retry for the CAP_NET_ADMIN read.
+    #: is omitted when the whole table is listed): the bare read plus the
+    #: passwordless ``sudo -n`` retry tier (a denial re-reads elevated).
     COMMAND = (
-        "iptables -t <table> -L <chain> -n -v -x --line-numbers 2> /dev/null "
-        "|| sudo -n iptables -t <table> -L <chain> -n -v -x --line-numbers "
-        "2> /dev/null || true"
+        "iptables -t <table> -L <chain> -n -v -x --line-numbers "
+        "|| sudo -n iptables -t <table> -L <chain> -n -v -x --line-numbers"
     )
 
     #: The binary this fact family runs (the IPv6 sibling flips it).
@@ -824,23 +940,41 @@ class IptablesRulesOrdered:
     async def process(
         cls, host: Host, table: str = "filter", chain: str | None = None
     ) -> list[IptablesOrderedRule]:
+        rules = await cls._read(host, table, chain, privileged=False)
+        if rules is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated from the inventory privilege data.
+            rules = await cls._read(host, table, chain, privileged=True)
+        return rules
+
+    @classmethod
+    async def _read(
+        cls, host: Host, table: str, chain: str | None, *, privileged: bool
+    ) -> list[IptablesOrderedRule] | _ReadDenied:
         state = getattr(host, cls.SEAM, None)
         if state is not None:
             # SimulatedHost seam: read the in-memory state directly,
-            # filtering by chain and copying each flat entry dict.
+            # filtering by chain and copying each flat entry dict; the
+            # denial sentinel is answered only on the unprivileged tier,
+            # so the elevated re-read falls back to this state (the
+            # elevation succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return [
                 dict(rule)
                 for rule in state.get(table, [])
                 if chain is None or rule["chain"] == chain
             ]
-        # Real transport: gather over asyncssh from the host's connection,
-        # retrying the CAP_NET_ADMIN read through passwordless sudo -n.
+        # Real transport: the probe reads directly or through passwordless
+        # sudo -n; a denial surfaces the sentinel for the elevated re-read.
         target = f" {shlex.quote(chain)}" if chain is not None else ""
-        stdout = await host.run_shell(
-            _privileged_read(
-                f"{cls.BINARY} -t {shlex.quote(table)} -L{target} -n -v -x --line-numbers"
-            )
-        )
+        command = f"{cls.BINARY} -t {shlex.quote(table)} -L{target} -n -v -x --line-numbers"
+        if privileged:
+            stdout = await host.run_shell_privileged(command, sudo=True)
+        else:
+            stdout = await _root_read(host, command)
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines(), chain)
 
 
@@ -850,7 +984,7 @@ class Ip6tablesRulesOrdered(IptablesRulesOrdered):
     **Commands:**
 
     ```bash
-    ip6tables -t <table> -L <chain> -n -v -x --line-numbers 2> /dev/null || sudo -n ip6tables -t <table> -L <chain> -n -v -x --line-numbers 2> /dev/null || true
+    ip6tables -t <table> -L <chain> -n -v -x --line-numbers || sudo -n ip6tables -t <table> -L <chain> -n -v -x --line-numbers
     ```
 
     **Returns:**
@@ -862,7 +996,7 @@ class Ip6tablesRulesOrdered(IptablesRulesOrdered):
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -874,12 +1008,11 @@ class Ip6tablesRulesOrdered(IptablesRulesOrdered):
     # inherited verbatim (the address column simply holds IPv6 CIDRs)
     # and only the binary and the SimulatedHost seam field flip.
 
-    #: Shell template gathering the numbered rows over SSH (IPv6), with
-    #: the passwordless ``sudo -n`` retry.
+    #: Shell template gathering the numbered rows over SSH (IPv6): the
+    #: bare read plus the passwordless ``sudo -n`` retry tier.
     COMMAND = (
-        "ip6tables -t <table> -L <chain> -n -v -x --line-numbers 2> /dev/null "
-        "|| sudo -n ip6tables -t <table> -L <chain> -n -v -x --line-numbers "
-        "2> /dev/null || true"
+        "ip6tables -t <table> -L <chain> -n -v -x --line-numbers "
+        "|| sudo -n ip6tables -t <table> -L <chain> -n -v -x --line-numbers"
     )
 
     #: The binary this fact family runs (IPv6).
@@ -1233,7 +1366,7 @@ class IpSets:
     **Commands:**
 
     ```bash
-    ipset list 2> /dev/null || sudo -n ipset list 2> /dev/null || true
+    ipset list || sudo -n ipset list
     ```
 
     **Returns:**
@@ -1245,7 +1378,7 @@ class IpSets:
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -1258,16 +1391,21 @@ class IpSets:
     # entries. Sets are the performance companion to ``-m set
     # --match-set`` rules: one hash lookup replaces thousands of linear
     # rules. ``ipset list`` needs CAP_NET_ADMIN, so the listing rides
-    # the passwordless ``sudo -n`` retry (the module header's privilege
-    # note); the ``|| true`` guard masks a missing ipset binary (exit
-    # 127) and a login granted neither reads {}.
+    # the two-tier root read (the module header's privilege note): the
+    # in-shell passwordless ``sudo -n`` retry, then an elevated re-read
+    # on a denial; a missing ipset binary raises
+    # ``CommandNotFoundError`` instead of reading {}.
     #
     # SimulatedHost seam note: the ``ipsets`` field stores name ->
     # ``IpSet`` record; the create/destroy/entry mutators maintain it.
+    # The ``firewall_reads_denied`` field makes the unprivileged tier
+    # answer the denial sentinel; the elevated re-read then returns to
+    # the seam for the answer.
 
-    #: Shell gathering every set's metadata and membership over SSH,
-    #: with the passwordless ``sudo -n`` retry for the CAP_NET_ADMIN read.
-    COMMAND = "ipset list 2> /dev/null || sudo -n ipset list 2> /dev/null || true"
+    #: Shell gathering every set's metadata and membership over SSH:
+    #: the bare read plus the passwordless ``sudo -n`` retry tier (a
+    #: denial re-reads elevated).
+    COMMAND = "ipset list || sudo -n ipset list"
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> dict[str, IpSet]:
@@ -1317,16 +1455,38 @@ class IpSets:
 
     @classmethod
     async def process(cls, host: Host) -> dict[str, IpSet]:
+        sets = await cls._read(host, privileged=False)
+        if sets is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated from the inventory privilege data.
+            sets = await cls._read(host, privileged=True)
+        return sets
+
+    @classmethod
+    async def _read(
+        cls, host: Host, *, privileged: bool
+    ) -> dict[str, IpSet] | _ReadDenied:
         state = getattr(host, "ipsets", None)
         if state is not None:
             # SimulatedHost seam: read the in-memory state directly,
-            # copying each record including its member list.
+            # copying each record including its member list; the denial
+            # sentinel is answered only on the unprivileged tier, so the
+            # elevated re-read falls back to this state (the elevation
+            # succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return {
                 name: {**info, "members": list(info["members"])}
                 for name, info in state.items()
             }
-        # Real transport: gather over asyncssh from the host's connection.
-        stdout = await host.run_shell(cls.COMMAND)
+        # Real transport: the probe reads directly or through passwordless
+        # sudo -n; a denial surfaces the sentinel for the elevated re-read.
+        if privileged:
+            stdout = await host.run_shell_privileged("ipset list", sudo=True)
+        else:
+            stdout = await _root_read(host, "ipset list")
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines())
 
 
@@ -1336,7 +1496,7 @@ class IptablesPersistence:
     **Commands:**
 
     ```bash
-    sh -c 'live=$( (iptables-save 2>/dev/null || sudo -n iptables-save 2>/dev/null) | sed '"'"'/^#/d'"'"'); saved=$(sed '"'"'/^#/d'"'"' <path> 2>/dev/null || true); [ -n "$live" ] && [ "$live" = "$saved" ] && echo synced || echo drifted'
+    sh -c 'live=$(iptables-save) || exit $?; live=$(printf '"'"'%s\\n'"'"' "$live" | sed '"'"'/^#/d'"'"'); if [ -e <path> ] && [ ! -r <path> ]; then echo <path>: Permission denied >&2; exit 1; fi; saved=$(sed '"'"'/^#/d'"'"' <path> 2>/dev/null || true); [ -n "$live" ] && [ "$live" = "$saved" ] && echo synced || echo drifted'
     ```
 
     **Returns:**
@@ -1348,7 +1508,7 @@ class IptablesPersistence:
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -1362,24 +1522,25 @@ class IptablesPersistence:
     # reproduces the live rules, so ``iptables.save`` can skip the
     # write. Comment lines are dropped on both sides before comparing
     # because the save header's timestamp changes every run; an absent
-    # file, an empty live read (a login granted neither root nor
-    # passwordless sudo) or any difference reads False. The probe is
-    # read-only and fully exit-masked, so only ``HostConnectionError``
-    # can surface. A meaningful True needs a root login or a NOPASSWD
-    # sudoers rule (the module header's privilege note).
+    # file or any difference reads False, and an empty live ruleset is
+    # real state (it matches only an empty or absent snapshot). The
+    # probe is read-only, and its inner failures propagate so the
+    # two-tier root read (the module header's privilege note) can
+    # classify them: a denied live or snapshot read re-reads the whole
+    # comparison elevated, and a missing binary raises
+    # ``CommandNotFoundError``.
     #
     # SimulatedHost seam note: the ``iptables_persistence`` field stores
     # path -> synced bool; an unseeded path reads False (like an absent
     # file). The save/restore mutators set the path True, and every
     # rule/chain/flush mutation flips the stored paths back to False.
+    # The ``firewall_reads_denied`` field makes the unprivileged tier
+    # answer the denial sentinel; the elevated re-read then returns to
+    # the seam for the answer.
 
-    #: Shell template comparing the live rules against ``<path>``.
-    COMMAND = (
-        "sh -c 'live=$( (iptables-save 2>/dev/null || sudo -n iptables-save "
-        "2>/dev/null) | sed '/^#/d'); "
-        "saved=$(sed '/^#/d' <path> 2>/dev/null || true); "
-        '[ -n "$live" ] && [ "$live" = "$saved" ] && echo synced || echo drifted\''
-    )
+    #: Shell template comparing the live rules against ``<path>`` (the
+    #: probe ``_persistence_command`` builds, with the placeholder path).
+    COMMAND = _persistence_command("iptables", "<path>")
 
     #: The save binary this fact family compares with.
     BINARY = "iptables"
@@ -1393,13 +1554,36 @@ class IptablesPersistence:
     @classmethod
     async def process(cls, host: Host, path: str | None = None) -> bool:
         path = cls.DEFAULT_PATH if path is None else path
+        synced = await cls._read(host, path, privileged=False)
+        if synced is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-run
+            # the whole comparison elevated from the inventory privilege
+            # data.
+            synced = await cls._read(host, path, privileged=True)
+        return synced
+
+    @classmethod
+    async def _read(
+        cls, host: Host, path: str, *, privileged: bool
+    ) -> bool | _ReadDenied:
         state = getattr(host, cls.SEAM, None)
         if state is not None:
             # SimulatedHost seam: an unseeded path reads False, like an
-            # absent snapshot file.
+            # absent snapshot file; the denial sentinel is answered only
+            # on the unprivileged tier, so the elevated re-read falls
+            # back to this state (the elevation succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return bool(state.get(path, False))
-        # Real transport: gather over asyncssh from the host's connection.
-        stdout = await host.run_shell(_persistence_command(cls.BINARY, path))
+        # Real transport: the composite probe propagates a denied live
+        # read for classification; the elevated tier re-runs it whole.
+        command = _persistence_command(cls.BINARY, path)
+        if privileged:
+            stdout = await host.run_shell_privileged(command, sudo=True)
+        else:
+            stdout = await _root_read(host, command)
+            if stdout is _DENIED:
+                return _DENIED
         return stdout.strip() == "synced"
 
 
@@ -1409,7 +1593,7 @@ class Ip6tablesPersistence(IptablesPersistence):
     **Commands:**
 
     ```bash
-    sh -c 'live=$( (ip6tables-save 2>/dev/null || sudo -n ip6tables-save 2>/dev/null) | sed '"'"'/^#/d'"'"'); saved=$(sed '"'"'/^#/d'"'"' <path> 2>/dev/null || true); [ -n "$live" ] && [ "$live" = "$saved" ] && echo synced || echo drifted'
+    sh -c 'live=$(ip6tables-save) || exit $?; live=$(printf '"'"'%s\\n'"'"' "$live" | sed '"'"'/^#/d'"'"'); if [ -e <path> ] && [ ! -r <path> ]; then echo <path>: Permission denied >&2; exit 1; fi; saved=$(sed '"'"'/^#/d'"'"' <path> 2>/dev/null || true); [ -n "$live" ] && [ "$live" = "$saved" ] && echo synced || echo drifted'
     ```
 
     **Returns:**
@@ -1421,7 +1605,7 @@ class Ip6tablesPersistence(IptablesPersistence):
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -1434,12 +1618,7 @@ class Ip6tablesPersistence(IptablesPersistence):
     # field flip; the comment-stripping comparison is inherited.
 
     #: Shell template comparing the live rules against ``<path>`` (IPv6).
-    COMMAND = (
-        "sh -c 'live=$( (ip6tables-save 2>/dev/null || sudo -n ip6tables-save "
-        "2>/dev/null) | sed '/^#/d'); "
-        "saved=$(sed '/^#/d' <path> 2>/dev/null || true); "
-        '[ -n "$live" ] && [ "$live" = "$saved" ] && echo synced || echo drifted\''
-    )
+    COMMAND = _persistence_command("ip6tables", "<path>")
 
     #: The save binary this fact family compares with (IPv6).
     BINARY = "ip6tables"
@@ -1681,9 +1860,8 @@ async def policy(
     # fact. Unlike ``chain``'s unvalidated ``policy`` argument it
     # validates the policy word against iptables' built-in targets
     # (ACCEPT/DROP/QUEUE/RETURN) -- a static check that never depends on
-    # fact state, so an unprivileged (empty) fact read still plans the
-    # change rather than raising. Chain *existence* is deliberately not
-    # validated against the fact for the same reason; a -P on a missing
+    # fact state. Chain *existence* is deliberately not validated
+    # against the fact for the same reason; a -P on a missing
     # chain fails at apply time with CommandError. The command needs
     # root: flag the request ``sudo=True``.
     _binary(version)
@@ -2638,7 +2816,7 @@ class IpsetCreateCommand(Command):
 
     The descriptor ``iptables.ipset`` yields for a missing set. The
     ``-exist`` flag makes a concurrent re-create a no-op rather than an
-    error (the fact read may be stale, or unprivileged and empty). Set
+    error (the fact read may be stale). Set
     name and type are ``shlex``-quoted.
     """
 
@@ -2767,8 +2945,8 @@ async def ipset(
     # removes the listed entries (the set survives) or destroys the
     # whole set when no entries are given. The parameter is ``set_name``
     # because ``op()`` consumes ``name`` as the plan-label
-    # meta-parameter. Adds ride ``-exist`` so a stale or unprivileged
-    # (empty) fact read cannot turn a re-add into an apply error. The
+    # meta-parameter. Adds ride ``-exist`` so a stale fact read cannot
+    # turn a re-add into an apply error. The
     # commands need root: flag the request ``sudo=True``.
     sets = await ctx.facts.get(IpSets)
     reasons: list[str] = []

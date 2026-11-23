@@ -29,6 +29,8 @@ prepare cache versus the fresh apply cache, a dry run and a
 
 import shlex
 from dataclasses import dataclass
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -45,7 +47,7 @@ from reemote.drivers import (
     run_prepare,
     send_command,
 )
-from reemote.hosts import Host
+from reemote.hosts import CommandNotFoundError, Host, PrivilegeError
 from reemote.modules import firewalld
 from reemote.modules.firewalld.firewalld import (
     FirewalldDefaultZone,
@@ -80,16 +82,56 @@ from tests.simulated_host import SimulatedHost
 
 
 class CannedShellHost(Host):
-    """Returns fixed stdout from ``run_shell`` instead of connecting."""
+    """Answers the transport seam with canned results instead of connecting.
 
-    def __init__(self, stdout: str):
+    The probe tier (the bare read and its ``sudo -n`` retry, one shell
+    string) answers ``stdout`` with ``exit_status``/``stderr``; a
+    ``sudo``-wrapped elevated re-read answers ``elevated_stdout`` when
+    one is set (the denied-login fallback shape, the mysql precedent).
+    """
+
+    def __init__(
+        self,
+        stdout: str,
+        *,
+        exit_status: int = 0,
+        stderr: str = "",
+        elevated_stdout: str | None = None,
+    ):
         super().__init__(name="canned")
         self._stdout = stdout
-        self.last_shell: str | None = None
+        self._exit_status = exit_status
+        self._stderr = stderr
+        self._elevated_stdout = elevated_stdout
+        self.shells: list[str] = []
 
-    async def run_shell(self, shell: str) -> str:
-        self.last_shell = shell
-        return self._stdout
+    @property
+    def last_shell(self) -> str | None:
+        """The most recent shell the fact issued (the old recorder name)."""
+        return self.shells[-1] if self.shells else None
+
+    async def _run_shell(self, shell: str) -> Any:
+        self.shells.append(shell)
+        if shell.startswith("sudo ") and self._elevated_stdout is not None:
+            return SimpleNamespace(
+                exit_status=0, stdout=self._elevated_stdout, stderr=""
+            )
+        return SimpleNamespace(
+            exit_status=self._exit_status,
+            stdout=self._stdout,
+            stderr=self._stderr,
+        )
+
+
+def probe(command: str) -> str:
+    """The unprivileged-tier probe shell a fact issues for a raw command.
+
+    The bare read plus the passwordless ``sudo -n`` retry (the
+    ``_root_read_shell`` shape); a composite read (the ``sh -c`` status,
+    query and listing wrappers) is wrapped whole, so the assertion for a
+    composite-command fact is ``probe(X.COMMAND)``, not ``X.COMMAND``.
+    """
+    return f"{command} || sudo -n {command}"
 
 
 def zone_record(**overrides) -> FirewalldZone:
@@ -146,7 +188,7 @@ async def test_status_parses_the_marked_output():
     assert await FirewalldStatus.process(host) == FirewalldStatusInfo(
         running=True, version="2.1.1"
     )
-    assert host.last_shell == FirewalldStatus.COMMAND
+    assert host.last_shell == probe(FirewalldStatus.COMMAND)
 
 
 async def test_status_stopped_daemon():
@@ -259,8 +301,8 @@ ZONES_FACT = {
 def test_zones_command_scopes():
     """The runtime shell drops the placeholder; the permanent one fills it."""
     assert FirewalldZones.command() == (
-        "firewall-cmd --list-all-zones 2> /dev/null "
-        "|| sudo -n firewall-cmd --list-all-zones 2> /dev/null || true"
+        "firewall-cmd --list-all-zones "
+        "|| sudo -n firewall-cmd --list-all-zones"
     )
     assert FirewalldZones.command(True) == FirewalldZones.COMMAND.replace(
         "<permanent>", "--permanent "
@@ -350,7 +392,7 @@ async def test_services_parses_the_marker_loop():
     on the FIRST colon so an IPv6 address survives."""
     host = CannedShellHost(SERVICES_OUTPUT)
     assert await FirewalldServices.process(host) == SERVICES_FACT
-    assert host.last_shell == FirewalldServices.COMMAND
+    assert host.last_shell == probe(FirewalldServices.COMMAND)
 
 
 async def test_services_empty_output_reads_as_empty_dict():
@@ -405,13 +447,13 @@ def test_ipsets_command_scopes():
 async def test_ipsets_parses_the_marker_loop():
     host = CannedShellHost(IPSETS_OUTPUT)
     assert await FirewalldIpSets.process(host) == IPSETS_FACT
-    assert host.last_shell == FirewalldIpSets.command()
+    assert host.last_shell == probe(FirewalldIpSets.command())
 
 
 async def test_ipsets_permanent_scope():
     host = CannedShellHost(IPSETS_OUTPUT)
     await FirewalldIpSets.process(host, permanent=True)
-    assert host.last_shell == FirewalldIpSets.command(True)
+    assert host.last_shell == probe(FirewalldIpSets.command(True))
 
 
 async def test_ipsets_empty_output_reads_as_empty_dict():
@@ -464,7 +506,7 @@ POLICIES_FACT = {
 async def test_policies_parses_the_marker_loop():
     host = CannedShellHost(POLICIES_OUTPUT)
     assert await FirewalldPolicies.process(host) == POLICIES_FACT
-    assert host.last_shell == FirewalldPolicies.command()
+    assert host.last_shell == probe(FirewalldPolicies.command())
 
 
 async def test_policies_old_daemon_reads_as_empty_dict():
@@ -476,7 +518,7 @@ async def test_policies_old_daemon_reads_as_empty_dict():
 async def test_policies_permanent_scope():
     host = CannedShellHost(POLICIES_OUTPUT)
     await FirewalldPolicies.process(host, permanent=True)
-    assert host.last_shell == FirewalldPolicies.command(True)
+    assert host.last_shell == probe(FirewalldPolicies.command(True))
 
 
 async def test_policies_seam_is_copied_on_read():
@@ -505,7 +547,7 @@ async def test_lockdown_probe_parses_yes_no():
     assert _FirewalldLockdown.parse([]) is False
     host = CannedShellHost("yes\n")
     assert await _FirewalldLockdown.process(host) is True
-    assert host.last_shell == _FirewalldLockdown.COMMAND
+    assert host.last_shell == probe(_FirewalldLockdown.COMMAND)
 
 
 async def test_panic_probe_parses_yes_no():
@@ -514,6 +556,89 @@ async def test_panic_probe_parses_yes_no():
     host = SimulatedHost(name="h", firewalld_panic_mode=True)
     assert await _FirewalldPanicMode.process(host) is True
     assert await _FirewalldLockdown.process(SimulatedHost(name="h")) is False
+
+
+# --- Two-tier root read: denied-then-elevated, missing, refusal (issue #52) ------------
+
+
+async def test_denied_status_read_reloads_elevated():
+    """The two-tier contract: a login the probe denies (failed read, failed
+    passwordless ``sudo -n``) re-reads the whole status composite elevated,
+    and the elevated answer is what parses -- no longer an empty default."""
+    host = CannedShellHost(
+        "",
+        exit_status=1,
+        stderr="sudo: a password is required",
+        elevated_stdout=STATUS_OUTPUT,
+    )
+    assert await FirewalldStatus.process(host) == FirewalldStatusInfo(
+        running=True, version="2.1.1"
+    )
+    assert host.shells[0] == probe(FirewalldStatus.COMMAND)
+    assert host.shells[-1].startswith("sudo ")
+    assert FirewalldStatus.COMMAND in host.shells[-1]
+
+
+async def test_denied_zones_read_reloads_elevated():
+    """The zone listing fact rides the same two tiers."""
+    host = CannedShellHost(
+        "",
+        exit_status=1,
+        stderr="sudo: a password is required",
+        elevated_stdout=ZONES_OUTPUT,
+    )
+    assert await FirewalldZones.process(host) == ZONES_FACT
+    assert len(host.shells) == 2
+    assert host.shells[-1].startswith("sudo ")
+
+
+async def test_stopped_daemon_does_not_elevate():
+    """A stopped daemon is real state, not a refusal: the composite gates its
+    own nonzero ``--state`` answer to zero, so the (empty) read never elevates
+    and never raises (issue #52's emptiness-is-not-denial rule)."""
+    host = CannedShellHost("state: \nversion: 2.1.1\n")
+    assert await FirewalldStatus.process(host) == FirewalldStatusInfo(
+        running=False, version="2.1.1"
+    )
+    assert len(host.shells) == 1
+
+
+async def test_missing_firewall_cmd_raises_command_not_found():
+    """A missing ``firewall-cmd`` never reads as the empty default (the
+    swallowed-127 fix): the probe's failure text raises
+    ``CommandNotFoundError``."""
+    host = CannedShellHost("", exit_status=1, stderr="sh: 1: firewall-cmd: not found")
+    with pytest.raises(CommandNotFoundError):
+        await FirewalldStatus.process(host)
+
+
+async def test_elevated_refusal_propagates():
+    """Refusal-on-refusal fails loud (the mysql precedent): when the elevated
+    re-read is refused too the ``PrivilegeError`` propagates instead of
+    silently reading the empty default."""
+    host = CannedShellHost("", exit_status=1, stderr="sudo: a password is required")
+    with pytest.raises(PrivilegeError):
+        await FirewalldStatus.process(host)
+
+
+async def test_denied_seam_default_zone_read_reloads_elevated_offline():
+    """The SimulatedHost seam honours ``firewall_reads_denied``: the
+    unprivileged tier answers the denial sentinel, the elevated re-read falls
+    back to the in-memory state -- the two-tier contract, offline."""
+    host = SimulatedHost(name="h", firewalld_default_zone="dmz")
+    host.firewall_reads_denied = True
+    assert await FirewalldDefaultZone.process(host) == "dmz"
+
+
+async def test_denied_seam_zones_read_reloads_elevated_offline():
+    """The zones seam runs the same denied-then-elevated dance offline: a
+    denied login still ends up with the seeded record, copied."""
+    host = seeded_host()
+    host.firewall_reads_denied = True
+    zones = await FirewalldZones.process(host)
+    assert zones["public"]["services"] == ["ssh"]
+    zones["public"]["services"].append("http")
+    assert host.firewalld_zones["public"]["services"] == ["ssh"]
 
 
 # --- Descriptor rendering ---------------------------------------------------------------

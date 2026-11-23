@@ -73,13 +73,22 @@ inherits them on the next reload. `default_zone` writes
 both scopes in one command; `lockdown` and `panic` are runtime-only daemon
 switches with no permanent form.
 
-The privilege contract is uniform: every fact read rides the passwordless
-retry `cmd 2> /dev/null || sudo -n cmd 2> /dev/null || true` — a root login
-or a NOPASSWD sudoers rule reads the full state, any other login reads the
-empty value (`{}`/`""`/`False`) rather than failing, which is also how a
-stopped daemon or a host without firewalld reads. The `|| true` guard masks
-exit 127 too, so the facts list only `HostConnectionError`. Every mutating
-operation needs root: flag the request `sudo=True`.
+The privilege contract is uniform: every fact read is a two-tier root
+read. The cheap tier runs `cmd || sudo -n cmd` (for the composite
+`firewall-cmd` listings, the whole shell loop, not its inner commands) — a
+root login or a NOPASSWD sudoers rule reads the full state, any other login
+retries through passwordless sudoers. A nonzero attempt is classified from
+its error signature, never from emptiness: a stopped daemon (`--state`
+exit 1) and a negative `--query-*` are real state the wrappers gate to a
+zero exit, while a refusal (`permission denied`, `must be root`, `a
+password is required`, `not authorized`, …) re-reads the command elevated —
+through the inventory's configured run-as user and password — and the
+elevated answer is what parses. A login the elevation still cannot satisfy
+fails loud with [`PrivilegeError`][reemote.hosts.PrivilegeError] rather
+than silently reading the empty default, and a host without firewalld
+surfaces a missing binary as
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError]. Every
+mutating operation needs root: flag the request `sudo=True`.
 
 Version handling is a read, not a raise: `FirewalldStatus` keeps the
 daemon `version` beside `running` (the capability probe), and
@@ -128,7 +137,8 @@ coroutine, so results are awaited and cached within a phase step.
 
 `FirewalldStatus` answers `--state` and `--version` behind echo markers in
 one shell: `running` plus the `version` string. `FirewalldDefaultZone`
-answers `--get-default-zone` (a plain string, `""` when unreadable).
+answers `--get-default-zone` (a plain string, `""` only when the daemon
+truly reports no default).
 `FirewalldZones` parses `--list-all-zones` into a name → `FirewalldZone`
 mapping with all sixteen fields — the `(active)` marker, target, display
 text, interfaces, sources, services, ports, protocols, forward,

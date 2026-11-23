@@ -53,15 +53,22 @@ enhanced with typed match extensions) and six are originals (`policy`,
 level), so IPv6 parity is one argument, not a parallel module.
 
 The privilege contract is uniform: reading the tables needs CAP_NET_ADMIN,
-so every table-reading fact rides the passwordless retry
-`cmd 2> /dev/null || sudo -n cmd 2> /dev/null || true` — a root login or a
-NOPASSWD sudoers rule reads the full state, any other login reads the empty
-value (`{}`/`[]`/`False`) rather than failing. The `IptablesTables` siblings
-read world-readable `/proc` files and `IptablesModules` reads `lsmod`, so
-they need no retry; the `IptablesVersion` siblings run an unguarded
-`--version` (no privilege needed) and surface a missing binary as
-[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError]. Every
-mutating operation needs root: flag the request `sudo=True`.
+so every table-reading fact is a two-tier root read. The cheap tier runs
+`cmd || sudo -n cmd` — a root login or a host whose iptables commands are
+world-readable answers directly, and any other login retries through
+passwordless sudoers. A nonzero first attempt is classified from its error
+signature, never from emptiness (an empty ruleset is real state): a refusal
+(`permission denied`, `must be root`, `a password is required`, …) re-reads
+the command elevated — through the inventory's configured run-as user and
+password, never a hard-coded `sudo -n` — and the elevated answer is what
+parses. A login the elevation still cannot satisfy fails loud with
+[`PrivilegeError`][reemote.hosts.PrivilegeError] rather than silently
+reading the empty default, and a missing binary surfaces as
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError]. The
+`IptablesTables` siblings read world-readable `/proc` files and
+`IptablesModules` reads `lsmod`, so they need no elevation; the
+`IptablesVersion` siblings run an unguarded `--version` (no privilege
+needed). Every mutating operation needs root: flag the request `sudo=True`.
 
 Deliberately absent, with the resolution recorded: a `bulk_rule(rules=[...])`
 operation — `op()` arguments must be hashable, so a list of rule dicts

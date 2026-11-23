@@ -36,7 +36,7 @@ a real asyncssh transport is missing:
   / ``rpm_files`` / ``rpm_packages`` / ``rpm_gpg_keys`` / ``services`` / ``enabled_services``
   / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_update_stamp`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``crontab_text`` / ``deb_files``
   / ``date`` / ``default_ipv4_addr`` / ``disk_stats`` / ``dmi_info`` / ``os_env``
-  / ``firewalld_default_zone``
+  / ``firewall_reads_denied`` / ``firewalld_default_zone``
   / ``firewalld_ipsets`` / ``firewalld_lockdown`` / ``firewalld_panic_mode``
   / ``firewalld_permanent_ipsets`` / ``firewalld_permanent_policies``
   / ``firewalld_permanent_zones`` / ``firewalld_policies``
@@ -1151,6 +1151,16 @@ class SimulatedHost(Host):
     # read-only seam: a test seeds it directly; the read copies each
     # entry dict (the datetime values are immutable).
     found_files: dict[str, list[FoundFile]] = field(default_factory=dict)
+    # Whether the login user is refused the firewall state reads of all
+    # three firewall modules (iptables, firewalld, ufw), both the direct
+    # read and the passwordless ``sudo -n`` retry. The facts'
+    # unprivileged seam tier answers the same read-denied sentinel the
+    # real probe produces, so the elevated re-read runs offline against
+    # the module's own in-memory seams and the denied-then-elevated
+    # scenario is testable (issue #52's two-tier contract). Defaults to
+    # False -- a simulated login reads the firewall state (a root login
+    # or a NOPASSWD sudoers rule collapse to the same answer).
+    firewall_reads_denied: bool = False
     # The firewalld daemon record ({running, version}), backing
     # ``FirewalldStatus``. The default projects a stopped daemon with no
     # version; a test seeds it directly (read-only -- no operation starts

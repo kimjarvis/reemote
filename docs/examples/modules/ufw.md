@@ -6,18 +6,29 @@ Scripts under `examples/modules/ufw/` — one per fact or operation of the
 warning and the error-reporting contract every script follows.
 
 The read-only fact-gathering examples (`ufw_ufw_status.py` reading
-`UfwStatus`, `ufw_ufw_rules.py` reading `UfwRules` and
-`ufw_ufw_applications.py` reading `UfwApplications`, all over
+`UfwStatus`, `ufw_ufw_rules.py` reading `UfwRules`,
+`ufw_ufw_applications.py` reading `UfwApplications`, and
+`ufw_ufw_status_password_sudo.py` reading `UfwStatus` through an attached
+`privilege` section, all over
 `gather_fact`) are not rendered here — they read a single fact, and the
 facts themselves are documented on the
 [`ufw` module page](../../modules/ufw.md). Like the dnf examples they
 read the shared project-root `inventory.json` and guard on the `"RedHat"`
 family: `is_redhat` filters the host list before the `gather_fact`
 fan-out, and the operation scripts below carry `when=is_redhat` on every
-request. Every ufw read retries through passwordless `sudo -n` and reads
-the empty value on an unprivileged login (or a host without ufw) rather
-than failing, so every gather is safe on any Linux target — name your own
-machines in `inventory.json` in your working directory before executing.
+request. The reads are two-tier (the module's privilege note): a login-user
+command, a passwordless `sudo -n` retry, then — when the probe is *denied*,
+recognised by an error signature and never by empty output — an elevated
+re-read through the inventory's configured privilege. The plain fact scripts
+run key-based and stop at the `sudo -n` rung, reading the empty record on an
+unprivileged login (or a host without ufw) rather than failing; the
+password-sudo script attaches a `sudo_user`/`sudo_password` `privilege`
+section so the elevated rung carries a credential and a password-sudo host
+reads the true `active` flag instead of the inactive-shaped empty record
+that once made `ufw.state` skip a needed disable. A refusal the elevation
+cannot satisfy raises `PrivilegeError`; a missing `ufw` raises
+`CommandNotFoundError` — name your own machines in `inventory.json` in your
+working directory before executing.
 
 ufw is a Debian-family frontend that RHEL-family ships only through EPEL,
 so every operation script below first installs `epel-release` and `ufw`

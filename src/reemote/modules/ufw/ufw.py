@@ -16,15 +16,20 @@
 # ``ufw app list``). Like every fact they are phase-unaware: their
 # ``process`` coroutine just gathers the raw value.
 #
-# Privilege note: ``ufw status`` needs root on the target. Following the
-# hardware.SmbiosInfo / iptables precedent, every fact retries its command
-# through passwordless ``sudo -n`` at the shell level (never the elevation
-# layer -- facts stay side-effect free and prompt-free): the contract is
-# full data for a root login or a NOPASSWD sudoers rule, and the empty
-# default otherwise, indistinguishable from an inactive/uninstalled ufw.
-# The operations below flag their commands ``sudo=True`` at the ``op()``
-# call site; their fact reads ride the same ``sudo -n`` retry, so
-# idempotence reporting works on a sudoers fleet.
+# Privilege note: ``ufw status`` needs root on the target. Every
+# root-read fact is two-tier: the cheap tier runs the command and a
+# passwordless ``sudo -n`` retry in one shell (never prompts,
+# side-effect free, safe under the across-host fan-out), and when that
+# tier reports a *denial* -- a permission error or sudo asking for a
+# password -- the fact re-reads elevated through
+# ``run_shell_privileged`` (the iptables module's precedent; the
+# run-as user and any password come from the inventory privilege data,
+# never from an operation). The contract is truthful data on every host
+# the configured elevation can reach: a denial the elevation cannot
+# clear raises ``PrivilegeError`` rather than reading a false-inactive
+# default, and a missing ufw raises ``CommandNotFoundError``. The
+# operations below flag their commands ``sudo=True`` at the ``op()``
+# call site.
 #
 # Operation side: ``ufw.state`` (enable/disable, idempotent on UfwStatus;
 # the Discussion's separate enable/disable pair collapsed into one
@@ -66,21 +71,87 @@ from typing import Any, TypedDict
 
 from ...commands import Command
 from ...core import OpContext
-from ...hosts import Host
+from ...hosts import CommandNotFoundError, Host
 
 # --- Shared helpers ----------------------------------------------------------
 
 
-def _privileged_read(command: str) -> str:
-    """Wrap a root-read command with the passwordless ``sudo -n`` retry.
+class _ReadDenied:
+    """Sentinel type: a root read the login user (and ``sudo -n``) were denied."""
 
-    The ``hardware.SmbiosInfo`` / iptables precedent for facts that need
-    root: try unprivileged first, retry through ``sudo -n`` (never
-    prompts, creates no askpass file, safe under the across-host fan-out),
-    and mask every failure with ``|| true`` so a host that grants neither
-    reads the fact's empty default instead of raising.
+
+#: The single sentinel instance ``_root_read`` returns when the probe failed
+#: with a *denial* signature; the fact's ``process`` re-reads elevated on it.
+#: A private object, so no command output can ever compare equal to it.
+_DENIED = _ReadDenied()
+
+#: Case-insensitive fragments that identify a refusal to read as root, as
+#: opposed to a legitimate empty state or an ordinary command failure: the
+#: ufw permission errors and ``sudo -n``'s password exhaustion. The
+#: elevated re-read never triggers on plain emptiness (an inactive ufw
+#: legitimately prints just ``Status: inactive``) or on a bare non-zero
+#: exit.
+_DENIAL_MARKERS = (
+    "permission denied",
+    "operation not permitted",
+    "must be root",
+    "need to be root",
+    "need root",
+    "a password is required",
+)
+
+
+def _root_read_shell(command: str) -> str:
+    """Wrap a root-read command with the cheap passwordless ``sudo -n`` tier.
+
+    The first tier still runs as the login user, so a root login or a
+    NOPASSWD sudoers rule answers in one round trip without ever
+    touching the elevation layer (facts stay side-effect free and
+    prompt-free). Nothing is masked: the denial text and the exit
+    status survive for ``_root_read`` to classify, and a missing binary
+    is no longer hidden behind ``|| true``.
     """
-    return f"{command} 2> /dev/null || sudo -n {command} 2> /dev/null || true"
+    return f"{command} || sudo -n {command}"
+
+
+async def _root_read(host: Host, command: str) -> str | _ReadDenied:
+    """Run one root-read probe over the raw transport and classify it.
+
+    A missing ufw surfaces as ``CommandNotFoundError`` (either tier
+    reports the absence as ``command not found``), and a denial --
+    permission error or ``sudo -n`` asking for a password -- surfaces as
+    the ``_DENIED`` sentinel, which the fact's ``process`` turns into
+    one elevated re-read through ``run_shell_privileged``. Every other
+    outcome, including the legitimate ``Status: inactive`` print of a
+    disabled firewall, returns the stdout for the fact's parser.
+    """
+    shell = _root_read_shell(command)
+    result = await host.run_shell_result(shell)
+    if result.exit_status != 0:
+        combined = f"{result.stdout or ''}\n{result.stderr or ''}".lower()
+        if (
+            result.exit_status == 127
+            or "command not found" in combined
+            or ": not found" in combined
+        ):
+            raise CommandNotFoundError(
+                host.name, shell, result.exit_status, result.stderr
+            )
+        if any(marker in combined for marker in _DENIAL_MARKERS):
+            return _DENIED
+    return result.stdout or ""
+
+
+def _seam_denied(host: Host, privileged: bool) -> bool:
+    """Whether the SimulatedHost seam should answer the denial sentinel.
+
+    The ``firewall_reads_denied`` field models a login that can read the
+    firewall state neither directly nor through passwordless sudo; only
+    the unprivileged tier honours it, so the elevated re-read of the
+    same seam succeeds offline exactly as ``run_shell_privileged`` does
+    over SSH.
+    """
+    return not privileged and bool(getattr(host, "firewall_reads_denied", False))
 
 
 # A port token as ufw prints it: a single port, a comma multiport or a
@@ -278,13 +349,13 @@ class UfwStatusInfo(TypedDict):
             inactive or unreadable.
         default_routed: The default routed (forwarded) policy
             (``disabled``, ``deny``, ``allow`` or ``reject``); ``""``
-            when inactive or unreadable.
+            when inactive or unprinted.
     """
 
     # The single record ``UfwStatus`` returns. An inactive ufw prints
     # only ``Status: inactive`` -- every other field keeps its empty
-    # default, which is also the unprivileged/uninstalled answer (the
-    # module header's privilege contract).
+    # default, which is real state (the module header's privilege note
+    # covers denied reads and missing binaries).
 
     active: bool
     logging: str
@@ -299,7 +370,7 @@ class UfwStatus:
     **Commands:**
 
     ```bash
-    ufw status verbose 2> /dev/null || sudo -n ufw status verbose 2> /dev/null || true
+    ufw status verbose || sudo -n ufw status verbose
     ```
 
     **Returns:**
@@ -311,7 +382,7 @@ class UfwStatus:
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -325,19 +396,20 @@ class UfwStatus:
     # flag, the level word (``on (low)`` reduces to ``low``) and the three
     # policy words. The ``New profiles:`` line and the rule table the
     # verbose listing also prints are ignored -- ``UfwRules`` answers the
-    # ruleset with rule numbers. The command rides the passwordless
-    # ``sudo -n`` retry and the ``|| true`` guard masks exit 127, so only
-    # HostConnectionError can surface.
+    # ruleset with rule numbers. The read is two-tier (the module
+    # header's privilege note): the in-shell passwordless ``sudo -n``
+    # retry, then an elevated re-read on a denial; a missing ufw raises
+    # ``CommandNotFoundError``.
     #
     # SimulatedHost seam note: the ``ufw_status`` field stores the whole
-    # record; an unseeded host reads the inactive/empty record.
+    # record; an unseeded host reads the inactive/empty record. The
+    # ``firewall_reads_denied`` field makes the unprivileged tier answer
+    # the denial sentinel; the elevated re-read then returns to the seam
+    # for the answer.
 
-    #: Shell gathering the status over SSH, with the passwordless
-    #: ``sudo -n`` retry for the root read.
-    COMMAND = (
-        "ufw status verbose 2> /dev/null "
-        "|| sudo -n ufw status verbose 2> /dev/null || true"
-    )
+    #: Shell gathering the status over SSH: the bare read plus the
+    #: passwordless ``sudo -n`` retry tier (a denial re-reads elevated).
+    COMMAND = "ufw status verbose || sudo -n ufw status verbose"
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> UfwStatusInfo:
@@ -366,13 +438,35 @@ class UfwStatus:
 
     @classmethod
     async def process(cls, host: Host) -> UfwStatusInfo:
+        status = await cls._read(host, privileged=False)
+        if status is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated. The run-as user and any password come from the
+            # inventory privilege data, never from the fact.
+            status = await cls._read(host, privileged=True)
+        return status
+
+    @classmethod
+    async def _read(
+        cls, host: Host, *, privileged: bool
+    ) -> UfwStatusInfo | _ReadDenied:
         state = getattr(host, "ufw_status", None)
         if state is not None:
-            # SimulatedHost seam: read the in-memory state directly.
+            # SimulatedHost seam: read the in-memory state directly; the
+            # denial sentinel is answered only on the unprivileged tier,
+            # so the elevated re-read falls back to this state (the
+            # elevation succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return dict(state)  # type: ignore[return-value]
-        # Real transport: gather over asyncssh from the host's connection,
-        # retrying the root read through passwordless sudo -n.
-        stdout = await host.run_shell(cls.COMMAND)
+        # Real transport: the probe reads directly or through passwordless
+        # sudo -n; a denial surfaces the sentinel for the elevated re-read.
+        if privileged:
+            stdout = await host.run_shell_privileged("ufw status verbose", sudo=True)
+        else:
+            stdout = await _root_read(host, "ufw status verbose")
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines())
 
 
@@ -433,7 +527,7 @@ class UfwRules:
     **Commands:**
 
     ```bash
-    ufw status numbered 2> /dev/null || sudo -n ufw status numbered 2> /dev/null || true
+    ufw status numbered || sudo -n ufw status numbered
     ```
 
     **Returns:**
@@ -445,7 +539,7 @@ class UfwRules:
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -459,19 +553,22 @@ class UfwRules:
     # ufw's own numbering). The numbered form is used rather than the
     # verbose one because it keeps application profiles collapsed to one
     # row per rule and carries the numbers deletes and inserts address.
-    # An inactive firewall prints only ``Status: inactive`` and reads [].
-    # The command rides the passwordless ``sudo -n`` retry and the
-    # ``|| true`` guard masks exit 127.
+    # An inactive firewall prints only ``Status: inactive`` and reads []
+    # -- real state, never an elevation trigger. The read is two-tier
+    # (the module header's privilege note): the in-shell passwordless
+    # ``sudo -n`` retry, then an elevated re-read on a denial; a missing
+    # ufw raises ``CommandNotFoundError``.
     #
     # SimulatedHost seam note: the ``ufw_rules`` field stores the entry
-    # list in numbered order; an unseeded host reads [].
+    # list in numbered order; an unseeded host reads []. The
+    # ``firewall_reads_denied`` field makes the unprivileged tier answer
+    # the denial sentinel; the elevated re-read then returns to the seam
+    # for the answer.
 
-    #: Shell gathering the numbered ruleset over SSH, with the
-    #: passwordless ``sudo -n`` retry for the root read.
-    COMMAND = (
-        "ufw status numbered 2> /dev/null "
-        "|| sudo -n ufw status numbered 2> /dev/null || true"
-    )
+    #: Shell gathering the numbered ruleset over SSH: the bare read plus
+    #: the passwordless ``sudo -n`` retry tier (a denial re-reads
+    #: elevated).
+    COMMAND = "ufw status numbered || sudo -n ufw status numbered"
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> list[UfwRule]:
@@ -485,14 +582,35 @@ class UfwRules:
 
     @classmethod
     async def process(cls, host: Host) -> list[UfwRule]:
+        rules = await cls._read(host, privileged=False)
+        if rules is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated from the inventory privilege data.
+            rules = await cls._read(host, privileged=True)
+        return rules
+
+    @classmethod
+    async def _read(
+        cls, host: Host, *, privileged: bool
+    ) -> list[UfwRule] | _ReadDenied:
         state = getattr(host, "ufw_rules", None)
         if state is not None:
             # SimulatedHost seam: read the in-memory state directly,
-            # copying each entry so callers never mutate simulated state.
+            # copying each entry so callers never mutate simulated
+            # state; the denial sentinel is answered only on the
+            # unprivileged tier, so the elevated re-read falls back to
+            # this state (the elevation succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return [_copy_rule(rule) for rule in state]
-        # Real transport: gather over asyncssh from the host's connection,
-        # retrying the root read through passwordless sudo -n.
-        stdout = await host.run_shell(cls.COMMAND)
+        # Real transport: the probe reads directly or through passwordless
+        # sudo -n; a denial surfaces the sentinel for the elevated re-read.
+        if privileged:
+            stdout = await host.run_shell_privileged("ufw status numbered", sudo=True)
+        else:
+            stdout = await _root_read(host, "ufw status numbered")
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines())
 
 
@@ -502,7 +620,7 @@ class UfwApplications:
     **Commands:**
 
     ```bash
-    ufw app list 2> /dev/null || sudo -n ufw app list 2> /dev/null || true
+    ufw app list || sudo -n ufw app list
     ```
 
     **Returns:**
@@ -514,7 +632,7 @@ class UfwApplications:
     **Raises:**
 
     ```python
-    HostConnectionError
+    CommandError, CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -527,17 +645,19 @@ class UfwApplications:
     # applications:`` header, one per line, in listing order (ufw sorts
     # them alphabetically). These are the names ``ufw.rule(app=...)``
     # references. A host with no profiles prints just the header and
-    # reads []. The command rides the passwordless ``sudo -n`` retry and
-    # the ``|| true`` guard masks exit 127.
+    # reads []. The read is two-tier (the module header's privilege
+    # note): the in-shell passwordless ``sudo -n`` retry, then an
+    # elevated re-read on a denial; a missing ufw raises
+    # ``CommandNotFoundError``.
     #
     # SimulatedHost seam note: the ``ufw_applications`` field stores the
-    # name list; an unseeded host reads [].
+    # name list; an unseeded host reads []. The ``firewall_reads_denied``
+    # field makes the unprivileged tier answer the denial sentinel; the
+    # elevated re-read then returns to the seam for the answer.
 
-    #: Shell gathering the profile names over SSH, with the passwordless
-    #: ``sudo -n`` retry for the root read.
-    COMMAND = (
-        "ufw app list 2> /dev/null || sudo -n ufw app list 2> /dev/null || true"
-    )
+    #: Shell gathering the profile names over SSH: the bare read plus the
+    #: passwordless ``sudo -n`` retry tier (a denial re-reads elevated).
+    COMMAND = "ufw app list || sudo -n ufw app list"
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> list[str]:
@@ -551,12 +671,32 @@ class UfwApplications:
 
     @classmethod
     async def process(cls, host: Host) -> list[str]:
+        names = await cls._read(host, privileged=False)
+        if names is _DENIED:
+            # Denied as the login user and by passwordless sudo -n: re-read
+            # elevated from the inventory privilege data.
+            names = await cls._read(host, privileged=True)
+        return names
+
+    @classmethod
+    async def _read(cls, host: Host, *, privileged: bool) -> list[str] | _ReadDenied:
         state = getattr(host, "ufw_applications", None)
         if state is not None:
-            # SimulatedHost seam: read the in-memory state directly.
+            # SimulatedHost seam: read the in-memory state directly; the
+            # denial sentinel is answered only on the unprivileged tier,
+            # so the elevated re-read falls back to this state (the
+            # elevation succeeds offline).
+            if _seam_denied(host, privileged):
+                return _DENIED
             return list(state)
-        # Real transport: gather over asyncssh from the host's connection.
-        stdout = await host.run_shell(cls.COMMAND)
+        # Real transport: the probe reads directly or through passwordless
+        # sudo -n; a denial surfaces the sentinel for the elevated re-read.
+        if privileged:
+            stdout = await host.run_shell_privileged("ufw app list", sudo=True)
+        else:
+            stdout = await _root_read(host, "ufw app list")
+            if stdout is _DENIED:
+                return _DENIED
         return cls.parse(stdout.splitlines())
 
 
@@ -633,10 +773,11 @@ async def state(
     # Proposal's ``ipv6`` argument is deliberately dropped (decided with
     # the developer): ufw has no CLI toggle for IPv6 -- it is IPV6=yes in
     # /etc/default/ufw, a files.edit recipe's job -- and ufw manages both
-    # address families together. An unprivileged fact read reports
-    # inactive, so the plan shows the enable change (the module header's
-    # privilege contract). The command needs root: flag the request
-    # ``sudo=True``. ``**kwargs`` absorbs unknown arguments.
+    # address families together. The fact read is two-tier (the module
+    # header's privilege note), so the active flag is truthful on every
+    # host the configured elevation can reach -- a false-inactive read no
+    # longer hides a needed ``disable``. The command needs root: flag the
+    # request ``sudo=True``. ``**kwargs`` absorbs unknown arguments.
     status = await ctx.facts.get(UfwStatus)
     if status["active"] != enabled:
         ctx.changed = True

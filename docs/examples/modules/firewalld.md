@@ -10,19 +10,31 @@ reading `FirewalldStatus`, `firewalld_firewalld_default_zone.py` reading
 `FirewalldDefaultZone`, `firewalld_firewalld_zones.py` reading
 `FirewalldZones` in **both** configuration scopes side by side,
 `firewalld_firewalld_services.py` reading `FirewalldServices`,
-`firewalld_firewalld_ipsets.py` reading `FirewalldIpSets` and
+`firewalld_firewalld_ipsets.py` reading `FirewalldIpSets`,
 `firewalld_firewalld_policies.py` reading `FirewalldPolicies`, both in the
-permanent scope, all over `gather_fact`) are not rendered here — they read
+permanent scope, and `firewalld_firewalld_status_password_sudo.py` reading
+`FirewalldStatus` through an attached
+`privilege` section, all over `gather_fact`) are not rendered here — they read
 a single fact, and the facts themselves are documented on the
 [`firewalld` module page](../../modules/firewalld.md). Like the dnf
 examples they read the shared project-root `inventory.json` and guard on
 the `"RedHat"` family: `is_redhat` filters the host list before the
 `gather_fact` fan-out, and the operation scripts below carry
-`when=is_redhat` on every request. Every firewalld read retries through
-passwordless `sudo -n` and reads the empty value on an unprivileged login
-(or a stopped daemon, or a host without firewalld) rather than failing, so
-every gather is safe on any Linux target — name your own machines in
-`inventory.json` in your working directory before executing.
+`when=is_redhat` on every request. The reads are two-tier (the module's
+privilege note): a login-user command, a passwordless `sudo -n` retry, then
+— when the probe is *denied*, recognised by an error signature and never by
+empty output — an elevated re-read through the inventory's configured
+privilege. The plain fact scripts run key-based and stop at the `sudo -n`
+rung, reading the empty value on an unprivileged login rather than failing;
+the password-sudo script attaches a `sudo_user`/`sudo_password` `privilege`
+section so the elevated rung carries a credential and a refusal no longer
+masquerades as `running=False`. A stopped daemon or a host without firewalld
+still reads the empty value on either tier — that nonzero answer is real
+state the wrapper gates to zero, not a refusal — so those gathers stay safe
+on any Linux target. A refusal the elevation cannot satisfy raises
+`PrivilegeError`; a missing `firewall-cmd` raises `CommandNotFoundError` —
+name your own machines in `inventory.json` in your working directory before
+executing.
 
 The demo hosts ship without firewalld, so every operation script below
 first drives a small idempotent *install deploy* (`dnf.packages` for

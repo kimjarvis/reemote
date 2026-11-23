@@ -35,11 +35,13 @@ zone that connections and interfaces land in when nothing binds them
 explicitly. Unlike the other firewalld facts there is no ``permanent``
 argument: the default zone is a single daemon-wide setting that
 ``--set-default-zone`` writes to both configurations at once, so runtime
-and permanent never disagree. The read is guarded
-(``2> /dev/null || sudo -n ... || true``): a stopped daemon or a host
-without firewalld prints nothing and the fact reads the empty string,
-which is how a deploy tells "no default zone readable" apart from a real
-zone name before deciding to set one.
+and permanent never disagree. The read is two-tier: the login-user
+command, a passwordless ``sudo -n`` retry, then -- when both are refused
+-- an elevated re-read through the inventory's configured privilege,
+which re-reads the zone. A stopped daemon or a host without firewalld
+prints nothing (real state, not a refusal) and the fact reads the empty
+string, which is how a deploy tells "no default zone readable" apart from
+a real zone name before deciding to set one.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
 ``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven
@@ -64,6 +66,7 @@ from reemote import (
     Host,
     HostConnectionError,
     InventoryError,
+    PrivilegeError,
     gather_fact,
     validate_inventory,
 )
@@ -118,12 +121,12 @@ async def main() -> None:
         # whole report -- and it fails before any host is materialized.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    except (CommandError, HostConnectionError) as exc:
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # The library reports an unreachable host or a failed fact command as a
         # typed error whose message already names the host. Print that message
         # -- no traceback -- and exit non-zero so the failure stays
-        # script-visible. (The guarded read itself never raises for a stopped
-        # daemon; it reads "".)
+        # script-visible. (A stopped daemon reads ""; only a refusal the
+        # elevation cannot satisfy raises PrivilegeError.)
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     finally:

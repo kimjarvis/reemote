@@ -28,6 +28,8 @@ default-rule-enable composition, lockstep ordering and a dry run).
 """
 
 import shlex
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -42,7 +44,7 @@ from reemote.drivers import (
     run_prepare,
     send_command,
 )
-from reemote.hosts import Host
+from reemote.hosts import CommandNotFoundError, Host, PrivilegeError
 from reemote.modules import ufw
 from reemote.modules.ufw.ufw import (
     UfwApplications,
@@ -62,16 +64,45 @@ from tests.simulated_host import SimulatedHost
 
 
 class CannedShellHost(Host):
-    """Returns fixed stdout from ``run_shell`` instead of connecting."""
+    """Answers the transport seam with canned results instead of connecting.
 
-    def __init__(self, stdout: str):
+    The probe tier (the bare read and its ``sudo -n`` retry, one shell
+    string) answers ``stdout`` with ``exit_status``/``stderr``; a
+    ``sudo``-wrapped elevated re-read answers ``elevated_stdout`` when
+    one is set (the denied-login fallback shape, the mysql precedent).
+    """
+
+    def __init__(
+        self,
+        stdout: str,
+        *,
+        exit_status: int = 0,
+        stderr: str = "",
+        elevated_stdout: str | None = None,
+    ):
         super().__init__(name="canned")
         self._stdout = stdout
-        self.last_shell: str | None = None
+        self._exit_status = exit_status
+        self._stderr = stderr
+        self._elevated_stdout = elevated_stdout
+        self.shells: list[str] = []
 
-    async def run_shell(self, shell: str) -> str:
-        self.last_shell = shell
-        return self._stdout
+    @property
+    def last_shell(self) -> str | None:
+        """The most recent shell the fact issued (the old recorder name)."""
+        return self.shells[-1] if self.shells else None
+
+    async def _run_shell(self, shell: str) -> Any:
+        self.shells.append(shell)
+        if shell.startswith("sudo ") and self._elevated_stdout is not None:
+            return SimpleNamespace(
+                exit_status=0, stdout=self._elevated_stdout, stderr=""
+            )
+        return SimpleNamespace(
+            exit_status=self._exit_status,
+            stdout=self._stdout,
+            stderr=self._stderr,
+        )
 
 
 def make_ctx(host: Host) -> OpContext:
@@ -160,12 +191,13 @@ async def test_ufw_status_inactive():
 
 
 async def test_ufw_status_empty_unprivileged():
-    """A host granting neither root nor passwordless sudo reads the empty
-    record (the ``|| true`` guard masks the failure)."""
+    """A zero-exiting empty read (a host that prints nothing) is real state,
+    not a refusal: it reads the empty record and never elevates."""
     host = CannedShellHost("")
     info = await UfwStatus.process(host)
     assert info["active"] is False
     assert info["logging"] == ""
+    assert len(host.shells) == 1
 
 
 @pytest.mark.parametrize(
@@ -357,6 +389,102 @@ async def test_ufw_applications_seam_copy():
     assert names == ["OpenSSH"]
     names.append("Nginx Full")
     assert host.ufw_applications == ["OpenSSH"]
+
+
+# --- Two-tier root read: denied-then-elevated, missing, refusal (issue #52) ------------
+
+
+def probe(command: str) -> str:
+    """The unprivileged-tier probe shell a fact issues for a raw command.
+
+    The COMMAND constants already store this probe form, so the helper is
+    only used to make the elevation sequence explicit in the tests below.
+    """
+    return f"{command} || sudo -n {command}"
+
+
+async def test_denied_status_read_reloads_elevated():
+    """The two-tier contract: a login the probe denies (failed read, failed
+    passwordless ``sudo -n``) re-reads the status elevated, and the elevated
+    answer is what parses -- the false-inactive no-longer-empty default."""
+    host = CannedShellHost(
+        "",
+        exit_status=1,
+        stderr="sudo: a password is required",
+        elevated_stdout=STATUS_VERBOSE,
+    )
+    info = await UfwStatus.process(host)
+    assert info["active"] is True
+    assert info["default_incoming"] == "deny"
+    assert host.shells[0] == probe("ufw status verbose")
+    assert host.shells[-1].startswith("sudo ")
+    assert "ufw status verbose" in host.shells[-1]
+
+
+async def test_denied_rules_read_reloads_elevated():
+    """The numbered ruleset fact rides the same two tiers -- a denied login
+    still ends up with the full parsed rule list."""
+    host = CannedShellHost(
+        "",
+        exit_status=1,
+        stderr="sudo: a password is required",
+        elevated_stdout=STATUS_NUMBERED,
+    )
+    rules = await UfwRules.process(host)
+    assert [r["number"] for r in rules] == list(range(1, 10))
+    assert len(host.shells) == 2
+    assert host.shells[-1].startswith("sudo ")
+
+
+async def test_denied_applications_read_reloads_elevated():
+    """The application-profile fact elevates on a denial too."""
+    host = CannedShellHost(
+        "",
+        exit_status=1,
+        stderr="sudo: a password is required",
+        elevated_stdout=APP_LIST,
+    )
+    names = await UfwApplications.process(host)
+    assert names == ["Nginx Full", "Nginx HTTP", "Nginx HTTPS", "OpenSSH"]
+    assert host.shells[-1].startswith("sudo ")
+
+
+async def test_missing_ufw_raises_command_not_found():
+    """A missing ``ufw`` never reads as the empty default (the swallowed-127
+    fix): the probe's failure text raises ``CommandNotFoundError``."""
+    host = CannedShellHost("", exit_status=1, stderr="sh: 1: ufw: not found")
+    with pytest.raises(CommandNotFoundError):
+        await UfwStatus.process(host)
+
+
+async def test_elevated_refusal_propagates():
+    """Refusal-on-refusal fails loud (the mysql precedent): when the elevated
+    re-read is refused too the ``PrivilegeError`` propagates instead of
+    silently reading the empty default."""
+    host = CannedShellHost("", exit_status=1, stderr="sudo: a password is required")
+    with pytest.raises(PrivilegeError):
+        await UfwStatus.process(host)
+
+
+async def test_denied_seam_status_read_reloads_elevated_offline():
+    """The SimulatedHost seam honours ``firewall_reads_denied``: the
+    unprivileged tier answers the denial sentinel, the elevated re-read falls
+    back to the in-memory state -- the two-tier contract, offline."""
+    host = SimulatedHost(name="h", ufw_status=status_record(active=True))
+    host.firewall_reads_denied = True
+    info = await UfwStatus.process(host)
+    assert info["active"] is True
+
+
+async def test_denied_seam_rules_read_reloads_elevated_offline():
+    """The rules seam runs the same denied-then-elevated dance offline: a
+    denied login still ends up with the seeded rules, copied."""
+    host = SimulatedHost(name="h", ufw_rules=[rule_row()])
+    host.firewall_reads_denied = True
+    rules = await UfwRules.process(host)
+    assert rules == [rule_row()]
+    rules[0]["port"] = "9999"
+    assert host.ufw_rules[0]["port"] == "22"
 
 
 # --- gather_fact fan-outs -------------------------------------------------------------------

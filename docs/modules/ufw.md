@@ -30,12 +30,20 @@ every read is a single shell round-trip and every mutation one `ufw`
 invocation, so no Python dependency is needed on the target.
 
 The privilege contract is uniform: reading ufw state needs root, so
-every fact rides the passwordless retry
-`cmd 2> /dev/null || sudo -n cmd 2> /dev/null || true` — a root login or
-a NOPASSWD sudoers rule reads the full state, any other login reads the
-empty value (the inactive-shaped status record, `[]`) rather than
-failing, which is also how a host without ufw reads. The `|| true` guard
-masks exit 127 too, so the facts list only `HostConnectionError`. Every
+every fact is a two-tier root read. The cheap tier runs
+`cmd || sudo -n cmd` — a root login or a NOPASSWD sudoers rule reads the
+full state, any other login retries through passwordless sudoers. A
+nonzero first attempt is classified from its error signature, never from
+emptiness (an inactive firewall is real state): a refusal
+(`permission denied`, `must be root`, `a password is required`, …)
+re-reads the command elevated — through the inventory's configured run-as
+user and password — and the elevated answer is what parses, so a login
+that once read a false-inactive status now reads the truth. A login the
+elevation still cannot satisfy fails loud with
+[`PrivilegeError`][reemote.hosts.PrivilegeError] rather than silently
+reading the inactive-shaped default, and a host without ufw surfaces a
+missing binary as
+[`CommandNotFoundError`][reemote.hosts.CommandNotFoundError]. Every
 mutating operation needs root: flag the request `sudo=True`.
 
 Deliberately shaped, with the resolution recorded: the Discussion

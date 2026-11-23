@@ -36,10 +36,14 @@ module at all, so every firewalld deploy starts with a manual
 question in one shell round-trip (``--state`` and ``--version`` behind
 echo markers) and keeps two fields -- ``running`` (whether the daemon
 answers) and ``version`` (the daemon's version string, e.g. "2.1.1").
-The read is guarded (``2> /dev/null || sudo -n ... || true``), so a
-stopped daemon or a host without firewalld reads ``running=False`` with
-an empty ``version`` instead of raising: the fact is how a deploy tells
-a firewalld host apart from a bare one before deciding to manage it.
+The read is two-tier (the module's privilege note): a passwordless
+``sudo -n`` retry, then an elevated re-read through the inventory's
+configured privilege when the login is denied -- so a refused read no
+longer masquerades as ``running=False``. A stopped daemon or a host
+without firewalld still reads ``running=False`` with an empty ``version``
+(that nonzero answer is real state the wrapper gates to zero, not a
+refusal): the fact is how a deploy tells a firewalld host apart from a
+bare one before deciding to manage it.
 The ``version`` field is also the capability probe -- policies, for
 example, only exist on firewalld 0.9 and newer.
 
@@ -66,6 +70,7 @@ from reemote import (
     Host,
     HostConnectionError,
     InventoryError,
+    PrivilegeError,
     gather_fact,
     validate_inventory,
 )
@@ -120,12 +125,12 @@ async def main() -> None:
         # whole report -- and it fails before any host is materialized.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    except (CommandError, HostConnectionError) as exc:
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # The library reports an unreachable host or a failed fact command as a
         # typed error whose message already names the host. Print that message
         # -- no traceback -- and exit non-zero so the failure stays
-        # script-visible. (The guarded read itself never raises for a stopped
-        # daemon; it reads running=False.)
+        # script-visible. (A stopped daemon reads running=False; only a
+        # refusal the elevation cannot satisfy raises PrivilegeError.)
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     finally:

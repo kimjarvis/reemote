@@ -40,13 +40,18 @@ ingress/egress zone pairing), increasingly replacing direct zone rules
 for inter-zone flows; this fact is read-only visibility into them.
 
 Version handling is built into the read: a daemon older than 0.9 does
-not know ``--get-policies``, the ``|| true`` guard masks its error, the
-marker loop never runs and the fact reads ``{}`` -- so the same script
-is safe against older daemons, and an empty mapping beside a running
-``FirewalldStatus`` is how a deploy detects "no policy support" versus
-"no policies configured" (check the version field). The ``permanent``
-argument selects the scope; this script reads the **permanent**
-configuration (``permanent=True``), where policy objects are authored.
+not know ``--get-policies``, the wrapper's failure gate turns that
+unclassifiable error into a clean zero, the marker loop never runs and
+the fact reads ``{}`` -- so the same script is safe against older
+daemons, and an empty mapping beside a running ``FirewalldStatus`` is
+how a deploy detects "no policy support" versus "no policies
+configured" (check the version field). The read is two-tier (the
+module's privilege note): a permission-denied ``--get-policies`` first
+retries under ``sudo -n``, then re-reads elevated through the
+inventory's configured privilege, so a refused read is no longer
+silently reported as "no policies". The ``permanent`` argument selects
+the scope; this script reads the **permanent** configuration
+(``permanent=True``), where policy objects are authored.
 
 Every host's connection is closed with ``aclose`` once the facts are gathered.
 ``gather_fact`` and ``process`` are coroutines, so ``main`` is async and driven
@@ -71,6 +76,7 @@ from reemote import (
     Host,
     HostConnectionError,
     InventoryError,
+    PrivilegeError,
     gather_fact,
     validate_inventory,
 )
@@ -125,12 +131,12 @@ async def main() -> None:
         # whole report -- and it fails before any host is materialized.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    except (CommandError, HostConnectionError) as exc:
-        # The library reports an unreachable host or a failed fact command as a
-        # typed error whose message already names the host. Print that message
-        # -- no traceback -- and exit non-zero so the failure stays
-        # script-visible. (The guarded read itself never raises for a stopped
-        # daemon; it reads {}.)
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
+        # The library reports an unreachable host, a missing firewall-cmd, or a
+        # failed fact command as a typed error whose message already names the
+        # host. Print that message -- no traceback -- and exit non-zero so the
+        # failure stays script-visible. (A stopped daemon or an old daemon reads
+        # {}; only a refusal the elevation cannot satisfy raises PrivilegeError.)
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     finally:

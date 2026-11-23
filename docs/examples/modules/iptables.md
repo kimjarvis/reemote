@@ -18,16 +18,25 @@ The read-only fact-gathering examples (`iptables_iptables_chains.py` reading
 `iptables_iptables_modules.py` reading `IptablesModules`,
 `iptables_ip_sets.py` reading `IpSets`, `iptables_iptables_persistence.py`
 reading `IptablesPersistence` and `iptables_ip6tables_persistence.py`
-reading `Ip6tablesPersistence`, all over `gather_fact`) are not rendered
+reading `Ip6tablesPersistence`, and `iptables_iptables_rules_password_sudo.py`
+reading `IptablesRules` through an attached `privilege` section, all over
+`gather_fact`) are not rendered
 here — they read a single fact, and the facts themselves are documented on
 the [`iptables` module page](../../modules/iptables.md). Like the dnf
 examples they read the shared project-root `inventory.json` and guard on
 the `"RedHat"` family: `is_redhat` filters the host list before the
 `gather_fact` fan-out, and the operation scripts below carry
-`when=is_redhat` on every request. The table-reading facts retry through
-passwordless `sudo -n` and read the empty value on an unprivileged login
-rather than failing, so every gather is safe on any Linux target — name your
-own machines in `inventory.json` in your working directory before executing.
+`when=is_redhat` on every request. The root-reading facts are two-tier (the
+module's privilege note): a login-user command, a passwordless `sudo -n`
+retry, then — when the probe is *denied*, recognised by an error signature
+and never by empty output (an empty ruleset is real state) — an elevated
+re-read through the inventory's configured privilege. The plain fact scripts
+run key-based and stop at the `sudo -n` rung; `iptables_iptables_rules_password_sudo.py`
+attaches a `sudo_user`/`sudo_password` `privilege` section so the elevated
+rung carries a credential on a password-sudo host. A refusal the elevation
+cannot satisfy raises `PrivilegeError`; a missing `iptables-save` raises
+`CommandNotFoundError` — name your own machines in `inventory.json` in your
+working directory before executing.
 
 The nine operation scripts below open with an idempotent `dnf.packages`
 install (`iptables`, plus `ipset` where the script manages sets) under

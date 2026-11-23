@@ -35,9 +35,12 @@ default policies ``default_incoming``/``default_outgoing``/
 prints only ``Status: inactive``, so every other field reports ``""`` --
 the ``ufw.state``, ``ufw.default_policy`` and ``ufw.logging`` operations
 compare against exactly this record. Reading the verbose status needs
-root, so the command retries through passwordless ``sudo -n``: a root
-login or a NOPASSWD sudoers rule reads the full record, any other login
-reads the inactive-shaped empty record.
+root, so the read is two-tier: the login-user command, a passwordless
+``sudo -n`` retry, and -- when both are refused -- an elevated re-read
+through the inventory's configured privilege (``sudo_user``/
+``sudo_password``), so a password-sudo host reads the true record instead of
+the inactive-shaped empty record an unprivileged login fell back to (which
+once made ``ufw.state`` skip a needed disable).
 
 Every host's connection is closed with ``aclose`` once the facts are
 gathered. ``gather_fact`` and ``process`` are coroutines, so ``main`` is
@@ -61,6 +64,7 @@ from reemote import (
     Host,
     HostConnectionError,
     InventoryError,
+    PrivilegeError,
     UfwStatus,
     gather_fact,
     validate_inventory,
@@ -114,7 +118,7 @@ async def main() -> None:
         # whole report -- and it fails before any host is materialized.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
-    except (CommandError, HostConnectionError) as exc:
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # The library reports an unreachable host or a failed fact command as a
         # typed error whose message already names the host. Print that message
         # -- no traceback -- and exit non-zero so the failure stays
