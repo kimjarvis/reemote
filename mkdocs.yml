@@ -160,6 +160,7 @@ nav:
           - apache: roles/apache.md
           - php: roles/php.md
           - php_xdebug: roles/php_xdebug.md
+          - nginx: roles/nginx.md
 #  - Migrating: migrating.md
 #  - Examples:
 #      - Overview: examples.md
@@ -200,7 +201,6 @@ nav:
 #          - ansible-role-java: examples/roles/ansible-role-java.md
 #          - ansible-role-memcached: examples/roles/ansible-role-memcached.md
 #          - ansible-role-nfs: examples/roles/ansible-role-nfs.md
-#          - ansible-role-nginx: examples/roles/ansible-role-nginx.md
 #          - ansible-role-ntp: examples/roles/ansible-role-ntp.md
 #          - ansible-role-drush: examples/roles/ansible-role-drush.md
 #          - ansible-role-composer: examples/roles/ansible-role-composer.md

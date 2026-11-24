@@ -832,7 +832,7 @@ def nginx(v: VarsSet[NginxVars]) -> Deploy:
             nothing is half-configured.
     """
 
-    def deploy(host: Host) -> Generator[StageItem, Any, None]:
+    def deploy(host: Host) -> Generator[StageItem, Any]:
         hv = v.for_host(host)
         if host.family != "Ubuntu":
             return None

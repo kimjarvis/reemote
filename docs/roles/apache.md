@@ -218,9 +218,8 @@ suite asserts it.
 > example's `overrides` move Apache to port `8080`, so it no longer collides with
 > nginx's `80`/`443`; an inventory that restores the role's default
 > `apache_listen_port: 80` recreates the conflict, because this role leaves
-> `apache2` enabled and active. See [the nginx
-> page](../examples/roles/ansible-role-nginx.md) for the stop/disable command to
-> run afterwards.
+> `apache2` enabled and active. See [the nginx page](nginx.md) for the
+> stop/disable command to run afterwards.
 
 ### 5.1 Composing this role
 

@@ -195,31 +195,6 @@ SNAPSHOT_ARGS = {
             "start_service": True,
         }
     },
-    # The nginx role migration: two factories. build_install closes over the
-    # frozen PPA-changed host set (empty on the default path); build_configure
-    # closes over the frozen plan main() renders between its runs (nginx.conf
-    # and every vhost already a plain str, the vhosts split into installs and
-    # removals).
-    (
-        "examples/roles/ansible-role-nginx/ansible-role-nginx.py",
-        "build_install",
-    ): lambda name: frozenset(),
-    (
-        "examples/roles/ansible-role-nginx/ansible-role-nginx.py",
-        "build_configure",
-    ): lambda name: {
-        name: {
-            "remove_default_vhost": False,
-            "default_vhost_path": "/etc/nginx/sites-enabled/default",
-            "vhost_path": "/etc/nginx/sites-enabled",
-            "vhosts_install": (("example.com.conf", "server { }\n"),),
-            "vhosts_remove": (),
-            "conf_content": "# managed by reemote\n",
-            "conf_file_path": "/etc/nginx/nginx.conf",
-            "state": "started",
-            "enabled": True,
-        }
-    },
     # The NTP role migration: two factories. build_install closes over the
     # frozen per-host plan main() builds from LinuxDistribution (the vars table
     # selected through the with_first_found chain, the set_fact overrides
