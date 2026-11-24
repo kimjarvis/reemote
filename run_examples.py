@@ -6,7 +6,8 @@
 This is a *usage* helper, not part of the library. It discovers every
 ``*.py`` script under ``examples/`` (recursively, sorted by path, minus
 any script under the directories listed in ``EXCLUDED_DIRS`` -- currently
-the state-mutating ``examples/modules/selinux/`` namespace) -- the full
+the state-mutating ``examples/modules/selinux/`` namespace -- and minus
+the shared helpers named in ``EXCLUDED_NAMES``) -- the full
 tree documented in ``docs/examples.md``: ``examples/modules/<ns>/``,
 ``examples/actions/`` and ``examples/demonstrations/<topic>/`` -- runs
 each one as a subprocess with the current interpreter, and writes the
@@ -53,14 +54,22 @@ EXAMPLES_DIRS = (PROJECT_ROOT / "examples",)
 # Example scripts under these directories (relative to the project root)
 # are skipped by the sweep.
 EXCLUDED_DIRS = (PROJECT_ROOT / "examples" / "modules" / "selinux",)
+# Scripts with these basenames are shared helpers the example scripts import
+# by bare name, not runnable examples of their own: ``examples/roles/
+# role_runner.py`` exposes no ``host`` entrypoint, so running it would only
+# launch an empty program (§17.3).
+EXCLUDED_NAMES = ("role_runner.py",)
 LOG_PATH = PROJECT_ROOT / "examples.log"
 
 SEPARATOR = "=" * 78
 
 
 def is_excluded(script: Path) -> bool:
-    """Whether the example script lives under one of the excluded dirs."""
-    return any(directory in script.parents for directory in EXCLUDED_DIRS)
+    """Whether the script is under an excluded dir or an excluded helper name."""
+    return (
+        any(directory in script.parents for directory in EXCLUDED_DIRS)
+        or script.name in EXCLUDED_NAMES
+    )
 
 
 def display_name(path: Path) -> str:
