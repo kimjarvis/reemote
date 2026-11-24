@@ -365,7 +365,7 @@ The inventory is a list of dictionaries. Each entry must carry a `host` (its log
 
 - **`host`** is the label used in plans and logs. It is *not* the address — a host may be reached through a jump host or a container identifier. Labels should be unique; the plan and report are keyed by them.
 - **`connection`** holds the SSH options. `address` (or `host`/`hostname`) is required for SSH; `username`/`user`, `key_path`, `port`, `known_hosts`, `proxy_command`, `tunnel` and the rest are forwarded to asyncssh. `key_path` is a shorthand for `client_keys`, and path-valued options have `~` expanded. A `"connector": "docker"` key switches the transport to a local Docker/Podman container.
-- **`group`** is a single string; **`tags`** is a list. Both are *static* classifiers a deploy reads off the host to branch, and both are the only data a `when` guard may consult.
+- **`group`** is a single string; **`tags`** is a list. Both are *static* classifiers a deploy reads off the host to branch. A `when` guard may consult them, plus the host's `family` and `name` — any static inventory data. It may not read a mutable fact.
 - **`privilege`** holds elevation data: `sudo_user`/`sudo_password`, `su_user`/`su_password`, `doas_user`. These come from the inventory, never from a deploy — an operation asks to elevate with `sudo=True`, but it cannot choose the run-as user or supply a password.
 
 A `sudo_password` is delivered through an askpass helper and never appears in the log or the plan. There is deliberately no `doas_password`: `doas` has no askpass mechanism, so reemote always runs `doas -n` and the host must grant a `permit nopass` rule.
@@ -374,29 +374,15 @@ A `sudo_password` is delivered through an askpass helper and never appears in th
 
 ### Deploy scripts
 
-A deploy is a generator function that takes a `Host` and yields `OperationRequest` objects. You build a request with `op`:
-
-```python
-def op(
-    func,                       # the operation function, e.g. files.install
-    *,
-    name: str = "",             # a label for plans and logs
-    sudo: Privilege | bool = Privilege.UNSET,
-    su:   Privilege | bool = Privilege.UNSET,
-    doas: Privilege | bool = Privilege.UNSET,
-    env: Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
-    when: WhenPredicate | tuple[WhenPredicate, ...] | None = None,
-    **kwargs,                   # the operation's own parameters
-) -> OperationRequest
-```
-
-`name`, the three privilege flags, `env` and `when` are **metadata** the runner consumes; everything else in `**kwargs` is forwarded to the operation. `name` is never passed to the operation — it is purely a label.
+A deploy is a generator function that takes a `Host` and yields `OperationRequest` objects. You build a request with `op`: the operation function comes first, then a display `name`, the three privilege flags (`sudo`, `su`, `doas`), an optional `env` mapping and `when` guard, and finally the operation's own keyword arguments.
 
 ```python
 def deploy(host: Host) -> Generator[OperationRequest, None, None]:
     yield op(files.install, name="Write config", content=CONF, dest="/etc/app.conf", sudo=True)
     yield op(systemd.service, name="Restart app", service="app", restarted=True, sudo=True)
 ```
+
+`name`, the three privilege flags, `env` and `when` are **metadata** the runner consumes; everything else is forwarded to the operation. `name` is never passed to the operation — it is purely a label.
 
 A few rules keep requests well-behaved:
 
@@ -406,7 +392,7 @@ A few rules keep requests well-behaved:
 
 The privilege flags are **tri-state**: `True`/`ON` means elevate, `False`/`OFF` means explicitly *unprivileged*, and `Privilege.UNSET` (the default) means "no preference". Sub-deploys use this to fill in defaults without overriding an operation's explicit choice — see [Composing deploys](#composing-deploys).
 
-A `when` guard is a predicate `host -> bool` (or a tuple of them, combined with AND). When a guard is false, the request keeps its slot in the sequence but is *skipped*: no facts are read, no commands are sent. Guards may only read static inventory data (`host.name`, `host.group`, `host.tags`, `host.extra`) — reading a fact inside a guard would break determinism.
+A `when` guard is a predicate `host -> bool` (or a tuple of them, combined with AND). When a guard is false, the request keeps its slot in the sequence but is *skipped*: no facts are read, no commands are sent. Guards may only read static inventory data (`host.name`, `host.family`, `host.group`, `host.tags`, `host.extra`) — reading a fact inside a guard would break determinism.
 
 `env` is the environment of the command the operation runs on the target — the counterpart of Ansible's task-level `environment:`, and the same keyword the [`Shell`][reemote.actions.Shell] and [`Script`][reemote.actions.Script] actions take. Pass a mapping or a sequence of `(key, value)` pairs; the request stores it as a sorted tuple of pairs, so a plain `dict` argument stays hashable and the rendered text does not depend on insertion order. Both the name and the value must be `str`, or construction raises `TypeError`. The driver renders it as an `env K=V …` prefix placed **innermost**, inside the `doas`/`sudo`/`su` wrappers, because `sudo` resets the caller's environment — outside the escalation the variables would never reach the command:
 
@@ -474,24 +460,63 @@ There are four barriers, because they are the four things a *synchronous* genera
 | Checkpoint | `checkpoint("done")` | the wave's [`ApplyReport`][reemote.drivers.ApplyReport], sliced to scope |
 | Control | `control(fetch, url)` | the coroutine's return value, run on the controller |
 
+The [`apache`](roles/apache.md) role — a migration of `geerlingguy.apache` — uses three of the four. Its body opens with a family guard, installs the packages, probes the installed version, reads each SSL vhost's certificate, configures ports/symlinks/vhosts/service state, and runs a handler only on the hosts whose configure wave reported a change:
+
 ```python
-from reemote import act, changed_hosts, checkpoint, files, op, run_waves, systemd
+def deploy(host):
+    hv = v.for_host(host)
+    if host.family != "Ubuntu":                       # static guard, before the first yield
+        return ApacheOutputs(version="")
 
-def apache(v):
-    def deploy(host):
-        conf = v.for_host(host)
-        yield op(files.file, name="Write config", path=conf.path)
-        ver = yield act(Shell, command="apache2 -v", name="apache -v")   # park; the driver runs it
-        if "2.4" not in ver["stdout"]:
-            yield op(files.file, name="Pin module", path=conf.load)
-        report = yield checkpoint("configure done")                       # close the wave
-        if changed_hosts(report, {"Write config"}):
-            yield op(systemd.service, name="Restart apache", service="apache2", restarted=True, sudo=True)
-    return deploy
+    yield from install(hv)(host)                      # wave 0: apt.update + apt.packages
 
-report, hosts = await run_waves(inventory, apache(v))
-print(report.tree())                                                      # format_waves(report)
+    result = yield act(Shell, command="apache2 -v", name="apache -v")
+    if result["exit_status"] != 0:
+        raise ValueError(f"{host.name}: apache2 -v exited {result['exit_status']}")
+    version = parse_apache_version(result["stdout"])
+
+    ssl_exists = []
+    for vhost in hv.vhosts_ssl:                       # one wave per SSL vhost
+        exists = yield fact(FileExists, path=vhost.certificate_file)
+        ssl_exists.append(bool(exists))
+
+    plan = configure_plan(hv, version, tuple(ssl_exists))
+    yield from configure(plan)(host)                  # wave n+1: ports, symlinks, vhosts, service
+
+    wave_report = yield checkpoint("configure done")  # read this wave's outcome in stream
+    notified = changed_hosts(wave_report, notifying_names(plan))
+
+    yield from handler(plan, notified)(host)          # wave n+2: restart only where configure changed
+    return ApacheOutputs(version=version)
 ```
+
+The runnable program around it is [`examples/roles/apache.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/apache.py): it loads and validates `inventory.json`, resolves the role's variables (the defaults overlaid with the entry's `apache_`-prefixed keys, then the call-site `overrides`), builds the deploy from the `apache` factory and drives it with `run_waves` — a `dry=True` one-wave preview, then the real apply:
+
+```python
+from reemote import resolve_vars, run_waves, validate_inventory
+from reemote.roles import ApacheVars, apache
+
+APACHE_OVERRIDES = {
+    "listen_port": 8080,
+    "vhosts": ({"servername": "example.com", "documentroot": "/var/www/vhosts/example_com"},),
+}
+
+async def main() -> None:
+    inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+    validate_inventory(inventory)
+    vars_set = resolve_vars(ApacheVars, "apache_", inventory, overrides=APACHE_OVERRIDES)
+    deploy = apache(vars_set)
+    report, _hosts = await run_waves(inventory, deploy, dry=True)   # one-wave preview
+    print(report.tree())
+    report, _hosts = await run_waves(inventory, deploy)             # the real apply
+    print(report.tree())
+```
+
+Three things the wave model buys here that a plain [`run`][reemote.drivers.run] deploy cannot do:
+
+- The `apache2 -v` probe needs the packages installed *first*. A plain deploy would have to split into two `run` calls; a role closes the install wave with the probe barrier and reads the version *in stream*.
+- The SSL-certificate loop yields one barrier per vhost, so hosts with different certificate counts park asymmetrically — the wave count is host-dependent, and that is the point.
+- The handler wave reads `checkpoint`'s slice of the configure wave's report, so `changed_hosts` is consulted *inside* the body rather than across two separate runs (see [Change notification](#change-notification-handlers)).
 
 Roles compose with `yield from`, optionally wrapped in [`scoped`](stages.md) to give each role its own report path in the tree. [`compose`][reemote.core.compose] and [`sub_deploy`][reemote.core.sub_deploy] sequence request streams only and reject a barrier. The barriers and their constructors are documented in [Stages](stages.md), variable resolution in [Role variables](rolevars.md), and the loop in [`run_waves`][reemote.drivers.run_waves].
 
@@ -501,23 +526,13 @@ Roles compose with `yield from`, optionally wrapped in [`scoped`](stages.md) to 
     barrier**: a barrier's outcome may depend on requests that were planned but
     never applied, so nothing past it can be predicted, and the parked barrier is
     recorded `unknown` rather than run. A role with no barriers previews fully;
-    a role with barriers previews exactly one wave.
+    a role with barriers previews exactly one wave. The `apache` role's dry pass
+    plans the install wave and parks on the `apache -v` barrier — a converged
+    rerun is the honest preview.
 
 ### Running a deploy
 
-`run` is the single entry point:
-
-```python
-async def run(
-    inventory: list[dict],
-    deploy_func: Callable,
-    *,
-    host_factory: Callable[[dict], Host] = Host.from_inventory,
-    dry: bool = False,
-) -> tuple[dict[str, list[PlannedOperation]], ApplyReport | None, list[Host]]
-```
-
-It validates the inventory, materialises the hosts, runs prepare, and — unless `dry` — runs apply, then closes every connection in a `finally`. It returns a three-tuple:
+`run` is the single entry point. It validates the inventory, materialises the hosts, runs prepare, and — unless `dry=True` — runs apply, then closes every connection in a `finally`. It returns a three-tuple:
 
 - **`plans`** — `{host_label: [PlannedOperation, ...]}`, the proposed work. `format_plan(plans)` renders it.
 - **`report`** — an `ApplyReport` with a `LogEntry` per applied operation, or `None` when `dry=True`. `format_log(report)` renders it. **`format_log` requires a report, not `None`** — guard the call.
@@ -602,31 +617,7 @@ Under a [`run_waves`][reemote.drivers.run_waves] role the split is not needed at
 
 ## Facts
 
-A **fact** reads state from a host. It is any class with an async `process` classmethod — there is no base class to subclass:
-
-```python
-class Hostname:                       # the real server.Hostname, simplified
-    COMMAND = "uname -n"
-
-    @classmethod
-    async def process(cls, host: Host) -> str:
-        stdout = await host.run_shell(cls.COMMAND)   # run_shell returns text
-        for line in stdout.splitlines():
-            if line.strip():
-                return line.strip()
-        return ""
-```
-
-You rarely call a fact directly. Operations read the facts they need through a `FactCache`, which awaits each fact once per host and caches the result, so a fact used by several operations in one step runs once:
-
-```python
-class FactCache:
-    async def get(self, fact_cls, *args, **kwargs):
-        key = (fact_cls, args, tuple(sorted(kwargs.items())))
-        if key not in self._data:
-            self._data[key] = await fact_cls.process(self.host, *args, **kwargs)
-        return self._data[key]
-```
+A **fact** reads state from a host. It is any class with an async `process` classmethod — there is no base class to subclass. You rarely call a fact directly: operations read the facts they need through a `FactCache`, which awaits each fact once per host and caches the result, so a fact used by several operations in one step runs once.
 
 Apply **recreates the cache before each request**, which is what lets a later operation see the effect of an earlier one: install a package in step 1, and step 2's `AptPackages` fact reads the newly-installed set rather than a stale cache.
 
@@ -681,16 +672,6 @@ The files namespace shows the design boundaries most clearly.
 **Protected text files** (root-owned `/etc/...` paths) use a *spool-and-install* pattern rather than an in-place edit: `files.install` uploads the text to a deterministic `/tmp` spool path derived from the destination, then runs an elevated `sh -c` chain that copies the spool into place, sets ownership and mode, and removes the spool. The upload itself is unprivileged; only the install chain is elevated. The `/tmp` spool path is predictable and is **not** a security boundary — it is a staging location, not a secret.
 
 The read-back is two-tier: `FileContents` cats unprivileged first and re-reads elevated with `sudo` when the login user cannot read the file, so restrictive permissions keep content idempotence. A **binary** install compares `RemoteFileSha1` instead, whose `sha1sum` read-back stays unprivileged — give the destination a login-readable mode (a `0755` launcher) or it re-installs every deploy. Prefer `files.install` for a single-cycle protected content write; it does not have the "create then move" two-run problem that `files.move` has (a `move` validates its source during materialisation, so a source created in the same run is not yet present at plan time).
-
-## Command descriptors
-
-A command descriptor is the unit an operation yields. It is a small object describing *what to send* — a shell string, a transfer, a wait. You almost never construct one directly; operations build them. The common kinds:
-
-- **`StringCommand`** — a shell command line, rendered and sent through `host.run_shell`.
-- **`PutCommand`** / **`GetCommand`** — an SCP transfer between an IO object and a remote path.
-- **`InstallCommand`** — the elevated install chain for protected text files.
-
-Descriptors are what the plan shows and what apply sends. `format_log` renders the descriptors that were actually sent, which is why the applied log shows the concrete `scp` and `sh -c` lines rather than the abstract operation.
 
 ## Design invariants
 
