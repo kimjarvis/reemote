@@ -1,6 +1,6 @@
 # Configure servers with Python
 
-**Reemote is a Python library for configuring and deploying servers, specifically built to support the automated migration of Ansible-based workflows into pure Python.**
+**Reemote is a Python library for configuring servers, specifically built to support the migration of Ansible-based workflows into pure Python.**
 
 This introduction takes about **10 minutes**. You will create an inventory, preview a small change, apply it and run it again to see that no further change is needed. Use a Linux test server you are allowed to modify; no package installation or administrator privileges are needed for the first deployment.
 

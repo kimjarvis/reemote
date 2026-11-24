@@ -1,5 +1,7 @@
 # Stages
 
+<!---
+
 `reemote.stages` holds the stream types the wave-loop driver
 [`run_waves`][reemote.drivers.run_waves] consumes. A *role* is a deploy
 factory: an ordinary function that closes over resolved
@@ -106,6 +108,8 @@ outcome may depend on requests that were planned but never applied. See
 narrative.
 
 ## Reference
+
+--->
 
 ::: reemote.stages
     options:

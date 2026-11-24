@@ -1,42 +1,42 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Stage stream types for the wave-loop driver (design doc sections 3, 4).
-
-A role is a deploy factory: an ordinary function that closes over resolved
-variables and returns a deploy generator.  The generator yields two kinds of
-item -- an :class:`~reemote.core.OperationRequest` (exactly what a deploy
-yields today) and a *barrier* (one of four frozen descriptors that park the
-generator until the driver executes them and resumes it with the result via
-``gen.send(value)``).
-
-The four barrier types exist because they are the four things a **sync**
-generator body cannot do itself:
-
-| Barrier                    | Constructor       | Sends back                         | Host contact |
-|----------------------------|-------------------|------------------------------------|--------------|
-| :class:`FactRequest`       | :func:`fact`      | the fact's value                   | one host     |
-| :class:`ActionRequest`     | :func:`act`       | ``Result`` (or action-specific)    | one host     |
-| :class:`CheckpointRequest` | :func:`checkpoint`| the wave's ``ApplyReport``, sliced | none         |
-| :class:`ControlRequest`    | :func:`control`   | the coroutine's return value       | controller   |
-
-:data:`Barrier` is the PEP 604 union of the four, :data:`StageItem` widens it
-with ``OperationRequest``, and :data:`Deploy` is the per-host generator
-signature a role factory returns.  :func:`scoped` tags every item a deploy
-yields with a report path (the ``scope`` field), which is how ``yield from``
-composition keeps role boundaries visible in the report without rewriting
-``OperationRequest.name``.
-
-Each constructor charges the deploy body's built-versus-yielded counter (the
-same :class:`~reemote.core._RequestCounter` that catches a lost ``op()``
-request), so a barrier built and then dropped is reported exactly like a lost
-request when the generator runs out.
-
-:class:`RoleRecursionError` replaces the bare ``RecursionError`` a role's
-``yield from`` chain raises when it depends on itself -- there is no
-de-duplication and no static graph to check, so the driver catches the
-recursion at the pull site and re-raises with a message naming the mistake.
-"""
+# """Stage stream types for the wave-loop driver (design doc sections 3, 4).
+#
+# A role is a deploy factory: an ordinary function that closes over resolved
+# variables and returns a deploy generator.  The generator yields two kinds of
+# item -- an :class:`~reemote.core.OperationRequest` (exactly what a deploy
+# yields today) and a *barrier* (one of four frozen descriptors that park the
+# generator until the driver executes them and resumes it with the result via
+# ``gen.send(value)``).
+#
+# The four barrier types exist because they are the four things a **sync**
+# generator body cannot do itself:
+#
+# | Barrier                    | Constructor       | Sends back                         | Host contact |
+# |----------------------------|-------------------|------------------------------------|--------------|
+# | :class:`FactRequest`       | :func:`fact`      | the fact's value                   | one host     |
+# | :class:`ActionRequest`     | :func:`act`       | ``Result`` (or action-specific)    | one host     |
+# | :class:`CheckpointRequest` | :func:`checkpoint`| the wave's ``ApplyReport``, sliced | none         |
+# | :class:`ControlRequest`    | :func:`control`   | the coroutine's return value       | controller   |
+#
+# :data:`Barrier` is the PEP 604 union of the four, :data:`StageItem` widens it
+# with ``OperationRequest``, and :data:`Deploy` is the per-host generator
+# signature a role factory returns.  :func:`scoped` tags every item a deploy
+# yields with a report path (the ``scope`` field), which is how ``yield from``
+# composition keeps role boundaries visible in the report without rewriting
+# ``OperationRequest.name``.
+#
+# Each constructor charges the deploy body's built-versus-yielded counter (the
+# same :class:`~reemote.core._RequestCounter` that catches a lost ``op()``
+# request), so a barrier built and then dropped is reported exactly like a lost
+# request when the generator runs out.
+#
+# :class:`RoleRecursionError` replaces the bare ``RecursionError`` a role's
+# ``yield from`` chain raises when it depends on itself -- there is no
+# de-duplication and no static graph to check, so the driver catches the
+# recursion at the pull site and re-raises with a message naming the mistake.
+# """
 
 from collections.abc import Awaitable, Callable, Generator
 from dataclasses import dataclass, field, replace
@@ -61,16 +61,6 @@ class RoleRecursionError(RecursionError):
 class FactRequest:
     """A barrier that reads remote state into the generator's control flow.
 
-    The driver executes ``await fact_cls.process(host, *args, **kwargs)`` for
-    the parked host and sends the value back via ``gen.send()``.  Every parked
-    host runs its own fact concurrently at the rendezvous, reproducing
-    ``gather_fact``'s fan-out without a host set (design doc section 4.1).
-
-    A fact is a **read**; it is executed, never simulated.  ``dry`` stops
-    before the first barrier, so no fact runs there.  No ``FactCache`` is
-    involved -- a barrier is an explicit, fresh read, not an operation's
-    internal materialization-time read.
-
     Attributes:
         fact_cls: The fact class exposing ``async def process(host, ...)``.
         args: Positional arguments forwarded to ``process``.
@@ -78,6 +68,17 @@ class FactRequest:
         name: Human-readable label for the report tree.
         scope: Report path set by :func:`scoped`; never reaches a host.
     """
+
+    # The driver executes ``await fact_cls.process(host, *args, **kwargs)`` for
+    # the parked host and sends the value back via ``gen.send()``.  Every parked
+    # host runs its own fact concurrently at the rendezvous, reproducing
+    # ``gather_fact``'s fan-out without a host set (design doc section 4.1).
+    #
+    # A fact is a **read**; it is executed, never simulated.  ``dry`` stops
+    # before the first barrier, so no fact runs there.  No ``FactCache`` is
+    # involved -- a barrier is an explicit, fresh read, not an operation's
+    # internal materialization-time read.
+
 
     fact_cls: type
     args: tuple[Any, ...] = ()
@@ -98,19 +99,6 @@ class FactRequest:
 class ActionRequest:
     """A barrier that runs an action now and sends the outcome back.
 
-    The driver executes ``await action_cls.process(host, *args, **kwargs)``.
-    ``Shell.process`` returns a ``Result`` (``exit_status``, ``stdout``,
-    ``stderr``); a non-zero exit is **data**, not an exception, matching the
-    action contract.  Transport and privilege failures raise (design doc
-    section 4.2).
-
-    ``Act`` is the reason the ``ActionInDeployError`` guarantee needs
-    restating rather than removing: a barrier is executed by the driver,
-    outside the pull, so the guard must be held **during pulls only**.  A
-    ``gather_action(...)`` call written inside the body still raises
-    immediately, while the driver's own ``action_cls.process(...)`` call is
-    unaffected.
-
     Attributes:
         action_cls: The action class exposing ``async def process(host, ...)``.
         args: Positional arguments forwarded to ``process``.
@@ -118,6 +106,20 @@ class ActionRequest:
         name: Human-readable label for the report tree.
         scope: Report path set by :func:`scoped`; never reaches a host.
     """
+
+    # The driver executes ``await action_cls.process(host, *args, **kwargs)``.
+    # ``Shell.process`` returns a ``Result`` (``exit_status``, ``stdout``,
+    # ``stderr``); a non-zero exit is **data**, not an exception, matching the
+    # action contract.  Transport and privilege failures raise (design doc
+    # section 4.2).
+    #
+    # ``Act`` is the reason the ``ActionInDeployError`` guarantee needs
+    # restating rather than removing: a barrier is executed by the driver,
+    # outside the pull, so the guard must be held **during pulls only**.  A
+    # ``gather_action(...)`` call written inside the body still raises
+    # immediately, while the driver's own ``action_cls.process(...)`` call is
+    # unaffected.
+
 
     action_cls: type
     args: tuple[Any, ...] = ()
@@ -135,21 +137,23 @@ class ActionRequest:
 class CheckpointRequest:
     """A barrier that closes the wave and sends back its ``ApplyReport``.
 
-    A checkpoint touches no host.  It participates in the rendezvous (so the
-    wave closes), then sends back an ``ApplyReport`` containing the log entries
-    of the wave that just ended, filtered to entries whose ``scope`` starts
-    with the checkpoint's scope.  The ``yield`` expression *is* an
-    ``ApplyReport`` -- the same type ``run()`` returns -- so ``changed_hosts``
-    works unchanged (design doc section 4.3).
-
-    A checkpoint must immediately follow the stage it reports on: two
-    checkpoints in a row means the second closes a wave with no requests and
-    reads an empty report, so its notifications are silently lost.
-
     Attributes:
         name: Human-readable label for the report tree.
         scope: Report path used to slice the wave's ``ApplyReport``.
     """
+
+    # A checkpoint touches no host.  It participates in the rendezvous (so the
+    # wave closes), then sends back an ``ApplyReport`` containing the log entries
+    # of the wave that just ended, filtered to entries whose ``scope`` starts
+    # with the checkpoint's scope.  The ``yield`` expression *is* an
+    # ``ApplyReport`` -- the same type ``run()`` returns -- so ``changed_hosts``
+    # works unchanged (design doc section 4.3).
+    #
+    # A checkpoint must immediately follow the stage it reports on: two
+    # checkpoints in a row means the second closes a wave with no requests and
+    # reads an empty report, so its notifications are silently lost.
+
+
 
     name: str = ""
     scope: tuple[str, ...] = ()
@@ -162,17 +166,6 @@ class CheckpointRequest:
 class ControlRequest:
     """A barrier that runs async control-side IO and sends the result back.
 
-    The driver executes ``await func(*args, **kwargs)`` on the **controller**,
-    not on a host.  It exists for control-side IO whose input is per-host state
-    -- a variable set entry, a fact, a report -- and which therefore cannot be
-    hoisted out of the per-host generator.  IO that is identical for the whole
-    inventory belongs in an ``async def`` factory instead (design doc section
-    4.4).
-
-    A ``Control`` barrier is executed once per **host** parked on it, so N
-    hosts means N calls -- which is exactly why an inventory-wide fetch belongs
-    in the factory instead.
-
     Attributes:
         func: An async callable executed on the controller.
         args: Positional arguments forwarded to ``func``.
@@ -180,6 +173,18 @@ class ControlRequest:
         name: Human-readable label for the report tree.
         scope: Report path set by :func:`scoped`; never reaches a host.
     """
+
+    # The driver executes ``await func(*args, **kwargs)`` on the **controller**,
+    # not on a host.  It exists for control-side IO whose input is per-host state
+    # -- a variable set entry, a fact, a report -- and which therefore cannot be
+    # hoisted out of the per-host generator.  IO that is identical for the whole
+    # inventory belongs in an ``async def`` factory instead (design doc section
+    # 4.4).
+    #
+    # A ``Control`` barrier is executed once per **host** parked on it, so N
+    # hosts means N calls -- which is exactly why an inventory-wide fetch belongs
+    # in the factory instead.
+
 
     func: Callable[..., Awaitable[Any]]
     args: tuple[Any, ...] = ()

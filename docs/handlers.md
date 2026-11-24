@@ -1,5 +1,7 @@
 # Handlers
 
+<!--
+
 `reemote.handlers` packages the notification read and the handler factory —
 reemote's answer to Ansible's `notify:`/handler mechanism — into two reusable
 helpers, so a role migration stops copy-pasting a bespoke
@@ -62,6 +64,8 @@ await run(inventory, restart)                               # act on changed hos
 ```
 
 ## Reference
+
+--->
 
 ::: reemote.handlers
     options:
