@@ -41,6 +41,7 @@ from .apache import ApacheOutputs, ApacheVars, apache
 from .nginx import NginxVars, nginx
 from .php import PhpOutputs, PhpVars, php
 from .php_xdebug import PhpXdebugVars, php_xdebug
+from .postgresql import PostgresqlVars, postgresql, postgresql_data
 from .repo_epel import EpelVars, repo_epel
 
 __all__: list[str] = [
@@ -51,9 +52,12 @@ __all__: list[str] = [
     "PhpOutputs",
     "PhpVars",
     "PhpXdebugVars",
+    "PostgresqlVars",
     "apache",
     "nginx",
     "php",
     "php_xdebug",
+    "postgresql",
+    "postgresql_data",
     "repo_epel",
 ]

@@ -161,6 +161,7 @@ nav:
           - php: roles/php.md
           - php_xdebug: roles/php_xdebug.md
           - nginx: roles/nginx.md
+          - postgresql: roles/postgresql.md
 #  - Migrating: migrating.md
 #  - Examples:
 #      - Overview: examples.md
@@ -204,6 +205,5 @@ nav:
 #          - ansible-role-ntp: examples/roles/ansible-role-ntp.md
 #          - ansible-role-drush: examples/roles/ansible-role-drush.md
 #          - ansible-role-composer: examples/roles/ansible-role-composer.md
-#          - ansible-role-postgresql: examples/roles/ansible-role-postgresql.md
 
 
