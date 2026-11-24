@@ -6,7 +6,9 @@
 | Module | [`reemote.roles.repo_epel`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/repo_epel.py) |
 | Runner | [`examples/roles/repo_epel.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/repo_epel.py) |
 | Target | **RedHat** — hosts in the `"RedHat"` OS family |
-| Variables | `epel_`-prefixed inventory keys → [`EpelVars`](#3-variables) |
+| Variables | `epel_`-prefixed inventory keys → `EpelVars` |
+
+<!---
 | Waves | 3–4 (wave 2, the control fetch, only when the repo file is absent) |
 | Outputs | none — the deploy returns `None` |
 | Extra deps | none (`reemote[templates]` is not needed) |
@@ -66,12 +68,25 @@ carries `sudo=True`, because reemote has no play-level `become`.
 `EpelVars` is a frozen pydantic model with unprefixed field names; the prefix
 passed to `resolve_vars` binds the inventory keys.
 
+--->
+
+::: reemote.roles.repo_epel
+    options:
+      show_root_heading: false
+      show_root_toc_entry: false
+      members:
+        - repo_epel
+
+**Variables:**
+
 | Field | Type | Default | Inventory key | Ansible name |
 | --- | --- | --- | --- | --- |
 | `repofile_path` | `str` | `/etc/yum.repos.d/epel.repo` | `epel_repofile_path` | `epel_repofile_path` |
 | `repo_disable` | `bool` | `false` | `epel_repo_disable` | `epel_repo_disable` |
 | `repo_url` | `str \| None` | `null` → templated | `epel_repo_url` | `epel_repo_url` |
 | `repo_gpg_key_url` | `str \| None` | `null` → templated | `epel_repo_gpg_key_url` | `epel_repo_gpg_key_url` |
+
+<!---
 
 Precedence is `model defaults < inventory extra < overrides`. A `null` URL keeps
 the version-derived template (`…/epel-release-latest-{major}.noarch.rpm`,
@@ -84,13 +99,6 @@ field (`epel_repo_disble` raises `RoleVarsError` rather than silently defaulting
 The signing keys' rpm short ids are pinned per EPEL major (`EPEL_KEY_IDS`) so the
 key import can be gated: 7 → `352c64e5`, 8 → `2f86d6a1`, 9 → `3228467c`,
 10 → `e37ed158`. A major outside that table is rejected before any request runs.
-
-## 4. API
-
-::: reemote.roles.repo_epel
-    options:
-      show_root_heading: false
-      show_root_toc_entry: false
 
 ## 5. Run it
 
@@ -234,3 +242,5 @@ The Ubuntu host appears in neither tree: no barrier record, no request line.
   barrier's `str` result verbatim, so the armored key body lands inside the tree
   (see [§7](#7-transcript)). The rendering rule for that is an engine concern, not
   a role one.
+
+--->

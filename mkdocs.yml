@@ -100,6 +100,7 @@ plugins:
 nav:
   - Home: index.md
   - Guide: guide.md
+  - Migrating: migrating.md
 #  - Articles:
 #      - Tutorials:
 #        - Website: articles/website.md
@@ -114,10 +115,11 @@ nav:
 #      - Overview: examples.md
 #      - Modules:
   - API Reference:
-#      - Drivers: drivers.md
-#      - Core: core.md
-#      - Commands: commands.md
-#      - Hosts: hosts.md
+      - Drivers: drivers.md
+      - Core: core.md
+      - Commands: commands.md
+      - Hosts: hosts.md
+      - Exceptions: exceptions.md
       - Modules:
           - Overview: modules/index.md
           - apk: modules/apk.md
@@ -150,7 +152,7 @@ nav:
           - ssh: connectors/ssh.md
       - Handlers: handlers.md
       - Barriers: stages.md
-#      - Role Variables: rolevars.md
+      - Role Variables: rolevars.md
   # Migrated Ansible roles, now first-class library citizens: one page per role
   # under docs/roles/, with the catalogue (docs/roles/index.md) landing once the
   # corpus has moved. The legacy Examples -> Roles pages retire with their
@@ -162,48 +164,47 @@ nav:
           - php_xdebug: roles/php_xdebug.md
           - nginx: roles/nginx.md
           - postgresql: roles/postgresql.md
-#  - Migrating: migrating.md
-#  - Examples:
-#      - Overview: examples.md
-#      - Modules:
-#          - apk: examples/modules/apk.md
-#          - apt: examples/modules/apt.md
-#          - crontab: examples/modules/crontab.md
-#          - dnf: examples/modules/dnf.md
-#          - files: examples/modules/files.md
-#          - firewalld: examples/modules/firewalld.md
-#          - flatpak: examples/modules/flatpak.md
-#          - gem: examples/modules/gem.md
-#          - git: examples/modules/git.md
-#          - gpg: examples/modules/gpg.md
-#          - hardware: examples/modules/hardware.md
-#          - iptables: examples/modules/iptables.md
-#          - lxd: examples/modules/lxd.md
-#          - mysql: examples/modules/mysql.md
-#          - npm: examples/modules/npm.md
-#          - openrc: examples/modules/openrc.md
-#          - pip: examples/modules/pip.md
-#          - postgresql: examples/modules/postgresql.md
-#          - selinux: examples/modules/selinux.md
-#          - server: examples/modules/server.md
-#          - snap: examples/modules/snap.md
-#          - sysctl: examples/modules/sysctl.md
-#          - systemd: examples/modules/systemd.md
-#          - ufw: examples/modules/ufw.md
-#      - Actions: examples/actions.md
-#      - Demonstrations:
-#          - Composition: examples/demonstrations/composition.md
-#          - Connectors: examples/demonstrations/connectors.md
-#          - Environment: examples/demonstrations/environment.md
-#          - Privilege: examples/demonstrations/privilege.md
-#      - Roles:
-#          - ansible-datadog: examples/roles/ansible-datadog.md
-#          - ansible-role-docker: examples/roles/ansible-role-docker.md
-#          - ansible-role-java: examples/roles/ansible-role-java.md
-#          - ansible-role-memcached: examples/roles/ansible-role-memcached.md
-#          - ansible-role-nfs: examples/roles/ansible-role-nfs.md
-#          - ansible-role-ntp: examples/roles/ansible-role-ntp.md
-#          - ansible-role-drush: examples/roles/ansible-role-drush.md
-#          - ansible-role-composer: examples/roles/ansible-role-composer.md
+  - Examples:
+      - Overview: examples.md
+      - Actions: examples/actions.md
+      - Modules:
+          - apk: examples/modules/apk.md
+          - apt: examples/modules/apt.md
+          - crontab: examples/modules/crontab.md
+          - dnf: examples/modules/dnf.md
+          - files: examples/modules/files.md
+          - firewalld: examples/modules/firewalld.md
+          - flatpak: examples/modules/flatpak.md
+          - gem: examples/modules/gem.md
+          - git: examples/modules/git.md
+          - gpg: examples/modules/gpg.md
+          - hardware: examples/modules/hardware.md
+          - iptables: examples/modules/iptables.md
+          - lxd: examples/modules/lxd.md
+          - mysql: examples/modules/mysql.md
+          - npm: examples/modules/npm.md
+          - openrc: examples/modules/openrc.md
+          - pip: examples/modules/pip.md
+          - postgresql: examples/modules/postgresql.md
+          - selinux: examples/modules/selinux.md
+          - server: examples/modules/server.md
+          - snap: examples/modules/snap.md
+          - sysctl: examples/modules/sysctl.md
+          - systemd: examples/modules/systemd.md
+          - ufw: examples/modules/ufw.md
+      - Demonstrations:
+          - Composition: examples/demonstrations/composition.md
+          - Connectors: examples/demonstrations/connectors.md
+          - Environment: examples/demonstrations/environment.md
+          - Privilege: examples/demonstrations/privilege.md
+      - Roles:
+          - ansible-datadog: examples/roles/ansible-datadog.md
+          - ansible-role-composer: examples/roles/ansible-role-composer.md
+          - ansible-role-docker: examples/roles/ansible-role-docker.md
+          - ansible-role-drush: examples/roles/ansible-role-drush.md
+          - ansible-role-java: examples/roles/ansible-role-java.md
+          - ansible-role-memcached: examples/roles/ansible-role-memcached.md
+          - ansible-role-nfs: examples/roles/ansible-role-nfs.md
+          - ansible-role-ntp: examples/roles/ansible-role-ntp.md
 
 

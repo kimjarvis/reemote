@@ -6,7 +6,9 @@
 | Module | [`reemote.roles.php_xdebug`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/php_xdebug.py) |
 | Runner | [`examples/roles/php_xdebug.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/php_xdebug.py) |
 | Target | **Ubuntu** — inherited from [`php`](php.md)'s family guard, not restated |
-| Variables | `php_xdebug_`-prefixed inventory keys → [`PhpXdebugVars`](#3-variables) |
+| Variables | `php_xdebug_`-prefixed inventory keys → `PhpXdebugVars` |
+
+<!---
 | Depends on | [`reemote.roles.php`](php.md) — run inside this role's own body |
 | Waves | 15 fresh, 13 converged — php's twelve plus xdebug's three |
 | Extra deps | none — the role's one template is pure substitution |
@@ -121,6 +123,17 @@ The **dependency's** variables are deliberately absent from this model.
 :class:`~reemote.roles.php.PhpOutputs` and the dependency's own `VarsSet`, so
 this model cannot drift out of step with the role it extends.
 
+--->
+
+::: reemote.roles.php_xdebug
+    options:
+      show_root_heading: false
+      show_root_toc_entry: false
+      members:
+        - php_xdebug
+
+**Variables:**
+
 ### Build and module install
 
 | Field | Type | Default | Inventory key |
@@ -131,6 +144,8 @@ this model cannot drift out of step with the role it extends.
 | `module_path` | `str \| None` | `null` → `"/usr/lib/php7/modules"` (D8) | `php_xdebug_module_path` |
 | `config_filename` | `str \| None` | `null` → `"20-xdebug.ini"` | `php_xdebug_config_filename` |
 | `cli_disable` | `bool` | `false` — skip the CLI conf.d write **and** remove the stock CLI entry | `php_xdebug_cli_disable` |
+
+<!---
 
 ### `xdebug.ini` render values
 
@@ -166,13 +181,6 @@ which is the whole de-duplication story: there is no registry to collide with.
 Invalid values — a version that is not dotted digits, an empty workspace, a
 boolified render value, a typoed `php_xdebug_` key — raise while the inventory is
 resolved, before any host is contacted.
-
-## 4. API
-
-::: reemote.roles.php_xdebug
-    options:
-      show_root_heading: false
-      show_root_toc_entry: false
 
 ## 5. Run it
 
@@ -537,3 +545,5 @@ under `run_waves` nothing runs between the barriers, which is the point.
   [`php`](php.md)'s and [`apache`](apache.md)'s job.
 * **Per-host privilege.** Xdebug needs root and the inventory says how a host
   elevates; there is no play-level `become` to reproduce.
+
+--->

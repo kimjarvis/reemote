@@ -1,91 +1,91 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""The PostgreSQL role (migrated from ``geerlingguy.postgresql``).
-
-Installs PostgreSQL from the distribution packages, initializes the cluster,
-writes ``postgresql.conf`` / ``pg_hba.conf``, starts the service, then manages
-databases, users and object privileges. :func:`postgresql` is the whole
-system-level task list and :func:`postgresql_data` the data plane;
-:class:`PostgresqlVars` is ``defaults/main.yml`` overlaid with the frozen
-``vars/RedHat-<major>.yml`` dispatch, bound from the inventory's
-``postgresql_``-prefixed keys by :func:`~reemote.rolevars.resolve_vars`.
-
-Target: hosts in the ``"RedHat"`` OS family (CentOS Stream 9 or 10). The role's
-``include_vars`` dispatch (``vars/RedHat-<major>.yml``, skipped for
-Fedora/Amazon) collapses to the frozen :data:`REDHAT_VARS` table, keyed by the
-``LinuxDistribution`` major version. ``version`` is informational on RedHat
-(only the Debian daemon name interpolates it), so the table pins it but nothing
-reads it.
-
-Two host views, so two passes
------------------------------
-
-This is the only role in the corpus that cannot be one ``run_waves`` pass, and
-the reason is a hard engine limit (design doc section 13): **run-as users come
-from the inventory, never from a request.** The system tasks run as root (the
-normal inventory view, ``sudo=True``), but the role's ``become_user: postgres``
-data plane -- and the peer-authenticated catalog read it needs -- run as the OS
-``postgres`` user, which only an inventory ``privilege.sudo_user`` view can
-select. ``run_waves`` builds one host list and closes it in its own ``finally``,
-so nothing inside a role can switch the privilege view mid-run. The role is
-therefore **two factories**, driven as two passes by the program:
-
-* :func:`postgresql` (normal view) -- wave 0 ``LinuxDistribution``, wave 1
-  ``FipsEnabled``, then :func:`setup` and :func:`initialize` in one wave closed
-  by ``checkpoint("initialize done")``, the ``stat`` gate and (on a fresh
-  cluster) ``initdb`` as ``act`` barriers, :func:`configure` closed by
-  ``checkpoint("configure done")``, :func:`service`, then :func:`handler`.
-* :func:`postgresql_data` (postgres view) -- the ``PostgresqlRoles`` catalog
-  fact as a reachability gate (peer auth needs the service listening, so it is
-  this pass's first barrier, not pass A's last), then :func:`users`,
-  :func:`databases` and :func:`users_props`.
-
-The three reads the example took *between* its ``run()`` calls -- the
-distribution and FIPS gathers, the ``stat`` gate and the ``initdb`` command --
-are barriers now, so the templates are rendered inside the body from the values
-those barriers returned. Nothing is frozen in a module-level plan dict keyed by
-host name, and no name set is unioned across the inventory: the per-host body
-*is* the plan.
-
-Deviations from the Ansible role, all deliberate:
-
-* the host-family guard is the body's opening ``if``, not a ``when=`` on every
-  request: a host outside the ``"RedHat"`` family returns before it yields
-  anything, so it emits no requests and no log entries at all.
-* ``initdb`` stays in pass A as ``act(Shell, command="sudo -u <user> <initdb>",
-  sudo=True)``: the elevation to root comes from the inventory and the drop to
-  ``postgres`` is inside the command. It has to sit between :func:`initialize`
-  and :func:`configure`, so putting it in pass B would mean a third pass.
-* **the handler moves earlier.** Its notification union is ``initialize |
-  configure``, both in pass A, so it now runs *before* the users and databases
-  instead of after them. No data request notifies, so the reordering is safe.
-* the ``stat`` gate is an elevated ``Shell`` action, not a ``FileExists`` fact:
-  the data directory is ``0700 postgres``, so the unprivileged fact cannot
-  traverse it (Ansible's ``stat`` ran under play-level ``become``).
-* credentials are out of scope: ``password``/``encrypted``/``login_password``/
-  ``VALID UNTIL`` are dropped and every connection rides peer auth over the unix
-  socket as the OS ``postgres`` user. ``login_host`` is ignored (Ansible's
-  ``login_unix_socket`` wins in psycopg2, so the effective connection is always
-  the socket). ``PGOPTIONS`` and ``no_log`` are moot with no password.
-* a duplicate user name fails fast instead of Ansible's last-item-wins, and a
-  ``state: absent`` user is not created first. ``postgresql_db``'s ``UTF-8``
-  default is normalized to the catalog spelling ``UTF8``. ``fail_on_role`` is
-  absorbed (out of scope per closed issue #29); an exotic ``postgresql_privs``
-  type is rejected control-side citing #29. The deprecated ``priv`` setting's
-  debug warning is dropped -- a library role does not print progress.
-* the role's implicit variable gates become pydantic validation: the enums are
-  :data:`~typing.Literal` fields, an item's ``name`` is required, and a bad
-  value raises ``ValidationError`` (a ``ValueError``, so the runner maps it)
-  before any host is contacted.
-
-The library gaps this migration originally found are all closed on main (#27
-``dnf.packages(exclude=)``, #28 the elevated catalog re-read, #29
-``postgresql.privilege``, #30 ``server.FipsEnabled``, #31/#45 the tri-state
-``postgresql.role`` attribute flags, #32 ``dnf.packages(enable_repos=)``, #44
-``systemd.service(sleep=)``), so the role drives the shipped module surface
-directly.
-"""
+# """The PostgreSQL role (migrated from ``geerlingguy.postgresql``).
+# 
+# Installs PostgreSQL from the distribution packages, initializes the cluster,
+# writes ``postgresql.conf`` / ``pg_hba.conf``, starts the service, then manages
+# databases, users and object privileges. :func:`postgresql` is the whole
+# system-level task list and :func:`postgresql_data` the data plane;
+# :class:`PostgresqlVars` is ``defaults/main.yml`` overlaid with the frozen
+# ``vars/RedHat-<major>.yml`` dispatch, bound from the inventory's
+# ``postgresql_``-prefixed keys by :func:`~reemote.rolevars.resolve_vars`.
+# 
+# Target: hosts in the ``"RedHat"`` OS family (CentOS Stream 9 or 10). The role's
+# ``include_vars`` dispatch (``vars/RedHat-<major>.yml``, skipped for
+# Fedora/Amazon) collapses to the frozen :data:`REDHAT_VARS` table, keyed by the
+# ``LinuxDistribution`` major version. ``version`` is informational on RedHat
+# (only the Debian daemon name interpolates it), so the table pins it but nothing
+# reads it.
+# 
+# Two host views, so two passes
+# -----------------------------
+# 
+# This is the only role in the corpus that cannot be one ``run_waves`` pass, and
+# the reason is a hard engine limit (design doc section 13): **run-as users come
+# from the inventory, never from a request.** The system tasks run as root (the
+# normal inventory view, ``sudo=True``), but the role's ``become_user: postgres``
+# data plane -- and the peer-authenticated catalog read it needs -- run as the OS
+# ``postgres`` user, which only an inventory ``privilege.sudo_user`` view can
+# select. ``run_waves`` builds one host list and closes it in its own ``finally``,
+# so nothing inside a role can switch the privilege view mid-run. The role is
+# therefore **two factories**, driven as two passes by the program:
+# 
+# * :func:`postgresql` (normal view) -- wave 0 ``LinuxDistribution``, wave 1
+#   ``FipsEnabled``, then :func:`setup` and :func:`initialize` in one wave closed
+#   by ``checkpoint("initialize done")``, the ``stat`` gate and (on a fresh
+#   cluster) ``initdb`` as ``act`` barriers, :func:`configure` closed by
+#   ``checkpoint("configure done")``, :func:`service`, then :func:`handler`.
+# * :func:`postgresql_data` (postgres view) -- the ``PostgresqlRoles`` catalog
+#   fact as a reachability gate (peer auth needs the service listening, so it is
+#   this pass's first barrier, not pass A's last), then :func:`users`,
+#   :func:`databases` and :func:`users_props`.
+# 
+# The three reads the example took *between* its ``run()`` calls -- the
+# distribution and FIPS gathers, the ``stat`` gate and the ``initdb`` command --
+# are barriers now, so the templates are rendered inside the body from the values
+# those barriers returned. Nothing is frozen in a module-level plan dict keyed by
+# host name, and no name set is unioned across the inventory: the per-host body
+# *is* the plan.
+# 
+# Deviations from the Ansible role, all deliberate:
+# 
+# * the host-family guard is the body's opening ``if``, not a ``when=`` on every
+#   request: a host outside the ``"RedHat"`` family returns before it yields
+#   anything, so it emits no requests and no log entries at all.
+# * ``initdb`` stays in pass A as ``act(Shell, command="sudo -u <user> <initdb>",
+#   sudo=True)``: the elevation to root comes from the inventory and the drop to
+#   ``postgres`` is inside the command. It has to sit between :func:`initialize`
+#   and :func:`configure`, so putting it in pass B would mean a third pass.
+# * **the handler moves earlier.** Its notification union is ``initialize |
+#   configure``, both in pass A, so it now runs *before* the users and databases
+#   instead of after them. No data request notifies, so the reordering is safe.
+# * the ``stat`` gate is an elevated ``Shell`` action, not a ``FileExists`` fact:
+#   the data directory is ``0700 postgres``, so the unprivileged fact cannot
+#   traverse it (Ansible's ``stat`` ran under play-level ``become``).
+# * credentials are out of scope: ``password``/``encrypted``/``login_password``/
+#   ``VALID UNTIL`` are dropped and every connection rides peer auth over the unix
+#   socket as the OS ``postgres`` user. ``login_host`` is ignored (Ansible's
+#   ``login_unix_socket`` wins in psycopg2, so the effective connection is always
+#   the socket). ``PGOPTIONS`` and ``no_log`` are moot with no password.
+# * a duplicate user name fails fast instead of Ansible's last-item-wins, and a
+#   ``state: absent`` user is not created first. ``postgresql_db``'s ``UTF-8``
+#   default is normalized to the catalog spelling ``UTF8``. ``fail_on_role`` is
+#   absorbed (out of scope per closed issue #29); an exotic ``postgresql_privs``
+#   type is rejected control-side citing #29. The deprecated ``priv`` setting's
+#   debug warning is dropped -- a library role does not print progress.
+# * the role's implicit variable gates become pydantic validation: the enums are
+#   :data:`~typing.Literal` fields, an item's ``name`` is required, and a bad
+#   value raises ``ValidationError`` (a ``ValueError``, so the runner maps it)
+#   before any host is contacted.
+# 
+# The library gaps this migration originally found are all closed on main (#27
+# ``dnf.packages(exclude=)``, #28 the elevated catalog re-read, #29
+# ``postgresql.privilege``, #30 ``server.FipsEnabled``, #31/#45 the tri-state
+# ``postgresql.role`` attribute flags, #32 ``dnf.packages(enable_repos=)``, #44
+# ``systemd.service(sleep=)``), so the role drives the shipped module surface
+# directly.
+# """
 
 import posixpath
 import re
@@ -1142,11 +1142,6 @@ def handler(plan: PostgresqlPlan, notified: frozenset[str]) -> Deploy:
 def postgresql(v: VarsSet[PostgresqlVars]) -> Deploy:
     """Install, initialize, configure and start PostgreSQL (pass A, normal view).
 
-    The system half of the role: everything that runs as root on the ordinary
-    inventory view. The data plane (users, databases, privileges) is a separate
-    factory, :func:`postgresql_data`, because it needs the ``postgres`` run-as user
-    that only a second inventory view can select (design doc section 13).
-
     Args:
         v: The role's resolved variables, one :class:`PostgresqlVars` per host
             (``resolve_vars(PostgresqlVars, "postgresql_", inventory)``).
@@ -1240,11 +1235,6 @@ def postgresql(v: VarsSet[PostgresqlVars]) -> Deploy:
 
 def postgresql_data(v: VarsSet[PostgresqlVars]) -> Deploy:
     """Manage users, databases and privileges (pass B, ``postgres`` view).
-
-    The data half of the role, driven on a second inventory whose
-    ``privilege.sudo_user`` names the OS ``postgres`` user so peer authentication
-    works. Run it as a second ``run_waves`` pass, after :func:`postgresql` has the
-    service listening.
 
     Args:
         v: The role's resolved variables, one :class:`PostgresqlVars` per host

@@ -6,7 +6,9 @@
 | Module | [`reemote.roles.postgresql`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/postgresql.py) |
 | Example | [`examples/roles/postgresql.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/postgresql.py) |
 | Target | **RedHat** — hosts in the `"RedHat"` OS family (CentOS Stream 9 or 10) |
-| Variables | `postgresql_`-prefixed inventory keys → [`PostgresqlVars`](#3-variables) |
+| Variables | `postgresql_`-prefixed inventory keys → `PostgresqlVars` |
+
+<!---
 | Passes | **2** — `postgresql` on the root view, `postgresql_data` on the `postgres` view |
 | Waves | pass A: 7 (6 on a converged rerun — the `initdb` wave disappears); pass B: 2 |
 | Outputs | `None` — no composing role in the corpus consumes an output |
@@ -114,6 +116,18 @@ example builds it by copying the inventory and adding that one key per entry.
 names; the `postgresql_` prefix passed to `resolve_vars` binds the inventory keys, so
 an inventory written for the role needs no change. Both passes share one `VarsSet`.
 
+--->
+
+::: reemote.roles.postgresql
+    options:
+      show_root_heading: false
+      show_root_toc_entry: false
+      members:
+        - postgresql
+        - postgresql_data
+
+**Variables:**
+
 | Field | Type | Default | Inventory key |
 | --- | --- | --- | --- |
 | `enablerepo` | `str` | `""` → no `--enablerepo` | `postgresql_enablerepo` |
@@ -137,6 +151,8 @@ an inventory written for the role needs no change. Both passes share one `VarsSe
 | `bin_path` | `str \| None` | `null` → `REDHAT_VARS` | `postgresql_bin_path` |
 | `config_path` | `str \| None` | `null` → `REDHAT_VARS` | `postgresql_config_path` |
 | `unix_socket_directories_mode` | `str \| None` | `null` → `REDHAT_VARS` | `postgresql_unix_socket_directories_mode` |
+
+<!---
 
 Precedence is `model defaults < inventory extra < overrides`. Sequences are `tuple`,
 never `list`: the model is frozen and hashable, and a value that reaches `op()` must
@@ -171,13 +187,6 @@ A default `global_config_options` is two items — `unix_socket_directories` and
 transforms, one per lineinfile item, exactly like the role. `log_directory` is
 mandatory when the option list is overridden: the role derives
 `postgresql_effective_log_dir` from it, and `resolve_plan` raises if it is missing.
-
-## 4. API
-
-::: reemote.roles.postgresql
-    options:
-      show_root_heading: false
-      show_root_toc_entry: false
 
 ## 5. Run it
 
@@ -451,3 +460,5 @@ The Ubuntu host appears in no tree of either pass: no barrier record, no request
 * **Per-host privilege switching inside one pass.** Run-as users come from the
   inventory and `run_waves` closes its host list in its own `finally`, so the root and
   `postgres` views are two passes, never a mid-run switch (§13).
+
+--->

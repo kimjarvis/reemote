@@ -6,7 +6,9 @@
 | Module | [`reemote.roles.php`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/php.py) |
 | Runner | [`examples/roles/php.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/php.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Variables | `php_`-prefixed inventory keys → [`PhpVars`](#3-variables) |
+| Variables | `php_`-prefixed inventory keys → `PhpVars` |
+
+<!---
 | Waves | 12 fresh, 11 converged — eleven barriers plus the handler wave |
 | Outputs | `PhpOutputs(version, extension_conf_paths, webserver_notified)` — read by a composing role |
 | Extra deps | none — the role's four templates render in pure Python |
@@ -113,6 +115,17 @@ an inventory writing `php_memory_limit: 512` renders `512` exactly as Jinja woul
 render the integer. Sequences are `tuple`, never `list`: the model is frozen, and
 a value that reaches `op()` must hash.
 
+--->
+
+::: reemote.roles.php
+    options:
+      show_root_heading: false
+      show_root_toc_entry: false
+      members:
+        - php
+
+**Variables:**
+
 ### Packages and webserver
 
 | Field | Type | Default | Inventory key |
@@ -145,6 +158,8 @@ a value that reaches `op()` must hash.
 | `fpm_pm_max_requests` | `int` | `0` — renders the template's `500` (see §3.1) | `php_fpm_pm_max_requests` |
 | `fpm_pm_status_path` | `str` | `""` — omits the line | `php_fpm_pm_status_path` |
 | `fpm_pools` | `tuple[PhpFpmPool, …] \| None` | `null` → the one www pool above | `php_fpm_pools` |
+
+<!---
 
 ### Paths
 
@@ -209,13 +224,6 @@ template uses the falsy form `default(x, true)`: a pool that explicitly sets
 Invalid values — a bad enum, a non-boolean flag, a pool missing `pool_name`, a
 custom `pool_template`, a typoed `php_` key — raise while the inventory is
 resolved, before any host is contacted.
-
-## 4. API
-
-::: reemote.roles.php
-    options:
-      show_root_heading: false
-      show_root_toc_entry: false
 
 ## 5. Run it
 
@@ -528,3 +536,5 @@ distribution layout rather than from an overridden `php_conf_paths` — that is 
   privilege view per host.
 * **The Ubuntu 16.04 `php_opcache_conf_filename` special case** — EOL, absent from
   the version table, and its value equals the default anyway.
+
+--->

@@ -1,98 +1,98 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""The PHP Xdebug role (migrated from ``geerlingguy.php-xdebug``).
-
-Builds and enables the Xdebug PHP extension on Ubuntu hosts: the build toolchain
-and the module directory, the source tarball extracted into a workspace, the
-``phpize && ./configure && make`` build, the module moved into PHP's extension
-directory, the rendered ``xdebug.ini`` written into every extension conf path,
-the optional CLI disable, and the role's two chained handlers (``restart
-webserver`` -> ``restart php-fpm``). :func:`php_xdebug` is the whole task list and
-:class:`PhpXdebugVars` is ``defaults/main.yml``, bound from the inventory's
-``php_xdebug_``-prefixed keys by :func:`~reemote.rolevars.resolve_vars`.
-
-**The dependency is a `yield from` plus a return value** (design doc section
-10.4). This role does not re-implement any part of :mod:`reemote.roles.php` and
-does not look it up in a registry: the caller passes php's own ``VarsSet`` as an
-argument, the body runs php for this host with ``yield from``, and reads
-:class:`~reemote.roles.php.PhpOutputs` -- the resolved PHP version and the
-extension conf paths -- as ordinary data. That return value is the whole
-dependency story, and it is what the old per-role copy of php's version table and
-``php_version`` / ``php_extension_conf_paths`` reconstruction was deleted in
-favour of (design doc section 15).
-
-Target: hosts in the ``"Ubuntu"`` OS family, inherited rather than restated --
-php's own family guard returns ``PhpOutputs(version=None)`` before its first
-barrier, and this body returns on that ``None``. So a host outside the family
-emits nothing at all, and no request here needs a ``when`` guard.
-
-The stream continues php's. After php's last wave (its handler), this role adds:
-
-* ``setup`` -- ``apt.packages`` (build-essential), ``files.directory`` (the module
-  path) and ``files.unarchive`` (the tarball, ``creates=src_dir``) -- requests that
-  share php's handler wave, because no barrier separates the two.
-* ``fact(FileExists, built_so)`` -- closes that wave. The build is gated on it, so
-  the branch lives *inside* the body: the read happens after the extraction
-  applied, which is exactly why it cannot be hoisted (design doc section 6.2).
-* ``act(Shell, ...)`` -- ``phpize && ./configure && make`` as root, only on a host
-  where the built module is absent. Its non-zero exit is data, so the role raises
-  :class:`~reemote.CommandError` itself.
-* ``install`` -- the module move, the ini writes, the optional CLI removal --
-  closed by ``checkpoint("xdebug install done")``.
-* ``handler`` -- the restarts, for the hosts that one checkpoint selected.
-
-**One checkpoint, two name sets.** Both :func:`~reemote.changed_hosts` reads --
-:data:`WEBSERVER_NOTIFY_NAMES` and :data:`FPM_NOTIFY_NAMES` -- come out of the
-*same* report, because every notifying task is in the one ``install`` deploy. Two
-checkpoints would read the second one an empty wave. And php's own handler wave
-already ran inside the ``yield from``: a checkpoint can only read the wave it
-closes, so this one cannot see php's notifications -- which is what keeps the
-webserver from being restarted on php's account. Merging :attr:`PhpOutputs.webserver_notified`
-into the set below would be a faithful-looking way to lose that separation, and it
-is deliberately not done (design doc section 18.7).
-
-No template engine is needed: ``templates/xdebug.ini.j2`` is pure variable
-substitution, so :func:`render_xdebug_ini` is a plain f-string. The role needs no
-``reemote[templates]`` extra.
-
-Deviations from the Ansible role, all deliberate:
-
-* ``php_xdebug_enable`` is new. The role has no such variable -- an operator who
-  wanted Xdebug off removed the role from the play -- so a deploy-level switch has
-  no Ansible name to match. It is the knob section 10.4's body opens with, and it
-  keeps that shape: ``False`` returns before the dependency even runs, so a
-  disabled host pays for none of php's barriers.
-* the Ubuntu PHP version table and the ``/etc/php/<version>/...`` conf-path
-  reconstruction the example carried are **gone**, replaced by
-  :attr:`PhpOutputs.version` and :attr:`PhpOutputs.extension_conf_paths`. This is
-  the falsifier of the whole return-value channel: if this module had to keep
-  them, the channel would be carrying nothing.
-* the ini destinations come from php's resolved extension conf paths, but
-  :attr:`PhpXdebugResolution.cli_ini` still hardcodes ``/etc/php/<version>/cli/
-  conf.d`` from the PHP version, because that is what the role's own
-  ``{{ php_version }}`` interpolation does -- an override of
-  ``php_extension_conf_paths`` moves the writes but not the removal. Preserved
-  verbatim rather than "fixed".
-* the build is an ``act`` barrier inside the stream, not ``gather_action`` between
-  two ``run()`` calls. The example grouped hosts by their rendered command; a
-  per-host body has one command and needs no grouping.
-* the version table's fallback (Debian's 8.2) and every ``__php_xdebug_*``
-  ``set_fact`` stay, but the version *lookup* is php's:
-  ``php_default_version_debian`` and the distribution read are not repeated here.
-* ``files.unarchive`` resolves the role's ``creates:`` gate in-operation, so the
-  extraction is one request and a converged host never fetches the tarball. The
-  ``mode=0755`` the role puts on the extraction is not passed: the covering
-  ``chmod -R`` in the role targets the shared workspace, not the archive.
-* the Xdebug-2 directive names (``xdebug.remote_enable`` and friends, not the
-  Xdebug-3 ``xdebug.client_*`` forms) are the role's own and are kept verbatim,
-  even though the default version is Xdebug 3. Changing them would silently
-  rewrite every operator's tuned ini.
-* the role's variable validation becomes pydantic validation: the render values
-  are ``str`` fields with ``coerce_numbers_to_str``, so the YAML ``1`` the role
-  defaults to renders ``1`` and a JSON ``true`` is refused rather than rendering
-  ``True`` where the template's own string default renders ``true``.
-"""
+# """The PHP Xdebug role (migrated from ``geerlingguy.php-xdebug``).
+# 
+# Builds and enables the Xdebug PHP extension on Ubuntu hosts: the build toolchain
+# and the module directory, the source tarball extracted into a workspace, the
+# ``phpize && ./configure && make`` build, the module moved into PHP's extension
+# directory, the rendered ``xdebug.ini`` written into every extension conf path,
+# the optional CLI disable, and the role's two chained handlers (``restart
+# webserver`` -> ``restart php-fpm``). :func:`php_xdebug` is the whole task list and
+# :class:`PhpXdebugVars` is ``defaults/main.yml``, bound from the inventory's
+# ``php_xdebug_``-prefixed keys by :func:`~reemote.rolevars.resolve_vars`.
+# 
+# **The dependency is a `yield from` plus a return value** (design doc section
+# 10.4). This role does not re-implement any part of :mod:`reemote.roles.php` and
+# does not look it up in a registry: the caller passes php's own ``VarsSet`` as an
+# argument, the body runs php for this host with ``yield from``, and reads
+# :class:`~reemote.roles.php.PhpOutputs` -- the resolved PHP version and the
+# extension conf paths -- as ordinary data. That return value is the whole
+# dependency story, and it is what the old per-role copy of php's version table and
+# ``php_version`` / ``php_extension_conf_paths`` reconstruction was deleted in
+# favour of (design doc section 15).
+# 
+# Target: hosts in the ``"Ubuntu"`` OS family, inherited rather than restated --
+# php's own family guard returns ``PhpOutputs(version=None)`` before its first
+# barrier, and this body returns on that ``None``. So a host outside the family
+# emits nothing at all, and no request here needs a ``when`` guard.
+# 
+# The stream continues php's. After php's last wave (its handler), this role adds:
+# 
+# * ``setup`` -- ``apt.packages`` (build-essential), ``files.directory`` (the module
+#   path) and ``files.unarchive`` (the tarball, ``creates=src_dir``) -- requests that
+#   share php's handler wave, because no barrier separates the two.
+# * ``fact(FileExists, built_so)`` -- closes that wave. The build is gated on it, so
+#   the branch lives *inside* the body: the read happens after the extraction
+#   applied, which is exactly why it cannot be hoisted (design doc section 6.2).
+# * ``act(Shell, ...)`` -- ``phpize && ./configure && make`` as root, only on a host
+#   where the built module is absent. Its non-zero exit is data, so the role raises
+#   :class:`~reemote.CommandError` itself.
+# * ``install`` -- the module move, the ini writes, the optional CLI removal --
+#   closed by ``checkpoint("xdebug install done")``.
+# * ``handler`` -- the restarts, for the hosts that one checkpoint selected.
+# 
+# **One checkpoint, two name sets.** Both :func:`~reemote.changed_hosts` reads --
+# :data:`WEBSERVER_NOTIFY_NAMES` and :data:`FPM_NOTIFY_NAMES` -- come out of the
+# *same* report, because every notifying task is in the one ``install`` deploy. Two
+# checkpoints would read the second one an empty wave. And php's own handler wave
+# already ran inside the ``yield from``: a checkpoint can only read the wave it
+# closes, so this one cannot see php's notifications -- which is what keeps the
+# webserver from being restarted on php's account. Merging :attr:`PhpOutputs.webserver_notified`
+# into the set below would be a faithful-looking way to lose that separation, and it
+# is deliberately not done (design doc section 18.7).
+# 
+# No template engine is needed: ``templates/xdebug.ini.j2`` is pure variable
+# substitution, so :func:`render_xdebug_ini` is a plain f-string. The role needs no
+# ``reemote[templates]`` extra.
+# 
+# Deviations from the Ansible role, all deliberate:
+# 
+# * ``php_xdebug_enable`` is new. The role has no such variable -- an operator who
+#   wanted Xdebug off removed the role from the play -- so a deploy-level switch has
+#   no Ansible name to match. It is the knob section 10.4's body opens with, and it
+#   keeps that shape: ``False`` returns before the dependency even runs, so a
+#   disabled host pays for none of php's barriers.
+# * the Ubuntu PHP version table and the ``/etc/php/<version>/...`` conf-path
+#   reconstruction the example carried are **gone**, replaced by
+#   :attr:`PhpOutputs.version` and :attr:`PhpOutputs.extension_conf_paths`. This is
+#   the falsifier of the whole return-value channel: if this module had to keep
+#   them, the channel would be carrying nothing.
+# * the ini destinations come from php's resolved extension conf paths, but
+#   :attr:`PhpXdebugResolution.cli_ini` still hardcodes ``/etc/php/<version>/cli/
+#   conf.d`` from the PHP version, because that is what the role's own
+#   ``{{ php_version }}`` interpolation does -- an override of
+#   ``php_extension_conf_paths`` moves the writes but not the removal. Preserved
+#   verbatim rather than "fixed".
+# * the build is an ``act`` barrier inside the stream, not ``gather_action`` between
+#   two ``run()`` calls. The example grouped hosts by their rendered command; a
+#   per-host body has one command and needs no grouping.
+# * the version table's fallback (Debian's 8.2) and every ``__php_xdebug_*``
+#   ``set_fact`` stay, but the version *lookup* is php's:
+#   ``php_default_version_debian`` and the distribution read are not repeated here.
+# * ``files.unarchive`` resolves the role's ``creates:`` gate in-operation, so the
+#   extraction is one request and a converged host never fetches the tarball. The
+#   ``mode=0755`` the role puts on the extraction is not passed: the covering
+#   ``chmod -R`` in the role targets the shared workspace, not the archive.
+# * the Xdebug-2 directive names (``xdebug.remote_enable`` and friends, not the
+#   Xdebug-3 ``xdebug.client_*`` forms) are the role's own and are kept verbatim,
+#   even though the default version is Xdebug 3. Changing them would silently
+#   rewrite every operator's tuned ini.
+# * the role's variable validation becomes pydantic validation: the render values
+#   are ``str`` fields with ``coerce_numbers_to_str``, so the YAML ``1`` the role
+#   defaults to renders ``1`` and a JSON ``true`` is refused rather than rendering
+#   ``True`` where the template's own string default renders ``true``.
+# """
 
 import shlex
 from collections.abc import Generator

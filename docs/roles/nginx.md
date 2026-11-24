@@ -6,7 +6,9 @@
 | Module | [`reemote.roles.nginx`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/nginx.py) |
 | Example | [`examples/roles/nginx.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/nginx.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Variables | `nginx_`-prefixed inventory keys → [`NginxVars`](#3-variables) |
+| Variables | `nginx_`-prefixed inventory keys → `NginxVars` |
+
+<!---
 | Waves | 4 (3 on a converged rerun — the handler wave disappears) |
 | Outputs | `None` — no composing role in the corpus consumes an output |
 | Extra deps | **`reemote[templates]`** (jinja2 renders `nginx.conf.j2` + `vhost.j2`) |
@@ -109,6 +111,17 @@ carries `sudo=True`, because reemote has no play-level `become`. With
 `resolve_vars` binds the inventory keys, so an inventory written for the role needs
 no change.
 
+--->
+
+::: reemote.roles.nginx
+    options:
+      show_root_heading: false
+      show_root_toc_entry: false
+      members:
+        - nginx
+
+**Variables:**
+
 | Field | Type | Default | Inventory key |
 | --- | --- | --- | --- |
 | `yum_repo_enabled` | `bool` | `true` — **inert** (RedHat-only) | `nginx_yum_repo_enabled` |
@@ -143,6 +156,8 @@ no change.
 | `listen_ipv6` | `bool` | `true` | `nginx_listen_ipv6` |
 | `vhosts` | `tuple[VHost, …]` | `()` | `nginx_vhosts` |
 | `upstreams` | `tuple[Upstream, …]` | `()` | `nginx_upstreams` |
+
+<!---
 
 Precedence is `model defaults < inventory extra < overrides`. Sequences are
 `tuple`, never `list`: the model is frozen and hashable, and a value that reaches
@@ -195,13 +210,6 @@ kept.
 The file name is computed control-side by `vhost_filename`, so Jinja2's
 eager-evaluation trap — `default()` evaluating the `server_name` fallback even when
 `filename` is set — never fires.
-
-## 4. API
-
-::: reemote.roles.nginx
-    options:
-      show_root_heading: false
-      show_root_toc_entry: false
 
 ## 5. Run it
 
@@ -418,3 +426,5 @@ request line.
 * **Per-host privilege.** nginx needs root and the inventory says how a host
   elevates; there is no play-level `become` to reproduce, and one run has one
   privilege view per host.
+
+--->

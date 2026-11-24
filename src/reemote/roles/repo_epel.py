@@ -1,48 +1,48 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""The EPEL repository role (migrated from ``geerlingguy.repo-epel``).
-
-Installs the EPEL (Extra Packages for Enterprise Linux) repository on
-RHEL-family hosts: import the EPEL GPG key, install the ``epel-release`` RPM,
-then set ``enabled=`` in the ``[epel]`` section of ``/etc/yum.repos.d/epel.repo``.
-The Ansible role's whole task list is one deploy here --
-:func:`repo_epel` -- and its four role defaults are :class:`EpelVars`, bound
-from the inventory's ``epel_``-prefixed keys by
-:func:`~reemote.rolevars.resolve_vars`.
-
-The stream carries three or four waves -- one per barrier, then one holding the
-requests (design doc section 5.7):
-
-0. ``fact(LinuxDistribution)`` -- the major version the URLs interpolate, and
-   the re-check that the declared family matches the machine.
-1. ``fact(FileExists, path=repofile)`` -- the old ``stat`` register.
-2. ``control(files.fetch_url, key_url)`` -- only when the repo file is absent.
-3. the requests: :func:`install` then :func:`configure`, in one stream.
-
-There is **no barrier between install and configure**: the driver applies a
-request before it pulls the next one, so ``epel-release`` is installed (and
-ships ``/etc/yum.repos.d/epel.repo``) before ``configure``'s read. That is what
-collapses the example's old two-deploy split into a single pass.
-
-Deviations from the Ansible role, all deliberate:
-
-* the key and the RPM are read **control-side** (``files.fetch_url`` /
-  ``files.download``); ``rpm_key`` and ``yum`` download on the target. The
-  control machine needs egress to ``dl.fedoraproject.org``; the host downloads
-  nothing.
-* ``yum: name=<URL>.rpm`` becomes a staged download plus ``dnf.rpm(src=spool)``
-  plus a spool cleanup -- ``dnf.rpm`` installs an ``.rpm`` already on the host
-  and rejects a URL. The cleanup has no Ansible counterpart.
-* the GPG key id is **pinned** per EPEL major (:data:`EPEL_KEY_IDS`) so
-  ``dnf.key`` can gate the import on the ``RpmGpgKeys`` fact. A custom
-  ``repo_gpg_key_url`` still imports: its id simply matches nothing.
-* ``until``/``retries``/``delay`` are dropped -- reemote is fail-fast, so a
-  transient fetch aborts the run and the operator re-runs it.
-* the host-family guard is the body's opening ``if``, not a ``when=`` on every
-  request: a host outside the ``"RedHat"`` family returns before it yields
-  anything, so it emits no requests and no log entries at all.
-"""
+# """The EPEL repository role (migrated from ``geerlingguy.repo-epel``).
+# 
+# Installs the EPEL (Extra Packages for Enterprise Linux) repository on
+# RHEL-family hosts: import the EPEL GPG key, install the ``epel-release`` RPM,
+# then set ``enabled=`` in the ``[epel]`` section of ``/etc/yum.repos.d/epel.repo``.
+# The Ansible role's whole task list is one deploy here --
+# :func:`repo_epel` -- and its four role defaults are :class:`EpelVars`, bound
+# from the inventory's ``epel_``-prefixed keys by
+# :func:`~reemote.rolevars.resolve_vars`.
+# 
+# The stream carries three or four waves -- one per barrier, then one holding the
+# requests (design doc section 5.7):
+# 
+# 0. ``fact(LinuxDistribution)`` -- the major version the URLs interpolate, and
+#    the re-check that the declared family matches the machine.
+# 1. ``fact(FileExists, path=repofile)`` -- the old ``stat`` register.
+# 2. ``control(files.fetch_url, key_url)`` -- only when the repo file is absent.
+# 3. the requests: :func:`install` then :func:`configure`, in one stream.
+# 
+# There is **no barrier between install and configure**: the driver applies a
+# request before it pulls the next one, so ``epel-release`` is installed (and
+# ships ``/etc/yum.repos.d/epel.repo``) before ``configure``'s read. That is what
+# collapses the example's old two-deploy split into a single pass.
+# 
+# Deviations from the Ansible role, all deliberate:
+# 
+# * the key and the RPM are read **control-side** (``files.fetch_url`` /
+#   ``files.download``); ``rpm_key`` and ``yum`` download on the target. The
+#   control machine needs egress to ``dl.fedoraproject.org``; the host downloads
+#   nothing.
+# * ``yum: name=<URL>.rpm`` becomes a staged download plus ``dnf.rpm(src=spool)``
+#   plus a spool cleanup -- ``dnf.rpm`` installs an ``.rpm`` already on the host
+#   and rejects a URL. The cleanup has no Ansible counterpart.
+# * the GPG key id is **pinned** per EPEL major (:data:`EPEL_KEY_IDS`) so
+#   ``dnf.key`` can gate the import on the ``RpmGpgKeys`` fact. A custom
+#   ``repo_gpg_key_url`` still imports: its id simply matches nothing.
+# * ``until``/``retries``/``delay`` are dropped -- reemote is fail-fast, so a
+#   transient fetch aborts the run and the operator re-runs it.
+# * the host-family guard is the body's opening ``if``, not a ``when=`` on every
+#   request: a host outside the ``"RedHat"`` family returns before it yields
+#   anything, so it emits no requests and no log entries at all.
+# """
 
 import io
 import posixpath

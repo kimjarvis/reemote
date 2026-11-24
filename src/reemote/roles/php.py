@@ -1,104 +1,104 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""The PHP role (migrated from ``geerlingguy.php``).
-
-Installs and configures PHP on Ubuntu hosts: the apt cache refresh and the
-version-specific PHP packages, the packaged APCu/OpCache ini cleanup, the
-configuration directories and a rendered ``php.ini`` in every conf path, the
-stray-extension-config sweep and the role's own ini files, the optional PHP-FPM
-pools and service, and the role's two chained handlers (``restart webserver`` ->
-``restart php-fpm``). :func:`php` is the whole task list and :class:`PhpVars` is
-``defaults/main.yml``, bound from the inventory's ``php_``-prefixed keys by
-:func:`~reemote.rolevars.resolve_vars`.
-
-Target: hosts in the ``"Ubuntu"`` OS family. The role's RHEL/CentOS branch and
-the opt-in ``php_install_from_source`` path are out of scope, so its
-``include_vars`` OS dispatch collapses to the frozen Ubuntu version table below.
-
-The stream carries one wave per barrier group (design doc section 5.7): twelve
-waves for a fresh FPM-enabled Ubuntu host, eleven once it converges -- the
-handler wave is the only thing that disappears.
-
-0. ``fact(LinuxDistribution)`` -- the major version selects the PHP version,
-   which fixes the package list and every managed path.
-1. :func:`install` -- the apt cache refresh and the packages -- closed by
-   ``checkpoint("install done")``.
-2. :func:`packaged_cleanup` -- the packaged APCu/OpCache ini files, on the hosts
-   whose package install changed -- closed by ``checkpoint("cleanup done")``.
-3..*2m+2* one ``fact(FindInFiles, path, pattern)`` per extension conf path, the
-   APCu sweep then the OpCache sweep, all six *after* the cleanup applied.
-*2m+3* ``fact(FileExists, pool_dir)`` -- the pool directory. The role's ``stat``
-   is guarded by nothing at all (only the pool and service tasks check
-   ``php_enable_php_fpm``), because its answer decides whether the directory is
-   created, so the read runs on every host in the target family.
-*n*+1 :func:`configure` -- directories, ``php.ini``, the stray removals, the
-   extension ini files, the pools and the FPM service -- closed by
-   ``checkpoint("configure done")``.
-*n*+2 :func:`handler` -- ``Restart <webserver> (handler)`` and the chained
-   ``Restart <fpm> (handler)``, only on the hosts those checkpoints selected.
-
-The checkpoint placement is the whole design of this role (design doc section
-16.6), and it is the one thing that must not be tidied up: the five reads the
-example took between its four ``run()`` calls become **three** checkpoints, one
-directly after each stage. Folding the three stages into one wave and reading one
-report would merge the notifications the three channels need to keep apart --
-and three checkpoints after a single combined wave would read two empty reports,
-losing every cleanup and configure notification *silently*, because a handler
-that is never queued does not fail, it just never runs.
-
-The three channels are not symmetric, so they stay three separate reads:
-``package_changed`` comes from the install wave alone (it is a gate, not a
-notification), ``webserver_notified`` is the **union** of all three waves, and
-``fpm_direct`` comes from the configure wave alone.
-
-No template engine is needed -- unlike :mod:`reemote.roles.apache`, this role
-needs no ``reemote[templates]`` extra. Every default-path template
-(``php.ini.j2``, ``apc.ini.j2``, ``opcache.ini.j2``, ``www.conf.j2``) is pure
-variable substitution plus one ``join`` and two ``{% if %}`` blocks, so the
-renders below are plain Python f-strings.
-
-Deviations from the Ansible role, all deliberate:
-
-* ``find: {paths, contains}`` maps to the :class:`~reemote.modules.files.
-  FindInFiles` fact (a recursive ``grep -rlE``). Ansible's ``find`` is shallow,
-  skips dotfiles and anchors ``contains`` at the line start; grep recurses,
-  includes dotfiles and matches anywhere in a line. The shallowness and dotfile
-  differences are recovered control-side by :func:`stray_configs`, which keeps
-  only direct, non-hidden children. The broader line match is kept: it only ever
-  widens the cleanup of *stray* files, and on a stock Ubuntu ``conf.d`` -- whose
-  packaged entries are symlinks both searches skip -- the result is identical.
-* the custom ``pool_template`` rejection is kept, not worked around: only the
-  bundled ``www.conf.j2`` has a Python render, so a pool naming another template
-  raises instead of silently rendering the bundled one (§16.6).
-* the chained handler collapses to an upstream-first service listing (the
-  documented handler-chaining recipe): the webserver request is yielded before
-  the FPM request on the same host, which is all the chain guarantees. Neither
-  the example's ``compose`` nor its whole-inventory name lists survive -- a
-  per-host body needs neither.
-* the pool-directory read is :class:`~reemote.modules.files.FileExists`
-  (``test -e``) rather than the role's ``stat``: a *dangling symlink* at the path
-  reads absent here, where ``stat`` reports ``islnk`` defined and the role skips
-  creation. On a stock Ubuntu the path is a real directory or absent, so the edge
-  is unreachable in practice.
-* every request carried ``when=is_ubuntu`` in the example; here the family guard
-  returns before the first barrier, so a host outside the target family is never
-  contacted and no request needs a guard.
-* ``files.directory`` owns no ``follow`` parameter, so the role's ``follow:
-  true`` is dropped -- inert on stock Ubuntu, where every conf path is a real
-  directory, and a symlinked one fails fast rather than being followed.
-* the packaged ``conf.d`` ini files are symlinks, so removals use
-  ``files.file(present=False, force=True)``: the ``File`` fact reads a symlink as
-  a non-file, and ``force`` is what lets the removal touch it.
-* ``php_enablerepo`` (RHEL-only) and ``php_executable`` (source path) are carried
-  as variables and do nothing here, documented as inert rather than silently
-  omitted, so an existing inventory still binds.
-* the role's variable validation becomes pydantic validation: the three enums are
-  :data:`~typing.Literal` fields, the bool gates are ``bool`` fields (Jinja's
-  truthiness is what pydantic's lax coercion implements), a pool needs
-  ``pool_name`` and ``pool_listen``, and a bad value raises ``ValidationError``
-  -- a ``ValueError``, so the runner maps it -- before any host is contacted.
-"""
+# """The PHP role (migrated from ``geerlingguy.php``).
+# 
+# Installs and configures PHP on Ubuntu hosts: the apt cache refresh and the
+# version-specific PHP packages, the packaged APCu/OpCache ini cleanup, the
+# configuration directories and a rendered ``php.ini`` in every conf path, the
+# stray-extension-config sweep and the role's own ini files, the optional PHP-FPM
+# pools and service, and the role's two chained handlers (``restart webserver`` ->
+# ``restart php-fpm``). :func:`php` is the whole task list and :class:`PhpVars` is
+# ``defaults/main.yml``, bound from the inventory's ``php_``-prefixed keys by
+# :func:`~reemote.rolevars.resolve_vars`.
+# 
+# Target: hosts in the ``"Ubuntu"`` OS family. The role's RHEL/CentOS branch and
+# the opt-in ``php_install_from_source`` path are out of scope, so its
+# ``include_vars`` OS dispatch collapses to the frozen Ubuntu version table below.
+# 
+# The stream carries one wave per barrier group (design doc section 5.7): twelve
+# waves for a fresh FPM-enabled Ubuntu host, eleven once it converges -- the
+# handler wave is the only thing that disappears.
+# 
+# 0. ``fact(LinuxDistribution)`` -- the major version selects the PHP version,
+#    which fixes the package list and every managed path.
+# 1. :func:`install` -- the apt cache refresh and the packages -- closed by
+#    ``checkpoint("install done")``.
+# 2. :func:`packaged_cleanup` -- the packaged APCu/OpCache ini files, on the hosts
+#    whose package install changed -- closed by ``checkpoint("cleanup done")``.
+# 3..*2m+2* one ``fact(FindInFiles, path, pattern)`` per extension conf path, the
+#    APCu sweep then the OpCache sweep, all six *after* the cleanup applied.
+# *2m+3* ``fact(FileExists, pool_dir)`` -- the pool directory. The role's ``stat``
+#    is guarded by nothing at all (only the pool and service tasks check
+#    ``php_enable_php_fpm``), because its answer decides whether the directory is
+#    created, so the read runs on every host in the target family.
+# *n*+1 :func:`configure` -- directories, ``php.ini``, the stray removals, the
+#    extension ini files, the pools and the FPM service -- closed by
+#    ``checkpoint("configure done")``.
+# *n*+2 :func:`handler` -- ``Restart <webserver> (handler)`` and the chained
+#    ``Restart <fpm> (handler)``, only on the hosts those checkpoints selected.
+# 
+# The checkpoint placement is the whole design of this role (design doc section
+# 16.6), and it is the one thing that must not be tidied up: the five reads the
+# example took between its four ``run()`` calls become **three** checkpoints, one
+# directly after each stage. Folding the three stages into one wave and reading one
+# report would merge the notifications the three channels need to keep apart --
+# and three checkpoints after a single combined wave would read two empty reports,
+# losing every cleanup and configure notification *silently*, because a handler
+# that is never queued does not fail, it just never runs.
+# 
+# The three channels are not symmetric, so they stay three separate reads:
+# ``package_changed`` comes from the install wave alone (it is a gate, not a
+# notification), ``webserver_notified`` is the **union** of all three waves, and
+# ``fpm_direct`` comes from the configure wave alone.
+# 
+# No template engine is needed -- unlike :mod:`reemote.roles.apache`, this role
+# needs no ``reemote[templates]`` extra. Every default-path template
+# (``php.ini.j2``, ``apc.ini.j2``, ``opcache.ini.j2``, ``www.conf.j2``) is pure
+# variable substitution plus one ``join`` and two ``{% if %}`` blocks, so the
+# renders below are plain Python f-strings.
+# 
+# Deviations from the Ansible role, all deliberate:
+# 
+# * ``find: {paths, contains}`` maps to the :class:`~reemote.modules.files.
+#   FindInFiles` fact (a recursive ``grep -rlE``). Ansible's ``find`` is shallow,
+#   skips dotfiles and anchors ``contains`` at the line start; grep recurses,
+#   includes dotfiles and matches anywhere in a line. The shallowness and dotfile
+#   differences are recovered control-side by :func:`stray_configs`, which keeps
+#   only direct, non-hidden children. The broader line match is kept: it only ever
+#   widens the cleanup of *stray* files, and on a stock Ubuntu ``conf.d`` -- whose
+#   packaged entries are symlinks both searches skip -- the result is identical.
+# * the custom ``pool_template`` rejection is kept, not worked around: only the
+#   bundled ``www.conf.j2`` has a Python render, so a pool naming another template
+#   raises instead of silently rendering the bundled one (§16.6).
+# * the chained handler collapses to an upstream-first service listing (the
+#   documented handler-chaining recipe): the webserver request is yielded before
+#   the FPM request on the same host, which is all the chain guarantees. Neither
+#   the example's ``compose`` nor its whole-inventory name lists survive -- a
+#   per-host body needs neither.
+# * the pool-directory read is :class:`~reemote.modules.files.FileExists`
+#   (``test -e``) rather than the role's ``stat``: a *dangling symlink* at the path
+#   reads absent here, where ``stat`` reports ``islnk`` defined and the role skips
+#   creation. On a stock Ubuntu the path is a real directory or absent, so the edge
+#   is unreachable in practice.
+# * every request carried ``when=is_ubuntu`` in the example; here the family guard
+#   returns before the first barrier, so a host outside the target family is never
+#   contacted and no request needs a guard.
+# * ``files.directory`` owns no ``follow`` parameter, so the role's ``follow:
+#   true`` is dropped -- inert on stock Ubuntu, where every conf path is a real
+#   directory, and a symlinked one fails fast rather than being followed.
+# * the packaged ``conf.d`` ini files are symlinks, so removals use
+#   ``files.file(present=False, force=True)``: the ``File`` fact reads a symlink as
+#   a non-file, and ``force`` is what lets the removal touch it.
+# * ``php_enablerepo`` (RHEL-only) and ``php_executable`` (source path) are carried
+#   as variables and do nothing here, documented as inert rather than silently
+#   omitted, so an existing inventory still binds.
+# * the role's variable validation becomes pydantic validation: the three enums are
+#   :data:`~typing.Literal` fields, the bool gates are ``bool`` fields (Jinja's
+#   truthiness is what pydantic's lax coercion implements), a pool needs
+#   ``pool_name`` and ``pool_listen``, and a bad value raises ``ValidationError``
+#   -- a ``ValueError``, so the runner maps it -- before any host is contacted.
+# """
 
 import posixpath
 from collections.abc import Generator

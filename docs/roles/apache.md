@@ -6,7 +6,9 @@
 | Module | [`reemote.roles.apache`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/apache.py) |
 | Example | [`examples/roles/apache.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/apache.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Variables | `apache_`-prefixed inventory keys → [`ApacheVars`](#3-variables) |
+| Variables | `apache_`-prefixed inventory keys → `ApacheVars` |
+
+<!---
 | Waves | 3 **+ one per SSL vhost** (4 with a single certificate) |
 | Outputs | `ApacheOutputs(version, service)` — read by a composing role |
 | Extra deps | **`reemote[templates]`** (jinja2 renders `vhosts.conf.j2`) |
@@ -89,6 +91,17 @@ probe runs on the host too — it is an action barrier, not a controller-side ca
 names; the prefix passed to `resolve_vars` binds the inventory keys, so an
 inventory written for the role needs no change.
 
+--->
+
+::: reemote.roles.apache
+    options:
+      show_root_heading: false
+      show_root_toc_entry: false
+      members:
+        - apache
+
+**Variables:**
+
 | Field | Type | Default | Inventory key |
 | --- | --- | --- | --- |
 | `listen_ip` | `str` | `*` | `apache_listen_ip` |
@@ -117,6 +130,8 @@ inventory written for the role needs no change.
 | `ssl_cipher_suite` | `str` | `AES256+EECDH:AES256+EDH` | `apache_ssl_cipher_suite` |
 | `enablerepo` | `str` | `""` — **inert** (RHEL-only) | `apache_enablerepo` |
 | `ssl_no_log` | `bool` | `true` — **inert** (no log redaction) | `apache_ssl_no_log` |
+
+<!---
 
 Precedence is `model defaults < inventory extra < overrides`. Sequences are
 `tuple`, never `list`: the model is frozen and hashable, and a value that reaches
@@ -149,12 +164,6 @@ renders no `DocumentRoot ""` and no `<Directory>` block. `allow_override` and
 `options` are the per-vhost overrides of `apache_allow_override` /
 `apache_options`, applied by the template's `default()`.
 
-## 4. API
-
-::: reemote.roles.apache
-    options:
-      show_root_heading: false
-      show_root_toc_entry: false
 
 ## 5. Run it
 
@@ -351,6 +360,7 @@ The RedHat host appears in no tree: no barrier record, no request line.
 
 ## 8. Deliberate deviations from the Ansible role
 
+
 | # | Deviation | Why |
 | --- | --- | --- |
 | D1 | A host outside the `"Ubuntu"` family emits **nothing at all** | the family guard is the body's opening `if`, not a `when=` on each request. The old example logged every request as `[skipped: when guard …]`; a return emits no records |
@@ -380,3 +390,5 @@ The RedHat host appears in no tree: no barrier record, no request line.
 * **Per-host privilege.** Apache needs root and the inventory says how a host
   elevates; there is no play-level `become` to reproduce, and one run has one
   privilege view per host.
+
+--->

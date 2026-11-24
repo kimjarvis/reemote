@@ -1,82 +1,82 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""The Apache role (migrated from ``geerlingguy.apache``).
-
-Installs and configures Apache 2.x on Ubuntu/Debian hosts: the apt cache
-refresh and the ``apache2`` packages, the ``ports.conf`` listen lines, the
-``mods-enabled``/``conf-enabled`` symlinks, the rendered
-``sites-available/vhosts.conf`` and its ``sites-enabled`` symlink, the optional
-default-vhost removal, the service's running/enabled state, and the role's
-single ``restart apache`` handler. :func:`apache` is the whole task list, and
-:class:`ApacheVars` is ``defaults/main.yml``, bound from the inventory's
-``apache_``-prefixed keys by :func:`~reemote.rolevars.resolve_vars`.
-
-Target: hosts in the ``"Ubuntu"`` OS family. The role's RHEL, SLES, Solaris and
-Amazon Linux branches are out of scope, so its ``include_vars`` OS dispatch
-collapses to the frozen Debian constants below.
-
-The stream carries three waves **plus one per SSL vhost** (design doc section
-5.7) -- four with a single certificate:
-
-0. :func:`install` -- the apt cache refresh and the packages -- closed by the
-   ``apache2 -v`` probe barrier, which only succeeds once the install applied.
-1..*n* one ``fact(FileExists, path=certificate_file)`` per SSL vhost. A host
-   with no SSL vhost parks on nothing here, so hosts park asymmetrically and the
-   wave count is host-dependent.
-*n*+1 :func:`configure` -- ports, symlinks, the rendered vhosts file, the
-   service state -- closed by ``checkpoint("configure done")``.
-*n*+2 :func:`handler` -- ``Restart``/``Reload apache2 (handler)``, only on the
-   hosts that checkpoint selected.
-
-The three reads the example took *between* its three ``run()`` calls -- the
-version probe, the certificate ``stat`` loop and the configure report -- are
-barriers now, so the vhosts template is rendered inside the body from the values
-those barriers returned. Nothing is frozen in a module-level plan dict, and no
-name set is unioned across the inventory: the per-host body *is* the plan.
-
-:func:`apache` returns :class:`ApacheOutputs` on every path, including the
-family guard's early return, because a composing role captures it with
-``out = yield from scoped("apache", apache(v))(host)`` (design doc sections 9
-and 10.5).
-
-Deviations from the Ansible role, all deliberate:
-
-* the host-family guard is the body's opening ``if``, not a ``when=`` on every
-  request: a host outside the ``"Ubuntu"`` family returns before it yields
-  anything, so it emits no requests and no log entries at all (the old example
-  logged each as ``[skipped: when guard ...]``).
-* the version probe is an :func:`~reemote.stages.act` barrier, not a fact:
-  ``apache2 -v`` is a command whose answer depends on the install in the same
-  wave, and a barrier never raises on a non-zero exit -- the result is data. The
-  body therefore checks ``exit_status`` and raises :class:`ValueError`, the
-  error the example's ``main()`` raised and the runner maps.
-* the certificate reads yield **one wave each**, so hosts with different
-  certificate counts park asymmetrically. That is the point of the barrier
-  model, but it makes the wave count host-dependent: see the table above. The
-  design sketch gathers them with a generator expression, which Python forbids
-  -- ``yield`` inside one is a ``SyntaxError`` (and so is ``append(yield ...)``)
-  -- so the body builds the list with an explicit loop.
-* the role's ``mode: 0644`` on a *symlink* is dropped --
-  :func:`~reemote.modules.files.link` owns no mode, and a Linux symlink's own
-  mode is always ``0777`` and meaningless (Ansible cannot set it either).
-* ``apache_ssl_no_log`` and ``apache_enablerepo`` are carried as variables and
-  do nothing here: reemote has no per-request log redaction, and the repo knob
-  belongs to the RHEL branch that is out of scope. Both are documented as inert
-  rather than silently omitted, so an existing inventory still binds.
-* ``force={{ ansible_check_mode }}`` on the vhosts symlink becomes the default
-  ``force=False``: a dry run stops before that wave, so check mode has no
-  analogue to reproduce.
-* the handler is per-host and stateless, so the example's ``by_action``
-  partition and its ``compose`` of several ``service_handler`` deploys both go:
-  one body picks its own verb from ``restart_state`` and yields one request.
-  ``restarted``/``reloaded`` always report changed, faithful to Ansible's
-  service module.
-* the role's implicit variable gates become pydantic validation: the three
-  enums are :data:`~typing.Literal` fields, ``servername`` and both certificate
-  paths are required, and a bad value raises ``ValidationError`` (a
-  ``ValueError``, so the runner still maps it) before any host is contacted.
-"""
+# """The Apache role (migrated from ``geerlingguy.apache``).
+#
+# Installs and configures Apache 2.x on Ubuntu/Debian hosts: the apt cache
+# refresh and the ``apache2`` packages, the ``ports.conf`` listen lines, the
+# ``mods-enabled``/``conf-enabled`` symlinks, the rendered
+# ``sites-available/vhosts.conf`` and its ``sites-enabled`` symlink, the optional
+# default-vhost removal, the service's running/enabled state, and the role's
+# single ``restart apache`` handler. :func:`apache` is the whole task list, and
+# :class:`ApacheVars` is ``defaults/main.yml``, bound from the inventory's
+# ``apache_``-prefixed keys by :func:`~reemote.rolevars.resolve_vars`.
+#
+# Target: hosts in the ``"Ubuntu"`` OS family. The role's RHEL, SLES, Solaris and
+# Amazon Linux branches are out of scope, so its ``include_vars`` OS dispatch
+# collapses to the frozen Debian constants below.
+#
+# The stream carries three waves **plus one per SSL vhost** (design doc section
+# 5.7) -- four with a single certificate:
+#
+# 0. :func:`install` -- the apt cache refresh and the packages -- closed by the
+#    ``apache2 -v`` probe barrier, which only succeeds once the install applied.
+# 1..*n* one ``fact(FileExists, path=certificate_file)`` per SSL vhost. A host
+#    with no SSL vhost parks on nothing here, so hosts park asymmetrically and the
+#    wave count is host-dependent.
+# *n*+1 :func:`configure` -- ports, symlinks, the rendered vhosts file, the
+#    service state -- closed by ``checkpoint("configure done")``.
+# *n*+2 :func:`handler` -- ``Restart``/``Reload apache2 (handler)``, only on the
+#    hosts that checkpoint selected.
+#
+# The three reads the example took *between* its three ``run()`` calls -- the
+# version probe, the certificate ``stat`` loop and the configure report -- are
+# barriers now, so the vhosts template is rendered inside the body from the values
+# those barriers returned. Nothing is frozen in a module-level plan dict, and no
+# name set is unioned across the inventory: the per-host body *is* the plan.
+#
+# :func:`apache` returns :class:`ApacheOutputs` on every path, including the
+# family guard's early return, because a composing role captures it with
+# ``out = yield from scoped("apache", apache(v))(host)`` (design doc sections 9
+# and 10.5).
+#
+# Deviations from the Ansible role, all deliberate:
+#
+# * the host-family guard is the body's opening ``if``, not a ``when=`` on every
+#   request: a host outside the ``"Ubuntu"`` family returns before it yields
+#   anything, so it emits no requests and no log entries at all (the old example
+#   logged each as ``[skipped: when guard ...]``).
+# * the version probe is an :func:`~reemote.stages.act` barrier, not a fact:
+#   ``apache2 -v`` is a command whose answer depends on the install in the same
+#   wave, and a barrier never raises on a non-zero exit -- the result is data. The
+#   body therefore checks ``exit_status`` and raises :class:`ValueError`, the
+#   error the example's ``main()`` raised and the runner maps.
+# * the certificate reads yield **one wave each**, so hosts with different
+#   certificate counts park asymmetrically. That is the point of the barrier
+#   model, but it makes the wave count host-dependent: see the table above. The
+#   design sketch gathers them with a generator expression, which Python forbids
+#   -- ``yield`` inside one is a ``SyntaxError`` (and so is ``append(yield ...)``)
+#   -- so the body builds the list with an explicit loop.
+# * the role's ``mode: 0644`` on a *symlink* is dropped --
+#   :func:`~reemote.modules.files.link` owns no mode, and a Linux symlink's own
+#   mode is always ``0777`` and meaningless (Ansible cannot set it either).
+# * ``apache_ssl_no_log`` and ``apache_enablerepo`` are carried as variables and
+#   do nothing here: reemote has no per-request log redaction, and the repo knob
+#   belongs to the RHEL branch that is out of scope. Both are documented as inert
+#   rather than silently omitted, so an existing inventory still binds.
+# * ``force={{ ansible_check_mode }}`` on the vhosts symlink becomes the default
+#   ``force=False``: a dry run stops before that wave, so check mode has no
+#   analogue to reproduce.
+# * the handler is per-host and stateless, so the example's ``by_action``
+#   partition and its ``compose`` of several ``service_handler`` deploys both go:
+#   one body picks its own verb from ``restart_state`` and yields one request.
+#   ``restarted``/``reloaded`` always report changed, faithful to Ansible's
+#   service module.
+# * the role's implicit variable gates become pydantic validation: the three
+#   enums are :data:`~typing.Literal` fields, ``servername`` and both certificate
+#   paths are required, and a bad value raises ``ValidationError`` (a
+#   ``ValueError``, so the runner still maps it) before any host is contacted.
+# """
 
 import re
 from collections.abc import Callable, Generator

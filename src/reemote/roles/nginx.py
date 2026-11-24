@@ -1,78 +1,78 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""The nginx role (migrated from ``geerlingguy.nginx``).
-
-Installs and configures nginx on Ubuntu/Debian hosts: the ``dirmngr``
-prerequisite, the optional official nginx PPA (with the reinstall-on-PPA-add
-split), the apt cache refresh and the ``nginx`` package, the ``sites-enabled``
-vhost files rendered from the role's ``vhost.j2``, the optional default-vhost
-removal, the legacy ``vhosts.conf`` cleanup, the rendered ``nginx.conf``
-installed behind ``nginx -t`` validation, the service's running/enabled state,
-and the role's ``restart nginx`` / ``reload nginx`` handlers. :func:`nginx` is
-the whole task list, and :class:`NginxVars` is ``defaults/main.yml``, bound from
-the inventory's ``nginx_``-prefixed keys by
-:func:`~reemote.rolevars.resolve_vars`.
-
-Target: hosts in the ``"Ubuntu"`` OS family. The role's RedHat, Suse, Archlinux,
-FreeBSD and OpenBSD branches are out of scope, so its ``include_vars`` OS
-dispatch collapses to the frozen Debian constants below. Both Ubuntu opt-in
-toggles (``nginx_ppa_use``, ``nginx_remove_default_vhost``) ARE implemented:
-unlike a build-from-source branch, every task they gate maps to a covered
-operation.
-
-The stream carries four waves (design doc section 5.7):
-
-0. :func:`setup` -- dirmngr and the optional ``ppa:nginx/<version>`` -- closed
-   by ``checkpoint("setup done")``, which the PPA gate reads (the role's
-   ``register: nginx_ppa_added`` + ``when: nginx_ppa_added is changed``).
-1. :func:`install` -- the conditional nginx removal, the apt cache refresh and
-   the package -- closed by ``fact(Cpus)``, the vCPU count the ``nginx.conf``
-   template's ``worker_processes`` default consumes.
-2. :func:`configure` -- vhosts, the validated ``nginx.conf``, the service state
-   -- closed by ``checkpoint("configure done")``, which BOTH handler channels
-   read: restart and reload draw two disjoint name sets from the one report.
-3. :func:`handler` -- ``Restart nginx (handler)`` then ``Reload nginx
-   (handler)``, in handler-definition order, only on the hosts the checkpoint
-   selected.
-
-Three ``changed_hosts`` reads over two checkpoints (§18.3): the PPA gate reads
-the *setup* report; restart and reload both read the *configure* report. A third
-checkpoint is deliberately absent -- the second one is read twice.
-
-:func:`nginx` returns ``None``: no composing role in the corpus consumes an
-output, so there is no outputs dataclass (§17.2).
-
-Deviations from the Ansible role, all deliberate:
-
-* the host-family guard is the body's opening ``if``, not a ``when=`` on every
-  request: a host outside the ``"Ubuntu"`` family returns before it yields
-  anything, so it emits no requests and no log entries at all.
-* ``file: state=absent`` maps to ``files.file(present=False, force=True)``.
-  reemote's ``File`` fact reads a symlink as "exists and is not a file", so the
-  default ``force=False`` would raise on Ubuntu's symlinked default vhost;
-  ``force=True`` reproduces Ansible's type-agnostic removal (``rm -rf`` on a
-  symlink removes only the link, never its target).
-* the role's ``changed_when: false`` on the apt-cache task has no reemote
-  analogue, but the task notifies nothing, so the log's ``changed`` flag has no
-  downstream effect (the name is in no notifying set).
-* the role's third handler, ``validate nginx configuration``, is never notified
-  by any task -- dead in the role, deliberately absent here, exactly as Ansible
-  never runs it.
-* the reload handler's ``when: nginx_service_state == "started"`` is a static
-  per-host filter: in the per-host body it narrows the notified set before the
-  ``service_handler`` is built, rather than filtering a frozen whole-inventory
-  set between runs.
-* the role's implicit variable gates become pydantic validation: the service
-  state is a :data:`~typing.Literal`, a vhost needs ``server_name`` or
-  ``filename``, an upstream needs ``name`` and a non-empty ``servers`` list, and
-  a bad value raises ``ValidationError`` (a ``ValueError``, so the runner maps
-  it) before any host is contacted.
-* ``nginx_yum_repo_enabled`` and ``nginx_zypper_repo_enabled`` are carried as
-  variables and do nothing here: they belong to the RedHat/Suse branches that
-  are out of scope. Both are documented as inert rather than silently omitted,
-  so an existing inventory still binds.
-"""
+# """The nginx role (migrated from ``geerlingguy.nginx``).
+# 
+# Installs and configures nginx on Ubuntu/Debian hosts: the ``dirmngr``
+# prerequisite, the optional official nginx PPA (with the reinstall-on-PPA-add
+# split), the apt cache refresh and the ``nginx`` package, the ``sites-enabled``
+# vhost files rendered from the role's ``vhost.j2``, the optional default-vhost
+# removal, the legacy ``vhosts.conf`` cleanup, the rendered ``nginx.conf``
+# installed behind ``nginx -t`` validation, the service's running/enabled state,
+# and the role's ``restart nginx`` / ``reload nginx`` handlers. :func:`nginx` is
+# the whole task list, and :class:`NginxVars` is ``defaults/main.yml``, bound from
+# the inventory's ``nginx_``-prefixed keys by
+# :func:`~reemote.rolevars.resolve_vars`.
+# 
+# Target: hosts in the ``"Ubuntu"`` OS family. The role's RedHat, Suse, Archlinux,
+# FreeBSD and OpenBSD branches are out of scope, so its ``include_vars`` OS
+# dispatch collapses to the frozen Debian constants below. Both Ubuntu opt-in
+# toggles (``nginx_ppa_use``, ``nginx_remove_default_vhost``) ARE implemented:
+# unlike a build-from-source branch, every task they gate maps to a covered
+# operation.
+# 
+# The stream carries four waves (design doc section 5.7):
+# 
+# 0. :func:`setup` -- dirmngr and the optional ``ppa:nginx/<version>`` -- closed
+#    by ``checkpoint("setup done")``, which the PPA gate reads (the role's
+#    ``register: nginx_ppa_added`` + ``when: nginx_ppa_added is changed``).
+# 1. :func:`install` -- the conditional nginx removal, the apt cache refresh and
+#    the package -- closed by ``fact(Cpus)``, the vCPU count the ``nginx.conf``
+#    template's ``worker_processes`` default consumes.
+# 2. :func:`configure` -- vhosts, the validated ``nginx.conf``, the service state
+#    -- closed by ``checkpoint("configure done")``, which BOTH handler channels
+#    read: restart and reload draw two disjoint name sets from the one report.
+# 3. :func:`handler` -- ``Restart nginx (handler)`` then ``Reload nginx
+#    (handler)``, in handler-definition order, only on the hosts the checkpoint
+#    selected.
+# 
+# Three ``changed_hosts`` reads over two checkpoints (§18.3): the PPA gate reads
+# the *setup* report; restart and reload both read the *configure* report. A third
+# checkpoint is deliberately absent -- the second one is read twice.
+# 
+# :func:`nginx` returns ``None``: no composing role in the corpus consumes an
+# output, so there is no outputs dataclass (§17.2).
+# 
+# Deviations from the Ansible role, all deliberate:
+# 
+# * the host-family guard is the body's opening ``if``, not a ``when=`` on every
+#   request: a host outside the ``"Ubuntu"`` family returns before it yields
+#   anything, so it emits no requests and no log entries at all.
+# * ``file: state=absent`` maps to ``files.file(present=False, force=True)``.
+#   reemote's ``File`` fact reads a symlink as "exists and is not a file", so the
+#   default ``force=False`` would raise on Ubuntu's symlinked default vhost;
+#   ``force=True`` reproduces Ansible's type-agnostic removal (``rm -rf`` on a
+#   symlink removes only the link, never its target).
+# * the role's ``changed_when: false`` on the apt-cache task has no reemote
+#   analogue, but the task notifies nothing, so the log's ``changed`` flag has no
+#   downstream effect (the name is in no notifying set).
+# * the role's third handler, ``validate nginx configuration``, is never notified
+#   by any task -- dead in the role, deliberately absent here, exactly as Ansible
+#   never runs it.
+# * the reload handler's ``when: nginx_service_state == "started"`` is a static
+#   per-host filter: in the per-host body it narrows the notified set before the
+#   ``service_handler`` is built, rather than filtering a frozen whole-inventory
+#   set between runs.
+# * the role's implicit variable gates become pydantic validation: the service
+#   state is a :data:`~typing.Literal`, a vhost needs ``server_name`` or
+#   ``filename``, an upstream needs ``name`` and a non-empty ``servers`` list, and
+#   a bad value raises ``ValidationError`` (a ``ValueError``, so the runner maps
+#   it) before any host is contacted.
+# * ``nginx_yum_repo_enabled`` and ``nginx_zypper_repo_enabled`` are carried as
+#   variables and do nothing here: they belong to the RedHat/Suse branches that
+#   are out of scope. Both are documented as inert rather than silently omitted,
+#   so an existing inventory still binds.
+# """
 
 from collections.abc import Generator
 from dataclasses import dataclass
