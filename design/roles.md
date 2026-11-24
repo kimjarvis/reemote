@@ -1109,6 +1109,14 @@ Compatibility: an inventory that already carries `apache_listen_port: 8080` bind
 `listen_port` with no migration. Unprefixed keys are ignored by every role and remain
 available as raw `host.extra`.
 
+**Amended at T7.** The typo rule assumes a prefix names a namespace no other role shares,
+and the corpus has one pair that breaks it: `php_` and `php_xdebug_`, a dependency and the
+role that runs it. `php_xdebug_version` carries the `php_` prefix, so the rule above reports
+the child role's variable as the parent role's misspelling and §10.5 cannot resolve either.
+`resolve_vars` therefore takes `nested_prefixes`, and `_bind` skips a key one of them matches
+*before* the field check. Only the parent side passes it; a role with no nested prefix is
+unaffected, and the typo check still fires for every other key.
+
 `overrides` are uniform per role invocation (the call-site level). Per-host variation lives
 in the inventory; that is what the `extra` channel is for.
 
@@ -1456,7 +1464,7 @@ async def main() -> None:
         epel_v=resolve_vars(EpelVars, "epel_", inventory),
         pg_v=resolve_vars(PostgresqlVars, "postgresql_", inventory),
         apache_v=resolve_vars(ApacheVars, "apache_", inventory),
-        php_v=resolve_vars(PhpVars, "php_", inventory),
+        php_v=resolve_vars(PhpVars, "php_", inventory, nested_prefixes=("php_xdebug_",)),
         xdebug_v=resolve_vars(PhpXdebugVars, "php_xdebug_", inventory),
     ))
     print(report.tree())
@@ -2212,6 +2220,11 @@ Watch out for:
   sudo=True)`, and the non-zero exit must be turned into a `CommandError` explicitly.
 - **Both `changed_hosts` reads come from one report** (webserver names and FPM names), so this
   is one checkpoint with two name sets — not two checkpoints.
+- **The two prefixes nest.** `resolve_vars(PhpVars, "php_", inventory)` claims every
+  `php_xdebug_*` key and raises `RoleVarsError` on it, so the dependency role needs
+  `nested_prefixes=("php_xdebug_",)` (§8.2, amended at T7). Found here because this is the only
+  nested prefix pair in the corpus; the unfixed call makes the role unresolvable rather than
+  wrong, so it cannot be met later by accident.
 - php's own handler wave already ran inside the `yield from`. A checkpoint can only read the
   wave it closes, so xdebug's checkpoint cannot see it — which is exactly what stops the
   webserver being restarted twice. Do not try to "help" by merging reports.

@@ -51,13 +51,31 @@ uniformly**: a role factory closes over one `VarsSet` and sees no single host, s
 a value that must vary per host belongs in the inventory's extra channel, not in
 `overrides`.
 
+## Nested prefixes
+
+Two roles whose prefixes nest — `php_` and `php_xdebug_`, a dependency and the role
+that runs it — share one key namespace: `php_xdebug_version` starts with `php_`
+without being a `PhpVars` field. Under the typo rule alone, the parent role would
+report the child role's variable as a spelling mistake. `nested_prefixes` names
+the *more specific* prefixes resolved from the same inventory, and a key matching
+one of them is skipped before the field check, so it neither binds nor raises:
+
+```python
+php_v = resolve_vars(PhpVars, "php_", inventory, nested_prefixes=("php_xdebug_",))
+xdebug_v = resolve_vars(PhpXdebugVars, "php_xdebug_", inventory)
+```
+
+Only the parent side needs the argument — the child's own prefix matches its keys
+directly, and the parent's unrelated `php_` keys stay bound.
+
 ## Errors
 
 - A key that *does* carry the prefix but names no field is a spelling mistake,
   not something to ignore, so binding raises
   [`RoleVarsError`][reemote.rolevars.RoleVarsError] naming the offending key and
   every valid prefixed field name. It subclasses `ValueError`, like the other
-  inventory-validation failures.
+  inventory-validation failures. A `nested_prefixes` match is exempt: that key
+  belongs to a more specific role, not to this one's typo list.
 - A bad *value* — `apache_listen_port: "eighty"` — raises pydantic's
   `ValidationError` naming the field, since the merged mapping is validated into
   the model.

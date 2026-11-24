@@ -261,38 +261,6 @@ SNAPSHOT_ARGS = {
             "timesyncd": True,
         }
     },
-    # The PHP Xdebug role migration: two factories closing over the frozen
-    # per-host resolved vars (the version table, module path and rendered ini
-    # already decided). build_handler takes three required parameters, so the
-    # harness skips it entirely -- no entry needed.
-    (
-        "examples/roles/ansible-role-php-xdebug/ansible-role-php-xdebug.py",
-        "build_setup",
-    ): lambda name: {
-        name: {
-            "workspace": "/root",
-            "module_path": "/usr/lib/php7/modules",
-            "src_dir": "/root/xdebug-3.3.2",
-            "tarball_url": "https://xdebug.org/files/xdebug-3.3.2.tgz",
-        }
-    },
-    (
-        "examples/roles/ansible-role-php-xdebug/ansible-role-php-xdebug.py",
-        "build_install",
-    ): lambda name: {
-        name: {
-            "built_so": "/root/xdebug-3.3.2/modules/xdebug.so",
-            "installed_so": "/usr/lib/php7/modules/xdebug-3.3.2.so",
-            "ini_dests": (
-                "/etc/php/8.3/fpm/conf.d/20-xdebug.ini",
-                "/etc/php/8.3/apache2/conf.d/20-xdebug.ini",
-                "/etc/php/8.3/cli/conf.d/20-xdebug.ini",
-            ),
-            "ini_content": '[XDebug]\nzend_extension="/usr/lib/php7/modules/xdebug-3.3.2.so"\n',
-            "cli_disable": False,
-            "cli_ini": "/etc/php/8.3/cli/conf.d/20-xdebug.ini",
-        }
-    },
     # The Drush role migration: one factory closing over the frozen launcher
     # plan (the stat reads -- is_symlink/dest_exists -- already resolved). The
     # absent-destination shape drains the directory + download requests.

@@ -28,7 +28,8 @@ The template-rendering roles (``apache``, ``datadog``, ``memcached``, ``nginx``,
 ``reemote[templates]`` extra (§17.4). Nothing in this package pulls that module
 in at import time, so ``import reemote.roles`` stays clean without the extra.
 ``php`` renders its four templates as plain f-strings, so it never needs the
-extra even though it templates files.
+extra even though it templates files -- and ``php_xdebug`` inherits that, since
+its one template is pure substitution too.
 
 Public names are added here as each role is migrated (T4-T17): append a
 ``from .<role> import (...)`` block and extend ``__all__`` to match that
@@ -38,6 +39,7 @@ stays in lockstep with the role modules on disk.
 
 from .apache import ApacheOutputs, ApacheVars, apache
 from .php import PhpOutputs, PhpVars, php
+from .php_xdebug import PhpXdebugVars, php_xdebug
 from .repo_epel import EpelVars, repo_epel
 
 __all__: list[str] = [
@@ -46,7 +48,9 @@ __all__: list[str] = [
     "EpelVars",
     "PhpOutputs",
     "PhpVars",
+    "PhpXdebugVars",
     "apache",
     "php",
+    "php_xdebug",
     "repo_epel",
 ]

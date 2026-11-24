@@ -515,6 +515,19 @@ def php_version(v: PhpVars, distribution: dict[str, Any]) -> str:
     return version
 
 
+def daemon_names(v: PhpVars, version: str) -> tuple[str, str]:
+    """The two handler daemons, with the role's ``set_fact`` fallbacks.
+
+    ``php_webserver_daemon`` and ``php_fpm_daemon`` both default to ``null`` in
+    ``defaults/main.yml``, and the role's ``vars/Debian.yml`` / ``set_fact`` chain
+    substitutes ``apache2`` and ``php<version>-fpm``. A composing role reads them
+    through this function rather than repeating the fallbacks: the FPM name is
+    derived from the *resolved* PHP version, which only the dependency knows
+    (design doc section 18.7).
+    """
+    return v.webserver_daemon or "apache2", v.fpm_daemon or f"php{version}-fpm"
+
+
 def resolve_php(v: PhpVars, distribution: dict[str, Any]) -> PhpResolution:
     """Resolve :attr:`PhpVars` and the gathered distribution into one frozen set.
 
@@ -549,6 +562,7 @@ def resolve_php(v: PhpVars, distribution: dict[str, Any]) -> PhpResolution:
     conf_paths = v.conf_paths or default_conf
     ext_paths = v.extension_conf_paths or tuple(f"{path}/conf.d" for path in default_conf)
     fpm_conf_path = v.fpm_conf_path or f"/etc/php/{version}/fpm"
+    webserver_daemon, fpm_daemon = daemon_names(v, version)
     return PhpResolution(
         version=version,
         distribution_name=distribution.get("name") or "",
@@ -557,8 +571,8 @@ def resolve_php(v: PhpVars, distribution: dict[str, Any]) -> PhpResolution:
         ext_paths=tuple(ext_paths),
         apc_filename=v.apc_conf_filename or "20-apcu.ini",
         opcache_filename=v.opcache_conf_filename or "10-opcache.ini",
-        webserver_daemon=v.webserver_daemon or "apache2",
-        fpm_daemon=v.fpm_daemon or f"php{version}-fpm",
+        webserver_daemon=webserver_daemon,
+        fpm_daemon=fpm_daemon,
         fpm_conf_path=fpm_conf_path,
         pool_conf_path=v.fpm_pool_conf_path or f"{fpm_conf_path}/pool.d/www.conf",
         pool_user=v.fpm_pool_user or "www-data",

@@ -1491,7 +1491,10 @@ swap its `nginx -v` probe for your compile step and its configure deploy for the
 links. A whole role migrated on this shape — build-from-source as the
 **default** path, a tarball source via `files.unarchive`, and a versioned
 `files.copy` install of the built extension — is the
-[php-xdebug role migration](examples/roles/ansible-role-php-xdebug.md).
+[`php_xdebug`](roles/php_xdebug.md) library role. It keeps the same ordering
+inside one deploy — an `act(Shell)` barrier for the build, closed before the copy
+wave — which is what the barrier model exists to make unnecessary to sequence by
+hand.
 
 ### What to watch
 

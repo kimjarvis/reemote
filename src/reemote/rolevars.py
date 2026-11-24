@@ -22,6 +22,15 @@ collision. A key that *does* carry the prefix but names no field is a spelling
 mistake, not something to ignore, so ``_bind`` raises ``RoleVarsError`` naming
 the offending key and every valid prefixed field name.
 
+That last rule assumes one role's prefix cannot contain another's, which the
+dependency pair ``php_`` / ``php_xdebug_`` breaks: ``php_xdebug_version`` carries
+the ``php_`` prefix yet names no ``PhpVars`` field, so the strict read of the rule
+would report another role's variable as this role's typo. ``nested_prefixes`` is
+the escape -- it names the *more specific* prefixes the inventory resolves for at
+the same time, and a key one of them matches is left alone. Only nested prefixes
+collide: among the migrated roles' prefixes (``epel_``, ``apache_``, ``php_``,
+``php_xdebug_``, ``nginx_``, ...) exactly one pair nests.
+
 ``overrides`` are uniform for the whole invocation (the call-site level): a role
 factory closes over one ``VarsSet`` and sees no single host, so a value that must
 vary per host belongs in the inventory's ``extra`` channel, not in ``overrides``.
@@ -32,7 +41,7 @@ that reaches an operation must be a ``tuple`` or a scalar, never a ``list`` or a
 ``dict`` (design doc section 8.1).
 """
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any
@@ -84,6 +93,7 @@ def resolve_vars[V: BaseModel](
     inventory: list[dict],
     *,
     overrides: Mapping[str, Any] | None = None,
+    nested_prefixes: Iterable[str] = (),
 ) -> VarsSet[V]:
     """Resolve one ``cls`` model per inventory entry into a ``VarsSet``.
 
@@ -98,29 +108,41 @@ def resolve_vars[V: BaseModel](
     ``overrides`` apply to every host uniformly (see the module docstring);
     per-host variation lives in the inventory. The returned ``values`` mapping is
     immutable.
+
+    ``nested_prefixes`` lists the prefixes of *more specific* roles resolved from
+    the same inventory -- ``resolve_vars(PhpVars, "php_", inventory,
+    nested_prefixes=("php_xdebug_",))`` -- so a key one of them matches is left for
+    that role instead of raising ``RoleVarsError`` here. It is only needed where one
+    role's prefix contains another's; unrelated roles' keys are skipped anyway.
     """
+    nested = tuple(nested_prefixes)
     values: dict[str, V] = {}
     for entry in inventory:
         extra = InventoryEntry.model_validate(entry).model_extra or {}
-        raw = {**_bind(cls, prefix, extra), **(overrides or {})}
+        raw = {**_bind(cls, prefix, extra, nested), **(overrides or {})}
         values[entry["host"]] = cls.model_validate(raw)
     return VarsSet(prefix, MappingProxyType(values))
 
 
 def _bind(
-    cls: type[BaseModel], prefix: str, source: Mapping[str, Any]
+    cls: type[BaseModel],
+    prefix: str,
+    source: Mapping[str, Any],
+    nested: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     """Take only ``cls``'s prefixed keys from ``source`` and strip the prefix.
 
     Keys not starting with ``prefix`` are skipped: they belong to another role, or
-    to the raw ``host.extra`` channel. A prefixed key whose bare name is not a
-    field of ``cls`` raises ``RoleVarsError`` rather than being dropped, so a
+    to the raw ``host.extra`` channel. So is every key starting with one of
+    ``nested`` -- a more specific prefix another role owns, which must not be
+    claimed here as either a field or a typo. A prefixed key whose bare name is not
+    a field of ``cls`` raises ``RoleVarsError`` rather than being dropped, so a
     misspelled variable is reported instead of silently defaulting.
     """
     known = set(cls.model_fields)
     bound: dict[str, Any] = {}
     for key, value in source.items():
-        if not key.startswith(prefix):
+        if not key.startswith(prefix) or key.startswith(nested):
             continue
         bare = key[len(prefix):]
         if bare not in known:

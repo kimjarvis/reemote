@@ -159,6 +159,7 @@ nav:
           - repo_epel: roles/repo_epel.md
           - apache: roles/apache.md
           - php: roles/php.md
+          - php_xdebug: roles/php_xdebug.md
 #  - Migrating: migrating.md
 #  - Examples:
 #      - Overview: examples.md
@@ -201,7 +202,6 @@ nav:
 #          - ansible-role-nfs: examples/roles/ansible-role-nfs.md
 #          - ansible-role-nginx: examples/roles/ansible-role-nginx.md
 #          - ansible-role-ntp: examples/roles/ansible-role-ntp.md
-#          - ansible-role-php-xdebug: examples/roles/ansible-role-php-xdebug.md
 #          - ansible-role-drush: examples/roles/ansible-role-drush.md
 #          - ansible-role-composer: examples/roles/ansible-role-composer.md
 #          - ansible-role-postgresql: examples/roles/ansible-role-postgresql.md

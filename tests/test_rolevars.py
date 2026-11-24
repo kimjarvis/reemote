@@ -6,8 +6,9 @@
 Covers ``reemote.rolevars``: ``resolve_vars`` (the precedence layering --
 model defaults < the entry's prefixed ``extra`` keys < the call-site
 ``overrides``), ``_bind``'s prefix stripping and its ``RoleVarsError`` on a
-prefixed key that names no field, the frozen ``VarsSet`` and its two read
-forms (``for_host`` by ``Host``, ``__getitem__`` by name), and the immutability
+prefixed key that names no field (and ``nested_prefixes``, which leaves a more
+specific role's key alone), the frozen ``VarsSet`` and its two read forms
+(``for_host`` by ``Host``, ``__getitem__`` by name), and the immutability
 that keeps a resolved model hashable so it can reach ``op()``.
 """
 
@@ -40,6 +41,24 @@ class NginxVars(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     worker_processes: int = 1
+
+
+class PhpVars(BaseModel):
+    """A dependency role whose prefix *nests* the dependent role's below."""
+
+    model_config = ConfigDict(frozen=True)
+
+    webserver_daemon: str | None = None
+    enable_php_fpm: bool = False
+
+
+class PhpXdebugVars(BaseModel):
+    """A dependent role bound by ``php_xdebug_`` -- a longer ``php_`` prefix."""
+
+    model_config = ConfigDict(frozen=True)
+
+    version: str = "3.3.2"
+    cli_disable: bool = False
 
 
 def entry(host: str = "web1", **extra) -> dict:
@@ -144,6 +163,55 @@ def test_a_bad_value_raises_validation_error_not_role_vars_error():
     # A bad *key* is RoleVarsError; a bad *value* is pydantic's ValidationError.
     with pytest.raises(ValidationError):
         resolve_vars(ApacheVars, "apache_", [entry(apache_listen_port="not-an-int")])
+
+
+# --- nested prefixes: a dependency pair shares one key namespace ---------------
+
+
+def test_a_nested_prefix_raises_without_the_escape():
+    # ``php_xdebug_version`` carries ``php_`` but is the dependent role's variable,
+    # so the parent role reports it as a typo unless told the prefix nests.
+    inventory = [entry(php_enable_php_fpm=True, php_xdebug_version="3.4.0")]
+
+    with pytest.raises(RoleVarsError, match="php_xdebug_version"):
+        resolve_vars(PhpVars, "php_", inventory)
+
+
+def test_nested_prefixes_leave_the_more_specific_keys_alone():
+    inventory = [entry(php_enable_php_fpm=True, php_xdebug_version="3.4.0")]
+
+    php = resolve_vars(PhpVars, "php_", inventory, nested_prefixes=("php_xdebug_",))
+    xdebug = resolve_vars(PhpXdebugVars, "php_xdebug_", inventory)
+
+    # Both roles bind their own keys from the same entry, and each strips its own
+    # prefix: the escape skips the nested key before the field check, so it neither
+    # binds nor raises here.
+    assert php["web1"].enable_php_fpm is True
+    assert php["web1"].webserver_daemon is None
+    assert xdebug["web1"].version == "3.4.0"
+
+
+def test_nested_prefixes_does_not_disable_the_typo_check():
+    # A key that carries the prefix but no nested one is still a spelling mistake.
+    with pytest.raises(RoleVarsError, match="php_webserver_damon"):
+        resolve_vars(
+            PhpVars,
+            "php_",
+            [entry(php_webserver_damon="nginx")],
+            nested_prefixes=("php_xdebug_",),
+        )
+
+
+def test_nested_prefixes_accepts_any_iterable():
+    # Normalised to a tuple, so a list or set is as good as a tuple -- and an empty
+    # one changes nothing (str.startswith(()) is False for every key).
+    inventory = [entry(php_xdebug_version="3.4.0")]
+
+    vs = resolve_vars(PhpVars, "php_", inventory, nested_prefixes=["php_xdebug_"])
+    assert vs["web1"] == PhpVars()
+    assert resolve_vars(PhpVars, "php_", [entry()]) == resolve_vars(
+        PhpVars, "php_", [entry()], nested_prefixes=()
+    )
 
 
 # --- hashability: a collection field coerces to a tuple -----------------------
