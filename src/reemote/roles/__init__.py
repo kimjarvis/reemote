@@ -34,4 +34,9 @@ module's own ``__all__``. ``tests/roles/test_exports.py`` asserts ``__all__``
 stays in lockstep with the role modules on disk.
 """
 
-__all__: list[str] = []
+from .repo_epel import EpelVars, repo_epel
+
+__all__: list[str] = [
+    "EpelVars",
+    "repo_epel",
+]
