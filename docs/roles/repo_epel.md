@@ -88,6 +88,9 @@ key import can be gated: 7 → `352c64e5`, 8 → `2f86d6a1`, 9 → `3228467c`,
 ## 4. API
 
 ::: reemote.roles.repo_epel
+    options:
+      show_root_heading: false
+      show_root_toc_entry: false
 
 ## 5. Run it
 

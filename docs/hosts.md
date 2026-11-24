@@ -114,7 +114,7 @@ cannot answer, so reemote does not support keyboard-interactive auth at all.
 The rejection also covers the `asyncssh_connect_kwargs` passthrough — because
 that mapping is merged last and could otherwise override the curated options, a
 forbidden key cannot be smuggled through it either. The forbidden set is defined
-by `_FORBIDDEN_OPTIONS` in [`reemote.hosts`][reemote.hosts] and is checked by
+by `_FORBIDDEN_OPTIONS` in `reemote.hosts` and is checked by
 `_connect_options` before any connection is attempted.
 
 ## Connectors
@@ -301,6 +301,8 @@ asyncssh type reaches the public API.
 
 ::: reemote.hosts
     options:
+      show_root_heading: false
+      show_root_toc_entry: false
       members:
         - CommandError
         - CommandNotFoundError

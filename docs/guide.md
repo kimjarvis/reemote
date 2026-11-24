@@ -493,7 +493,7 @@ report, hosts = await run_waves(inventory, apache(v))
 print(report.tree())                                                      # format_waves(report)
 ```
 
-Roles compose with `yield from`, optionally wrapped in [`scoped`][reemote.stages.scoped] to give each role its own report path in the tree. [`compose`][reemote.core.compose] and [`sub_deploy`][reemote.core.sub_deploy] sequence request streams only and reject a barrier. The barriers and their constructors are documented in [Stages](stages.md), variable resolution in [Role variables](rolevars.md), and the loop in [`run_waves`][reemote.drivers.run_waves].
+Roles compose with `yield from`, optionally wrapped in [`scoped`](stages.md) to give each role its own report path in the tree. [`compose`][reemote.core.compose] and [`sub_deploy`][reemote.core.sub_deploy] sequence request streams only and reject a barrier. The barriers and their constructors are documented in [Stages](stages.md), variable resolution in [Role variables](rolevars.md), and the loop in [`run_waves`][reemote.drivers.run_waves].
 
 !!! warning "A `dry` preview is one wave deep"
 
@@ -598,7 +598,7 @@ async def main() -> None:
 
 `systemd.service(restarted=True)` restarts a unit that is already running; the operation's default `running=True` starts a stopped one, and `reloaded=True` reloads a running one — so `restart_handler`, `reload_handler` and `service_handler(action="running")` cover the `state: restarted`/`reloaded`/`started` idioms. Each also takes a `name` template, a `sudo` flag (default `True`) and a `when` guard, all forwarded to every request. For a handler that is not a systemd service action — a script, a custom command — build the same shape yourself: a factory closing over `changed_hosts(...)`. See the [handlers reference](handlers.md) plus the runnable [handler example](examples/demonstrations/composition.md#restarting-a-service-only-when-a-notifying-operation-changed).
 
-Under a [`run_waves`][reemote.drivers.run_waves] role the split is not needed at all: a [`checkpoint`][reemote.stages.checkpoint] barrier closes the current wave and sends back its [`ApplyReport`][reemote.drivers.ApplyReport] sliced to the role's scope, so the body reads [`changed_hosts`][reemote.handlers.changed_hosts] *in stream* and branches a follow-up [`systemd.service`][reemote.modules.systemd.systemd.service] request on it in the same pass. The two-deploy split above is therefore the **barrier-free** idiom — the way to notify inside a plain [`run`][reemote.drivers.run] deploy, where a body cannot observe its own outcomes. Both feed the same [`changed_hosts`][reemote.handlers.changed_hosts] and [`service_handler`][reemote.handlers.service_handler] helpers; only the report's source differs (a snapshot taken between two runs, or a checkpoint's slice). See [Stages](stages.md).
+Under a [`run_waves`][reemote.drivers.run_waves] role the split is not needed at all: a [`checkpoint`](stages.md) barrier closes the current wave and sends back its [`ApplyReport`][reemote.drivers.ApplyReport] sliced to the role's scope, so the body reads [`changed_hosts`][reemote.handlers.changed_hosts] *in stream* and branches a follow-up [`systemd.service`][reemote.modules.systemd.systemd.service] request on it in the same pass. The two-deploy split above is therefore the **barrier-free** idiom — the way to notify inside a plain [`run`][reemote.drivers.run] deploy, where a body cannot observe its own outcomes. Both feed the same [`changed_hosts`][reemote.handlers.changed_hosts] and [`service_handler`][reemote.handlers.service_handler] helpers; only the report's source differs (a snapshot taken between two runs, or a checkpoint's slice). See [Stages](stages.md).
 
 ## Facts
 
@@ -736,7 +736,7 @@ Three actions ship with the library:
 
 Actions are the pragmatic edge of the model. Everything inside a deploy is pure, planned and idempotent; an action is none of those things, which is exactly why it lives outside the deploy and why the runner refuses to let one slip into a generator.
 
-Under a [`run_waves`][reemote.drivers.run_waves] role, though, an action has an **in-stream** form: `yield act(Shell, command=...)` parks the generator and the driver runs the action between waves, sending the [`Result`][reemote.actions.Result] back. That is not a direct `gather_action` call — the guard still raises on `gather_action` written inside any deploy body, the wave path included — it is the sanctioned way for a role to run a bespoke command and branch on its outcome. See [Stages](stages.md#the-four-barriers).
+Under a [`run_waves`][reemote.drivers.run_waves] role, though, an action has an **in-stream** form: `yield act(Shell, command=...)` parks the generator and the driver runs the action between waves, sending the [`Result`][reemote.actions.Result] back. That is not a direct `gather_action` call — the guard still raises on `gather_action` written inside any deploy body, the wave path included — it is the sanctioned way for a role to run a bespoke command and branch on its outcome. See [Stages](stages.md).
 
 ## Where to go next
 

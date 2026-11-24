@@ -15,7 +15,7 @@ effective identity — the plan `name` is excluded and the first occurrence
 wins).
 
 Every [`OperationRequest`][reemote.core.OperationRequest] also carries a
-`scope` — a report path set by [`scoped`][reemote.stages.scoped] on the wave
+`scope` — a report path set by [`scoped`](stages.md) on the wave
 path — which is report-only and excluded from the effective identity above.
 These two helpers sequence requests **only**: they belong to the barrier-free
 two-phase [`run`][reemote.drivers.run] path. A deploy that reads state back into
@@ -94,6 +94,8 @@ see [Drivers](drivers.md#phase-awareness) and
 
 ::: reemote.core
     options:
+      show_root_heading: false
+      show_root_toc_entry: false
       members:
         - OperationRequest
         - OperationError

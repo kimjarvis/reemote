@@ -200,7 +200,7 @@ recorded something. A step record holds the
 [`LogEntry`][reemote.drivers.LogEntry] it produced (`None` in dry mode); a
 barrier record holds the barrier and its `outcome`.
 `WaveReport.apply_report(wave, scope)` slices one wave's applied entries to a
-scope prefix — the value a [`checkpoint`][reemote.stages.checkpoint] sends back,
+scope prefix — the value a [`checkpoint`](stages.md) sends back,
 so [`changed_hosts`][reemote.handlers.changed_hosts] reads only the entries that
 role emitted. `WaveReport.merged()` folds every applied entry back into a plain
 [`ApplyReport`][reemote.drivers.ApplyReport] — the analogue of `run`'s report —
@@ -216,6 +216,8 @@ several parked hosts merges into one aggregate naming every affected host.
 
 ::: reemote.drivers
     options:
+      show_root_heading: false
+      show_root_toc_entry: false
       members:
         - run
         - run_prepare

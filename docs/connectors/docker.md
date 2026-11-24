@@ -141,6 +141,8 @@ gathering.
 
 ::: reemote.connectors.docker
     options:
+      show_root_heading: false
+      show_root_toc_entry: false
       members:
         - DockerHost
         - validate_docker_connection

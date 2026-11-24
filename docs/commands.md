@@ -33,6 +33,8 @@ which polls a fact class until a module-level predicate holds).
 
 ::: reemote.commands
     options:
+      show_root_heading: false
+      show_root_toc_entry: false
       members:
         - Command
         - StringCommand

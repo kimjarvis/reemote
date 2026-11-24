@@ -1,4 +1,4 @@
-# Stages
+# Barriers
 
 <!---
 
@@ -107,23 +107,22 @@ outcome may depend on requests that were planned but never applied. See
 [Roles are resumable deploys](guide.md#roles-are-resumable-deploys) for the
 narrative.
 
-## Reference
-
 --->
 
 ::: reemote.stages
     options:
+      # Skip the ``reemote.stages`` module root heading; the four barrier
+      # classes render directly under the page title.
+      show_root_heading: false
+      show_root_toc_entry: false
       members:
-        - Barrier
-        - StageItem
-        - Deploy
         - FactRequest
         - ActionRequest
         - CheckpointRequest
         - ControlRequest
-        - fact
-        - act
-        - checkpoint
-        - control
-        - scoped
-        - RoleRecursionError
+      # Render each barrier's signature and docstring only; the frozen dataclass
+      # fields (fact_cls, action_cls, func, scope, name, args, kwargs) are already
+      # described in the class signature and are not part of the documented API.
+      filters:
+        - "!^_"
+        - "!^(fact_cls|action_cls|func|scope|name|args|kwargs)$"

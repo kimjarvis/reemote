@@ -69,6 +69,10 @@ await run(inventory, restart)                               # act on changed hos
 
 ::: reemote.handlers
     options:
+      # Skip the ``reemote.handlers`` module root heading; the helper
+      # functions render directly under the page title.
+      show_root_heading: false
+      show_root_toc_entry: false
       members:
         - changed_hosts
         - service_handler

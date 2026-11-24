@@ -152,6 +152,9 @@ renders no `DocumentRoot ""` and no `<Directory>` block. `allow_override` and
 ## 4. API
 
 ::: reemote.roles.apache
+    options:
+      show_root_heading: false
+      show_root_toc_entry: false
 
 ## 5. Run it
 
