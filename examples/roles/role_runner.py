@@ -7,16 +7,20 @@ Every thin runner under ``examples/roles/`` is a ~10-line script that imports
 one role and hands its factory, vars model and variable prefix to ``role_main``
 here::
 
-    # examples/roles/apache.py -- the whole file
+    # examples/roles/php.py -- a thin runner
     import asyncio
     from pathlib import Path
 
-    from reemote.roles import ApacheVars, apache
+    from reemote.roles import PhpVars, php
 
     from role_runner import role_main
 
     if __name__ == "__main__":
-        asyncio.run(role_main(apache, ApacheVars, "apache_", Path("inventory.json")))
+        asyncio.run(role_main(php, PhpVars, "php_", Path("inventory.json")))
+
+A runner may also pass call-site ``overrides`` -- role variables keyed by the
+model's UNPREFIXED field names that win over the inventory's prefixed keys for
+every host -- as ``examples/roles/apache.py`` does.
 
 This module holds what the fourteen example scripts used to duplicate: load and
 validate the inventory, resolve the role's variables, build the deploy (awaiting
@@ -40,7 +44,7 @@ import argparse
 import asyncio
 import json
 import sys
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -98,6 +102,7 @@ async def role_main(
     vars_cls: type[BaseModel],
     prefix: str,
     inventory_path: Path = Path("inventory.json"),
+    overrides: Mapping[str, Any] | None = None,
 ) -> None:
     """Load the inventory, resolve the role's variables, and run one wave pass.
 
@@ -108,12 +113,19 @@ async def role_main(
     inventory-wide control-side IO runs a single time (§16.3). ``run_waves``
     owns the hosts and closes them itself (§17.2). Any typed role failure is
     printed as a one-line ``ERROR:`` and exits non-zero.
+
+    ``overrides`` are call-site role variables -- keyed by the model's
+    UNPREFIXED field names, unlike the inventory's ``prefix``-bound keys --
+    applied uniformly to every host and taking precedence over both the model
+    defaults and the inventory (see :func:`~reemote.rolevars.resolve_vars`).
     """
     args = _parse_args(inventory_path)
     try:
         inventory = json.loads(args.inventory.read_text(encoding="utf-8"))
         validate_inventory(inventory)
-        vars_set: VarsSet[Any] = resolve_vars(vars_cls, prefix, inventory)
+        vars_set: VarsSet[Any] = resolve_vars(
+            vars_cls, prefix, inventory, overrides=overrides
+        )
         built = factory(vars_set)
         deploy: Deploy = await built if asyncio.iscoroutinefunction(factory) else built
         report, _hosts = await run_waves(inventory, deploy, dry=args.dry)

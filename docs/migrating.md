@@ -662,9 +662,9 @@ deploy for a `files.install` of your own rendered text.
   yields `500`, not `0` — which a stringify-first renderer gets wrong. And a
   variable that both gates a task (`when: x | bool`) and renders verbatim must
   keep its raw value for the render: derive a separate bool for the gate, or
-  you render `True` where Ansible renders `1`. The PHP migration
-  (`examples/roles/ansible-role-php/ansible-role-php.py`) renders every template
-  in pure Python and was verified byte-identical to Jinja2 under these defaults.
+  you render `True` where Ansible renders `1`. The PHP role renders every
+  template in pure Python (`src/reemote/roles/php.py`) and was verified
+  byte-identical to Jinja2 under these defaults.
 
 ## Migrating a validate hook
 

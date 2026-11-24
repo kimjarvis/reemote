@@ -159,12 +159,20 @@ renders no `DocumentRoot ""` and no `<Directory>` block. `allow_override` and
 ## 5. Run it
 
 The role is library code; `examples/roles/apache.py` is the runnable artifact. It
-hands the factory, the model and the prefix to the shared runner:
+hands the factory, the model and the prefix to the shared runner, plus a mapping
+of call-site `overrides` that shows how to pass common role variables:
 
 ```python
 from reemote.roles import ApacheVars, apache
 
-asyncio.run(role_main(apache, ApacheVars, "apache_", Path("inventory.json")))
+APACHE_OVERRIDES = {
+    "listen_port": 8080,
+    "vhosts": ({"servername": "example.com", "documentroot": "/var/www/vhosts/example_com"},),
+}
+
+asyncio.run(
+    role_main(apache, ApacheVars, "apache_", Path("inventory.json"), overrides=APACHE_OVERRIDES)
+)
 ```
 
 From the repository root:
@@ -175,10 +183,14 @@ uv run python examples/roles/apache.py --inventory other.json --dry
 ```
 
 The `ubuntu` entry of the shipped `inventory.json` carries no `apache_` keys, so
-the role's defaults apply — including the default `apache_vhosts`, which points at
-`/var/www/html`. `--dry` is a one-wave preview: it plans the install requests,
-parks on the `apache -v` barrier and stops (`barrier: apache -v → unknown until
-run`), so nothing is applied. A converged rerun is the real preview.
+the runner's call-site `overrides` decide the listen port and the vhosts: Apache
+listens on `8080` and serves one `example.com` vhost out of
+`/var/www/vhosts/example_com`. Overrides use the model's **unprefixed** field
+names — the `apache_` prefix only binds inventory keys — and win over both the
+defaults and any `apache_`-prefixed inventory key (precedence: model defaults <
+inventory extra < overrides). `--dry` is a one-wave preview: it plans the install
+requests, parks on the `apache -v` barrier and stops (`barrier: apache -v →
+unknown until run`), so nothing is applied. A converged rerun is the real preview.
 
 The runner prints the wave tree and maps the role's failure modes (bad inventory,
 `ValueError` from a rejected variable, a failed probe or an unsupported version,
@@ -191,10 +203,13 @@ symlink is where it belongs, the rendered vhosts file is byte-identical, the uni
 running and enabled. That is the migration's idempotence claim, and the offline
 suite asserts it.
 
-> **Shared demo host.** The `ubuntu` demo host also runs the nginx example, and the
-> two roles fight for ports 80/443: this role leaves `apache2` enabled and active.
-> See [the nginx page](../examples/roles/ansible-role-nginx.md) for the stop/disable
-> command to run afterwards.
+> **Shared demo host.** The `ubuntu` demo host also runs the nginx example. This
+> runner's `overrides` move Apache to port `8080`, so it no longer collides with
+> nginx's `80`/`443`; an inventory that restores the role's default
+> `apache_listen_port: 80` recreates the conflict, because this role leaves
+> `apache2` enabled and active. See [the nginx
+> page](../examples/roles/ansible-role-nginx.md) for the stop/disable command to
+> run afterwards.
 
 ## 6. What it does
 

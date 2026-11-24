@@ -261,50 +261,6 @@ SNAPSHOT_ARGS = {
             "timesyncd": True,
         }
     },
-    # The PHP role migration: two factories. build_install closes over the
-    # frozen package plan (the version table already resolved); build_configure
-    # closes over the frozen configure plan main() builds between its runs --
-    # every template rendered to a str, the stray sweeps already filtered, the
-    # pool-dir existence and the FPM service state already decided.
-    (
-        "examples/roles/ansible-role-php/ansible-role-php.py",
-        "build_install",
-    ): lambda name: {
-        name: {
-            "packages": ("php8.3-cli", "php8.3-fpm"),
-            "present": True,
-            "latest": False,
-            "no_recommends": False,
-        }
-    },
-    (
-        "examples/roles/ansible-role-php/ansible-role-php.py",
-        "build_configure",
-    ): lambda name: {
-        name: {
-            "directories": ("/etc/php/8.3/cli", "/etc/php/8.3/cli/conf.d"),
-            "php_ini": (("/etc/php/8.3/cli/php.ini", "[PHP]\nmemory_limit = 256M\n"),),
-            "stray_apcu": (),
-            "stray_opcache": (),
-            "apc_installs": (("/etc/php/8.3/cli/conf.d/20-apcu.ini", "extension=apcu.so\n"),),
-            "apc_removals": (),
-            "opcache_installs": (
-                ("/etc/php/8.3/cli/conf.d/10-opcache.ini", "zend_extension=opcache.so\n"),
-            ),
-            "opcache_removals": (),
-            "pool_dir": "/etc/php/8.3/fpm/pool.d",
-            "pool_user": "www-data",
-            "pool_group": "www-data",
-            "pools": (("/etc/php/8.3/fpm/pool.d/www.conf", "[www]\nlisten = 127.0.0.1:9000\n"),),
-            "fpm_service": {
-                "service": "php8.3-fpm",
-                "running": True,
-                "restarted": False,
-                "reloaded": False,
-                "enabled": True,
-            },
-        }
-    },
     # The PHP Xdebug role migration: two factories closing over the frozen
     # per-host resolved vars (the version table, module path and rendered ini
     # already decided). build_handler takes three required parameters, so the
