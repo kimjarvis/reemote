@@ -57,9 +57,10 @@ plugins.
   HTTPS to `ppa.launchpad.net`).
 
 **Shared demo host: stop apache2 first (ports 80/443).** The shared
-`ubuntu` demo host (`192.168.0.181`) is also the apache role example's
-target (`examples/roles/ansible-role-apache/`), and that example leaves
-`apache2` enabled and active, holding ports 80 and 443. nginx cannot bind
+`ubuntu` demo host (`192.168.0.181`) is also the apache role's target
+([`examples/roles/apache.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/apache.py)),
+and that role leaves `apache2` enabled and active, holding ports 80 and
+443. nginx cannot bind
 while apache2 holds them: the rendered config still validates (`nginx -t`
 passes), but deploy 3's final service task fails with
 `ERROR: command failed on ubuntu (exit 1): sudo systemctl start nginx.service`
@@ -72,7 +73,7 @@ ssh supervisor@192.168.0.181 'sudo systemctl stop apache2 && sudo systemctl disa
 
 This is host state, not a program defect — the example correctly surfaces
 the failed start as a typed `CommandError`. To check who owns the ports:
-`sudo ss -tlnp | grep -E ':80\b|:443\b'`. Re-running the apache example
+`sudo ss -tlnp | grep -E ':80\b|:443\b'`. Re-running the apache role
 later re-enables apache2 and recreates the conflict: the two role
 examples cannot both keep their service running on the same host.
 

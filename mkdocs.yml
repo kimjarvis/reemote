@@ -157,6 +157,7 @@ nav:
   # monoliths, one row per role commit.
   - Roles:
       - repo_epel: roles/repo_epel.md
+      - apache: roles/apache.md
   - Migrating: migrating.md
   - Examples:
 #      - Overview: examples.md
@@ -193,7 +194,6 @@ nav:
           - Privilege: examples/demonstrations/privilege.md
       - Roles:
           - ansible-datadog: examples/roles/ansible-datadog.md
-          - ansible-role-apache: examples/roles/ansible-role-apache.md
           - ansible-role-docker: examples/roles/ansible-role-docker.md
           - ansible-role-java: examples/roles/ansible-role-java.md
           - ansible-role-memcached: examples/roles/ansible-role-memcached.md

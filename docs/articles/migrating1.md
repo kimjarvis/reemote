@@ -117,5 +117,5 @@ The survey of prior work found no Python library meeting the five criteria of Se
 13. [pyinfra: files Operations](https://docs.pyinfra.com/en/3.x/operations/files.html) — controller-side paths in `files.put`, `files.template`, `files.get`, and `files.sync`.
 14. [asyncssh](https://asyncssh.readthedocs.io/) — asynchronous SSH for Python.
 15. [Reemote](https://reemote.org/) — documentation; source at [github.com/kimjarvis/reemote](https://github.com/kimjarvis/reemote); `pip install reemote` (EPL-2.0).
-16. [geerlingguy/ansible-role-apache](https://github.com/geerlingguy/ansible-role-apache) — the Apache role; its converted form lives at [examples/roles/ansible-role-apache](https://github.com/kimjarvis/reemote/tree/main/examples/roles).
+16. [geerlingguy/ansible-role-apache](https://github.com/geerlingguy/ansible-role-apache) — the Apache role; its converted form lives at [`reemote.roles.apache`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/apache.py).
 17. [DataDog/ansible-datadog](https://github.com/DataDog/ansible-datadog) — the Datadog agent role; its converted form lives at [examples/roles/ansible-datadog](https://github.com/kimjarvis/reemote/tree/main/examples/roles).

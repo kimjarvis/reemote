@@ -27,12 +27,50 @@ would be a rewrite dressed up as a relocation, so this module deliberately
 exposes the third-party modules themselves rather than a render helper, and
 stays out of every role body's control flow.
 
-This module is imported lazily by the roles that need templates, never by
-``reemote/roles/__init__.py``, so importing the package without the extra does
-not raise -- only importing a template role does.
+The one exception is :func:`jinja2_environment`, which is a settings object
+rather than a helper: the whitespace and ``StrictUndefined`` choices every
+Ansible-rendered template reproduced have to be identical across the roles that
+render one, so the construction lives here once (§18.2, §18.3). A role keeps its
+own template text, its own context and its own render call.
+
+Roles import this module *inside* the render function that needs it -- never
+``reemote/roles/__init__.py``, which re-exports the roles eagerly -- so
+``import reemote.roles`` and every non-template role stay clean without the
+extra. The :class:`ImportError` arrives when a template actually renders, which
+is the moment the consumer needs :command:`pip install "reemote[templates]"`.
 """
+
+from typing import Any
 
 import jinja2
 import yaml
 
-__all__ = ["jinja2", "yaml"]
+
+def jinja2_environment(**overrides: Any) -> jinja2.Environment:
+    """The ``Environment`` an Ansible-rendered template needs.
+
+    Ansible's whitespace defaults -- ``trim_blocks=True`` (the newline after a
+    ``{% %}`` block tag is dropped), ``lstrip_blocks=False``,
+    ``keep_trailing_newline=True`` -- plus ``StrictUndefined``, so a variable the
+    template reads but the role never set fails loudly instead of rendering
+    empty. Keyword arguments in ``overrides`` replace these, for a role whose
+    bundled template was written against different settings.
+
+    Args:
+        **overrides: Keyword arguments that override the defaults above.
+
+    Returns:
+        jinja2.Environment: A bare environment; callers use ``from_string`` on
+            template text they own, never a loader over a filesystem directory.
+    """
+    settings: dict[str, Any] = {
+        "trim_blocks": True,
+        "lstrip_blocks": False,
+        "keep_trailing_newline": True,
+        "undefined": jinja2.StrictUndefined,
+    }
+    settings.update(overrides)
+    return jinja2.Environment(**settings)
+
+
+__all__ = ["jinja2", "jinja2_environment", "yaml"]

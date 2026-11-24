@@ -148,36 +148,6 @@ SNAPSHOT_ARGS = {
             "/etc/datadog-agent/conf.d/legacy.d/conf.yaml.example",
         ]
     },
-    # The Apache role migration: one factory closing over the frozen
-    # configure plan main() builds between its runs (version table selected,
-    # ports lineinfile items turned into stable transforms, vhosts template
-    # rendered to a str). The transform is a plain callable -- hashable and
-    # identity-stable for the one drain, which is all the request needs.
-    (
-        "examples/roles/ansible-role-apache/ansible-role-apache.py",
-        "build_configure",
-    ): lambda name: {
-        name: {
-            "server_root": "/etc/apache2",
-            "conf_path": "/etc/apache2",
-            "ports": (
-                (r"^Listen ", "Listen 80", lambda current: "Listen 80\n"),
-            ),
-            "mods_enabled": ("rewrite", "ssl"),
-            "mods_disabled": (),
-            "conf_enabled": (),
-            "conf_disabled": (),
-            "create_vhosts": True,
-            "vhosts_filename": "vhosts.conf",
-            "vhosts_content": "DirectoryIndex index.php index.html\n",
-            "remove_default_vhost": False,
-            "default_vhost_filename": "000-default.conf",
-            "service": "apache2",
-            "state": "started",
-            "enabled": True,
-            "restart_state": "restarted",
-        }
-    },
     # The Docker role migration: one factory closing over the release
     # codename main() gathers from LinuxDistribution for the repo's Suites.
     (
