@@ -158,11 +158,16 @@ renders no `DocumentRoot ""` and no `<Directory>` block. `allow_override` and
 
 ## 5. Run it
 
-The role is library code; `examples/roles/apache.py` is the runnable artifact. It
-hands the factory, the model and the prefix to the shared runner, plus a mapping
-of call-site `overrides` that shows how to pass common role variables:
+The role is library code; `examples/roles/apache.py` is the runnable artifact — a
+standalone program with its own `main()`, no shared runner. It loads and validates
+`inventory.json` from the current working directory, resolves the role's variables
+(the defaults overlaid with the entry's `apache_`-prefixed keys, then the call-site
+`overrides`), builds the deploy from the `apache` factory and drives it with
+`run_waves` — a `dry=True` one-wave preview, then the real apply — printing the
+wave tree each time:
 
 ```python
+from reemote import resolve_vars, run_waves, validate_inventory
 from reemote.roles import ApacheVars, apache
 
 APACHE_OVERRIDES = {
@@ -170,41 +175,47 @@ APACHE_OVERRIDES = {
     "vhosts": ({"servername": "example.com", "documentroot": "/var/www/vhosts/example_com"},),
 }
 
-asyncio.run(
-    role_main(apache, ApacheVars, "apache_", Path("inventory.json"), overrides=APACHE_OVERRIDES)
-)
+async def main() -> None:
+    inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+    validate_inventory(inventory)
+    vars_set = resolve_vars(ApacheVars, "apache_", inventory, overrides=APACHE_OVERRIDES)
+    deploy = apache(vars_set)
+    report, _hosts = await run_waves(inventory, deploy, dry=True)   # one-wave preview
+    print(report.tree())
+    report, _hosts = await run_waves(inventory, deploy)             # the real apply
+    print(report.tree())
 ```
 
 From the repository root:
 
 ```bash
 uv run python examples/roles/apache.py
-uv run python examples/roles/apache.py --inventory other.json --dry
 ```
 
 The `ubuntu` entry of the shipped `inventory.json` carries no `apache_` keys, so
-the runner's call-site `overrides` decide the listen port and the vhosts: Apache
+the program's call-site `overrides` decide the listen port and the vhosts: Apache
 listens on `8080` and serves one `example.com` vhost out of
 `/var/www/vhosts/example_com`. Overrides use the model's **unprefixed** field
 names — the `apache_` prefix only binds inventory keys — and win over both the
 defaults and any `apache_`-prefixed inventory key (precedence: model defaults <
-inventory extra < overrides). `--dry` is a one-wave preview: it plans the install
-requests, parks on the `apache -v` barrier and stops (`barrier: apache -v →
-unknown until run`), so nothing is applied. A converged rerun is the real preview.
+inventory extra < overrides). The `dry=True` pass is a one-wave preview: it plans
+the install requests, parks on the `apache -v` barrier and stops (`barrier:
+apache -v → unknown until run`), gathering facts over SSH but applying nothing. A
+converged rerun is the real preview.
 
-The runner prints the wave tree and maps the role's failure modes (bad inventory,
+`main()` prints the wave tree and maps the role's failure modes (bad inventory,
 `ValueError` from a rejected variable, a failed probe or an unsupported version,
 `CommandError`, `HostConnectionError`, `PrivilegeError`, `OSError`, `TypeError`) to
 a one-line stderr message and exit 1.
 
-**Run it twice.** The second pass must report no change and queue no handler: the
+**Run the program twice.** The second run must report no change and queue no handler: the
 packages are installed, the cache stamp is fresh, `ports.conf` matches, every
 symlink is where it belongs, the rendered vhosts file is byte-identical, the unit is
 running and enabled. That is the migration's idempotence claim, and the offline
 suite asserts it.
 
 > **Shared demo host.** The `ubuntu` demo host also runs the nginx example. This
-> runner's `overrides` move Apache to port `8080`, so it no longer collides with
+> example's `overrides` move Apache to port `8080`, so it no longer collides with
 > nginx's `80`/`443`; an inventory that restores the role's default
 > `apache_listen_port: 80` recreates the conflict, because this role leaves
 > `apache2` enabled and active. See [the nginx
@@ -330,7 +341,7 @@ The RedHat host appears in no tree: no barrier record, no request line.
 | # | Deviation | Why |
 | --- | --- | --- |
 | D1 | A host outside the `"Ubuntu"` family emits **nothing at all** | the family guard is the body's opening `if`, not a `when=` on each request. The old example logged every request as `[skipped: when guard …]`; a return emits no records |
-| D2 | The version probe is an **`act` barrier**, not a fact | `apache2 -v` is a command, and its answer depends on the install in the same wave. A barrier never raises on a non-zero exit — the `Result` is data — so the body checks `exit_status` itself and raises `ValueError`, the error `role_main` maps |
+| D2 | The version probe is an **`act` barrier**, not a fact | `apache2 -v` is a command, and its answer depends on the install in the same wave. A barrier never raises on a non-zero exit — the `Result` is data — so the body checks `exit_status` itself and raises `ValueError`, the error `main()` maps |
 | D3 | Each certificate read is **its own wave**, gathered by an explicit loop | faithful to the role's `stat` loop, and it makes the wave count host-dependent (3 + *n*). The design sketch wrote this as a generator expression, which Python forbids: `yield` inside one is a `SyntaxError`, and so is `list.append(yield …)` |
 | D4 | No `mode` on a **symlink** | the role asks for `mode: 0644` on `mods-enabled`/`sites-enabled` links. `files.link` owns no mode, and a Linux symlink's own mode is always `0777` and meaningless — Ansible cannot set it either |
 | D5 | `apache_enablerepo` and `apache_ssl_no_log` are **carried and inert** | the repo knob belongs to the RHEL branch that is out of scope, and reemote has no per-request log redaction. Documented rather than silently dropped, so such a key still binds |

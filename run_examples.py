@@ -54,22 +54,14 @@ EXAMPLES_DIRS = (PROJECT_ROOT / "examples",)
 # Example scripts under these directories (relative to the project root)
 # are skipped by the sweep.
 EXCLUDED_DIRS = (PROJECT_ROOT / "examples" / "modules" / "selinux",)
-# Scripts with these basenames are shared helpers the example scripts import
-# by bare name, not runnable examples of their own: ``examples/roles/
-# role_runner.py`` exposes no ``host`` entrypoint, so running it would only
-# launch an empty program (§17.3).
-EXCLUDED_NAMES = ("role_runner.py",)
 LOG_PATH = PROJECT_ROOT / "examples.log"
 
 SEPARATOR = "=" * 78
 
 
 def is_excluded(script: Path) -> bool:
-    """Whether the script is under an excluded dir or an excluded helper name."""
-    return (
-        any(directory in script.parents for directory in EXCLUDED_DIRS)
-        or script.name in EXCLUDED_NAMES
-    )
+    """Whether the script is under an excluded directory."""
+    return any(directory in script.parents for directory in EXCLUDED_DIRS)
 
 
 def display_name(path: Path) -> str:

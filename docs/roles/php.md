@@ -219,36 +219,47 @@ resolved, before any host is contacted.
 
 ## 5. Run it
 
-The role is library code; `examples/roles/php.py` is the runnable artifact. It
-hands the factory, the model and the prefix to the shared runner:
+The role is library code; `examples/roles/php.py` is the runnable artifact — a
+standalone program with its own `main()`, no shared runner. It loads and validates
+`inventory.json` from the current working directory, resolves the role's variables
+(the defaults overlaid with the entry's `php_`-prefixed keys), builds the deploy
+from the `php` factory and drives it with `run_waves` — a `dry=True` one-wave
+preview, then the real apply — printing the wave tree each time:
 
 ```python
+from reemote import resolve_vars, run_waves, validate_inventory
 from reemote.roles import PhpVars, php
 
-asyncio.run(role_main(php, PhpVars, "php_", Path("inventory.json")))
+async def main() -> None:
+    inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+    validate_inventory(inventory)
+    vars_set = resolve_vars(PhpVars, "php_", inventory)
+    deploy = php(vars_set)
+    report, _hosts = await run_waves(inventory, deploy, dry=True)   # one-wave preview
+    print(report.tree())
+    report, _hosts = await run_waves(inventory, deploy)             # the real apply
+    print(report.tree())
 ```
 
 From the repository root:
 
 ```bash
 uv run python examples/roles/php.py
-uv run python examples/roles/php.py --inventory other.json --dry
 ```
 
 The `ubuntu` entry of the shipped `inventory.json` carries no `php_` keys, so the
 role's defaults apply: FPM **off**, `memory_limit = 256M`, the three version-derived
-conf paths, and `apache2` as the webserver the handler restarts. `--dry` is a
-one-barrier preview: everything the role does is keyed on the gathered release, so
-the dry pass plans nothing after the distribution read and stops
-(`barrier: LinuxDistribution → unknown until run`) with an empty log. Run it twice
-instead — the converged second pass is the honest preview.
+conf paths, and `apache2` as the webserver the handler restarts. The `dry=True`
+pass is a one-wave preview: the role's first item is the `LinuxDistribution`
+barrier, so the run parks there (`barrier: LinuxDistribution → unknown until run`),
+reads no state and applies nothing. A converged rerun is the real preview.
 
-The runner prints the wave tree and maps the role's failure modes (bad inventory,
+`main()` prints the wave tree and maps the role's failure modes (bad inventory,
 `ValueError` from a rejected variable or a version that is not dotted digits,
 `CommandError`, `HostConnectionError`, `PrivilegeError`, `OSError`, `TypeError`) to
 a one-line stderr message and exit 1.
 
-**Run it twice.** The second pass must report no change and queue no handler: the
+**Run the program twice.** The second run must report no change and queue no handler: the
 packages are installed, the cache stamp is fresh, the packaged inis are already
 gone, every rendered file is byte-identical, the pool is where it belongs, the unit
 is running and enabled. That is the migration's idempotence claim, and the offline

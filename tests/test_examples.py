@@ -487,21 +487,10 @@ OFFLINE_EXAMPLES = (
 )
 
 
-# Shared helper modules that live under examples/ but are not themselves
-# runnable example programs. ``examples/roles/role_runner.py`` is imported by
-# bare name from the thin role runners (§17.3): it exposes no ``host``
-# entrypoint and builds no requests, so the offline harness skips it in BOTH
-# sweeps -- the static op-scan (via ``static_scan_files``) and the dynamic
-# import/drain below -- exactly as ``run_examples.py``'s ``is_excluded`` does.
-NON_EXAMPLES = ("role_runner.py",)
-
-
 def example_files() -> list[pathlib.Path]:
     """Every example script, in a stable order."""
     return sorted(
-        path
-        for path in EXAMPLES_ROOT.rglob("*.py")
-        if "__pycache__" not in path.parts and path.name not in NON_EXAMPLES
+        path for path in EXAMPLES_ROOT.rglob("*.py") if "__pycache__" not in path.parts
     )
 
 

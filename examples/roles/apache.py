@@ -1,29 +1,58 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Run the ``apache`` role against an inventory.
+"""Run the ``apache`` role against an inventory, end to end.
 
-The role lives in the library (:mod:`reemote.roles.apache`); this is the
-runnable artifact (§17.3) -- import the role and its vars model, hand them to
-the shared ``role_main`` with the ``apache_`` prefix, and it loads the inventory,
-resolves the variables, runs one wave pass and prints the wave tree.
+This is a *usage* example, not part of the library. The role itself lives in
+:mod:`reemote.roles.apache`; this script is the runnable artifact -- a plain
+``main()`` that does what every reemote program does, with no shared runner and
+no framework:
 
-The role's variables are the inventory entry's ``apache_``-prefixed keys
-(``apache_listen_port``, ``apache_vhosts``, ``apache_mods_enabled``,
-``apache_state``, ``apache_restart_state`` and the rest of
-:class:`~reemote.roles.apache.ApacheVars`); with none present the role defaults
-apply. Hosts outside the ``"Ubuntu"`` family emit nothing at all.
+1. Read the target hosts from ``inventory.json`` in the current working
+   directory -- an inventory is just a list of dictionaries, each holding a
+   host's name plus its SSH ``connection`` information -- and validate it up
+   front with ``validate_inventory``, so a malformed file fails with an
+   ``InventoryError`` naming the offending entry before any host is materialized
+   or connected.
+2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
+   ``apache_``-prefixed keys (``apache_listen_port``, ``apache_vhosts``,
+   ``apache_mods_enabled``, ``apache_state`` and the rest of
+   :class:`~reemote.roles.apache.ApacheVars`) are bound and stripped, the
+   call-site ``APACHE_OVERRIDES`` below wins over them, and a bad value raises
+   before any host is contacted.
+3. Build the deploy -- ``apache(vars_set)`` is the role's whole task list, one
+   per-host generator -- and drive it with ``run_waves``, the barrier-aware
+   driver a role needs: its version probe, its certificate reads and its
+   configure checkpoint are barriers *inside* the body, not separate ``run()``
+   calls. ``run_waves`` owns the host connections and closes them itself.
 
-This runner also demonstrates the call-site ``overrides`` channel: it hands
-``role_main`` an ``APACHE_OVERRIDES`` mapping (``listen_port=8080`` and one
-``example.com`` vhost) that wins over the inventory's ``apache_``-prefixed keys
-for every host. Overrides use the model's UNPREFIXED field names -- the
+Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
+and never touches the network -- this example uses the *default* factory
+(``Host.from_inventory``): each plain ``Host`` lazily opens an asyncssh
+connection from its ``connection`` data, gathers facts and runs commands for
+real. Edit ``inventory.json`` in the current working directory to target your
+machines.
+
+``run_waves`` is a coroutine, so ``main`` is async and driven by ``asyncio.run``.
+
+The call-site ``overrides`` channel
+-----------------------------------
+
+``APACHE_OVERRIDES`` (``listen_port=8080`` and one ``example.com`` vhost) is
+handed to ``resolve_vars`` and wins over the inventory's ``apache_``-prefixed
+keys for every host. Overrides use the model's UNPREFIXED field names -- the
 ``apache_`` prefix is an inventory-key binding, stripped before validation -- so
 ``apache_listen_port`` in the inventory and ``listen_port`` here set the same
-field. Precedence is model defaults < inventory extra < these overrides.
+field. Precedence is model defaults < inventory extra < these overrides. The
+shipped ``inventory.json``'s ``ubuntu`` entry carries no ``apache_`` keys, so
+these overrides decide the listen port and the vhosts: Apache listens on ``8080``
+and serves one ``example.com`` vhost out of ``/var/www/vhosts/example_com``.
 
-Installing the role needs the template extra, because the vhosts file is
-rendered control-side with Jinja2::
+Installing and running
+----------------------
+
+The role renders its ``vhosts.conf`` control-side with Jinja2, so it needs the
+template extra::
 
     pip install "reemote[templates]"
 
@@ -31,32 +60,38 @@ Run it with::
 
     uv run python examples/roles/apache.py
 
-against the repository's own ``inventory.json``, or point it elsewhere and
-preview it without touching a host::
+``main`` drives the deploy twice, exactly like an operation example: a
+``dry=True`` preview first, then the real apply. The dry pass is one wave deep --
+``run_waves`` plans the install requests, parks on the ``apache -v``
+version-probe barrier and stops (``barrier: apache -v -> unknown until run``),
+gathering facts over SSH but applying nothing. A converged rerun is the honest
+preview: run the whole program a second time and it reports no change and queues
+no restart, because the packages are installed, the cache stamp is fresh,
+``ports.conf`` matches, every symlink is in place, the rendered vhosts file is
+byte-identical and the unit is running and enabled.
 
-    uv run python examples/roles/apache.py --inventory other.json --dry
-
-``--dry`` is a one-wave preview: the run stops at the version-probe barrier, so
-the install requests are planned but nothing is read, rendered or applied. A
-converged rerun is the real preview -- the second pass reports no change and
-queues no restart.
+Hosts outside the ``"Ubuntu"`` family emit nothing at all -- the role's family
+guard is its body's opening ``if``, so such a host returns before its first
+``yield`` and appears in no wave.
 """
 
 import asyncio
+import json
 import sys
 from pathlib import Path
 
+from reemote import (
+    CommandError,
+    HostConnectionError,
+    InventoryError,
+    PrivilegeError,
+    resolve_vars,
+    run_waves,
+    validate_inventory,
+)
 from reemote.roles import ApacheVars, apache
 
-# The shared runner sits beside this script; add its directory to sys.path so
-# ``import role_runner`` resolves whether the example is run by path or
-# imported by the offline example harness.
-_HERE = Path(__file__).resolve().parent
-if str(_HERE) not in sys.path:
-    sys.path.insert(0, str(_HERE))
-from role_runner import role_main  # examples/roles/role_runner.py
-
-# Common role variables handed to ``role_main`` as call-site ``overrides``.
+# Common role variables handed to ``resolve_vars`` as call-site ``overrides``.
 # They use the model's UNPREFIXED field names (``listen_port``, ``vhosts``) --
 # the ``apache_`` prefix only binds inventory keys, and is stripped before
 # validation -- and win over any ``apache_``-prefixed key in the inventory for
@@ -70,13 +105,66 @@ APACHE_OVERRIDES = {
     ),
 }
 
-if __name__ == "__main__":
-    asyncio.run(
-        role_main(
-            apache,
-            ApacheVars,
-            "apache_",
-            Path("inventory.json"),
-            overrides=APACHE_OVERRIDES,
+
+async def main() -> None:
+    try:
+        inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
+        validate_inventory(inventory)
+        print("== Inventory loaded from inventory.json ==")
+        print(", ".join(entry["host"] for entry in inventory))
+
+        # Resolve the role's variables before any host is contacted: the
+        # inventory's apache_-prefixed keys, overlaid with the call-site
+        # overrides. A rejected value raises here -- a pydantic ValidationError,
+        # which is a ValueError -- not mid-run.
+        vars_set = resolve_vars(
+            ApacheVars, "apache_", inventory, overrides=APACHE_OVERRIDES
         )
-    )
+        # The role's whole task list: one per-host generator, barriers and all.
+        # A plain (non-async) factory, so it is called, not awaited.
+        deploy = apache(vars_set)
+
+        # Dry preview: one wave deep. Facts are still gathered over SSH
+        # (read-only) so the plan reflects each host's real pre-deployment
+        # state, but the run parks on the apache -v barrier and applies nothing.
+        # run_waves owns the hosts it materializes and closes them itself.
+        report, _hosts = await run_waves(inventory, deploy, dry=True)
+        print("\n== Wave tree (dry preview, one wave deep) ==")
+        print(report.tree())
+
+        # Real run: every wave, planned and applied in lockstep across hosts
+        # over SSH, each barrier closing its own wave.
+        report, _hosts = await run_waves(inventory, deploy)
+        print("\n== Wave tree (apply phase) ==")
+        print(report.tree())
+    except (OSError, json.JSONDecodeError) as exc:
+        # The inventory file is missing, unreadable or not valid JSON. Python's
+        # own message already names the file and the reason, so print just that
+        # -- no host was contacted and there is no traceback worth showing.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except InventoryError as exc:
+        # The document parsed but did not match the inventory schema. The
+        # message names the offending entry by its list index, which is the
+        # whole report -- and it fails before any host is materialized.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except (ValueError, TypeError) as exc:
+        # A rejected role variable (pydantic's ValidationError is a ValueError),
+        # or the role body's own hard error: the apache -v probe exited non-zero,
+        # its output was not a version banner, or the probed version has no
+        # 2.2/2.4 variable table. Each is raised before the configure wave is
+        # built, so nothing is half-applied.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except (CommandError, HostConnectionError, PrivilegeError) as exc:
+        # The library already reports every host-level failure as a typed error
+        # whose message names the host and the failing command. Print that
+        # message -- no traceback -- and exit non-zero so the failure stays
+        # script-visible.
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
