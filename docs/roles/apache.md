@@ -4,7 +4,7 @@
 | --- | --- |
 | Role | [`geerlingguy.apache`](https://github.com/geerlingguy/ansible-role-apache) |
 | Module | [`reemote.roles.apache`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/apache.py) |
-| Runner | [`examples/roles/apache.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/apache.py) |
+| Example | [`examples/roles/apache.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/apache.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
 | Variables | `apache_`-prefixed inventory keys → [`ApacheVars`](#3-variables) |
 | Waves | 3 **+ one per SSL vhost** (4 with a single certificate) |
@@ -221,6 +221,20 @@ suite asserts it.
 > `apache2` enabled and active. See [the nginx
 > page](../examples/roles/ansible-role-nginx.md) for the stop/disable command to
 > run afterwards.
+
+### 5.1 Composing this role
+
+`examples/roles/apache.py` runs `apache` on its own. To use it as a *component*
+of a larger deploy, see
+[`examples/roles/composing_roles.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/composing_roles.py):
+a parent per-host generator embeds the role with
+`out = yield from scoped("apache", apache(v))(host)` — tagging every item apache
+emits with an `"apache"` report path, feeding its barriers, and handing back the
+returned `ApacheOutputs`. The parent reads that output as data: it runs `php`
+only where apache published a non-empty `version`, so a host the family guard
+skipped (`version=""`) never stacks a dependent role. Because `run_waves` never
+surfaces a role's return value, the parent captures outputs by closing over a
+dict and storing what `yield from` hands back.
 
 ## 6. What it does
 
