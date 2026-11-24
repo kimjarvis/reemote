@@ -41,6 +41,13 @@ dependencies = [
     "pydantic>=2.14.1",
 ]
 
+[project.optional-dependencies]
+# Six roles render a control-side template (jinja2) or dump YAML (pyyaml) while
+# building their deploys (§17.4). The base library imports neither -- they enter
+# only through reemote/roles/_render.py -- so template roles are opt-in via
+# ``reemote[templates]``.
+templates = ["jinja2>=3.1", "pyyaml>=6"]
+
 [project.urls]
 Homepage = "https://reemote.org/index.html"
 Documentation = "https://reemote.org/index.html"

@@ -11,10 +11,11 @@ arguments still have to satisfy the request hashability rule --
 examples are reachable from any other pytest. So the examples are covered two
 ways, both of which stay offline:
 
-* **statically** -- every ``op(...)`` call in every example is scanned for a
-  mutable container: a ``list``/``dict``/``set`` or comprehension, a call that
-  returns one, or a name bound to either (including values unpacked with
-  ``**``);
+* **statically** -- every ``op(...)`` call in every example, and in the
+  migrated role modules under ``src/reemote/roles/`` once they land (§17), is
+  scanned for a mutable container: a ``list``/``dict``/``set`` or comprehension,
+  a call that returns one, or a name bound to either (including values unpacked
+  with ``**``);
 * **dynamically** -- every example module is *imported* (module-level code
   builds the constants its deploys use and opens no connection, the same
   import the docs build already performs) and each deploy-shaped entrypoint is
@@ -43,6 +44,7 @@ from reemote.core import OperationRequest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 EXAMPLES_ROOT = REPO_ROOT / "examples"
+ROLES_ROOT = REPO_ROOT / "src" / "reemote" / "roles"
 
 # Containers and calls that produce one: both are unhashable, so both are
 # rejected at request construction. ``tuple(...)``/``frozenset(...)`` are the
@@ -598,6 +600,28 @@ def relative(path: pathlib.Path) -> str:
     return path.relative_to(REPO_ROOT).as_posix()
 
 
+def static_scan_files() -> list[pathlib.Path]:
+    """Every module the immutable-container ``op(...)`` rule must hold across.
+
+    That is the example scripts *and* the migrated role modules under
+    ``src/reemote/roles/``: the ``op(...)`` calls carrying ``list``/``dict``
+    arguments move there when the roles land, and a mutable default in a role
+    module is a library bug, not an example bug (§17.5). The private helpers
+    (``__init__.py``, ``_render.py``) build no ``op(...)`` requests, so they are
+    skipped. Unlike ``example_files`` this set is only walked by the *static*
+    scan -- role modules get their own offline drain under ``tests/roles/``, not
+    the example import harness.
+    """
+    files = list(example_files())
+    if ROLES_ROOT.is_dir():
+        files += sorted(
+            path
+            for path in ROLES_ROOT.rglob("*.py")
+            if "__pycache__" not in path.parts and not path.name.startswith("_")
+        )
+    return files
+
+
 # --- static: no mutable container reaches an op(...) ------------------------
 
 
@@ -728,9 +752,10 @@ def test_no_example_passes_a_mutable_container_to_op():
     Examples are not executed by the suite (they target the shared demo
     hosts), so this scan is what keeps their ``op(...)`` calls legal: an
     unhashable value would raise ``UnhashableArgumentError`` at the deploy line.
+    The migrated role modules are scanned by the same rule (``static_scan_files``).
     """
     offenders = []
-    for path in example_files():
+    for path in static_scan_files():
         offenders += mutable_op_arguments(path.read_text(), relative(path))
 
     assert not offenders, "op(...) arguments must stay hashable:\n" + "\n".join(offenders)
