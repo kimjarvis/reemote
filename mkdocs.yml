@@ -155,9 +155,9 @@ nav:
   # under docs/roles/, with the catalogue (docs/roles/index.md) landing once the
   # corpus has moved. The legacy Examples -> Roles pages retire with their
   # monoliths, one row per role commit.
-#  - Roles:
-#      - repo_epel: roles/repo_epel.md
-#      - apache: roles/apache.md
+      - Roles:
+          - repo_epel: roles/repo_epel.md
+          - apache: roles/apache.md
 #  - Migrating: migrating.md
 #  - Examples:
 #      - Overview: examples.md
