@@ -1,8 +1,13 @@
 # Handlers
 
-`reemote.handlers` packages the **two-deploy outcome split** — reemote's answer
-to Ansible's `notify:`/handler mechanism — into two reusable helpers, so a role
-migration stops copy-pasting a bespoke `notifying_hosts`/`build_restart_*` pair.
+`reemote.handlers` packages the notification read and the handler factory —
+reemote's answer to Ansible's `notify:`/handler mechanism — into two reusable
+helpers, so a role migration stops copy-pasting a bespoke
+`notifying_hosts`/`build_restart_*` pair. The helpers feed on an
+[`ApplyReport`][reemote.drivers.ApplyReport] from either source: the
+**two-deploy outcome split** under [`run`][reemote.drivers.run], or the
+[`ApplyReport`][reemote.drivers.ApplyReport] a [`checkpoint`][reemote.stages.checkpoint]
+barrier sends back inside a [`run_waves`][reemote.drivers.run_waves] role.
 
 reemote has no first-class handler: a deploy body cannot observe its own earlier
 outcomes (`ctx.changed` flows one way, operation → driver →
@@ -11,7 +16,12 @@ deploy would make the prepare and apply phases yield different request
 sequences, tripping [`DeterminismError`][reemote.drivers.DeterminismError]. The
 sanctioned shape is to run the notifying tasks, read their report in the gap
 *between* two complete prepare/apply cycles, freeze the hosts that changed, and
-pass that frozen set into a second deploy as a static input. See
+pass that frozen set into a second deploy as a static input. Under
+[`run_waves`][reemote.drivers.run_waves] there *is* a first-class read — a
+[`checkpoint`][reemote.stages.checkpoint] barrier hands the body its own
+[`ApplyReport`][reemote.drivers.ApplyReport] slice in stream — so this two-deploy
+shape is the **barrier-free** idiom for a plain [`run`][reemote.drivers.run]
+deploy, not the only way. See
 [Change notification (handlers)](guide.md#change-notification-handlers) for the
 full rationale and a runnable
 [example](examples/demonstrations/composition.md#restarting-a-service-only-when-a-notifying-operation-changed).

@@ -14,6 +14,16 @@ optionally collapsing requests that would execute identically (dedupe by
 effective identity — the plan `name` is excluded and the first occurrence
 wins).
 
+Every [`OperationRequest`][reemote.core.OperationRequest] also carries a
+`scope` — a report path set by [`scoped`][reemote.stages.scoped] on the wave
+path — which is report-only and excluded from the effective identity above.
+These two helpers sequence requests **only**: they belong to the barrier-free
+two-phase [`run`][reemote.drivers.run] path. A deploy that reads state back into
+its own control flow yields a [barrier](stages.md) and runs under
+[`run_waves`][reemote.drivers.run_waves] instead, and a barrier handed to
+[`compose`][reemote.core.compose] or [`sub_deploy`][reemote.core.sub_deploy]
+raises [`DeployRequestError`][reemote.core.DeployRequestError].
+
 [`Privilege`][reemote.core.Privilege] is the tri-state behind the
 `doas`/`sudo`/`su` meta-parameters — `ON`, `OFF` and `UNSET` — which lets a
 `sub_deploy` policy force elevation across a role while still honouring an

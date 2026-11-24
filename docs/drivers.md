@@ -161,6 +161,57 @@ missing the command the fact runs is named in one aggregate. Any other
 exception propagates unchanged, so a `CommandError` or a genuine bug still
 aborts the run.
 
+## Wave loop
+
+[`run`][reemote.drivers.run] is the **barrier-free** two-phase path: it executes
+a deploy twice and enforces determinism. [`run_waves`][reemote.drivers.run_waves]
+is the resumable-deploy driver for *roles* — deploy factories whose per-host
+generator may yield a [barrier](stages.md) beside its
+[`OperationRequest`][reemote.core.OperationRequest]s. It runs **one pass per
+request**: each request is [`materialize`][reemote.drivers.materialize]d and
+applied in the same step, before the next is pulled, so there is no second
+invocation and no [`DeterminismError`][reemote.drivers.DeterminismError]
+comparison — no plan/apply window in which the body could diverge.
+
+The loop drives every host's generator together:
+
+1. **Pull** one item per free host (a host is free unless it is parked on a
+   barrier or finished).
+2. **Step** the pulled requests, one per host, in lockstep — plan and apply each
+   in a single `asyncio.gather`, with a fresh `FactCache` per step so an
+   operation sees the effect of the requests already applied.
+3. **Rendezvous** once every active host is parked or done: close the wave, then
+   execute every parked barrier concurrently under one `asyncio.gather` — the
+   rendezvous *is* the fan-out — and resume each generator with its own result
+   via `gen.send(value)`.
+
+[`run_waves`][reemote.drivers.run_waves] owns the hosts exactly as `run` does:
+it validates the inventory, materializes the hosts through `host_factory`, and
+closes every connection once in its own `finally`, so a barrier or a role must
+never close one. `dry=True` is a **one-wave** preview — no barrier runs, and the
+first parked barrier is recorded `unknown` and stops the loop, because a
+barrier's outcome may depend on requests that were planned but never applied.
+
+The result is a [`WaveReport`][reemote.drivers.WaveReport]: a flat list of
+[`StageRecord`][reemote.drivers.StageRecord]s (one per step or barrier, each
+carrying its `wave` number and `scope` path) plus the `wave_ids` that actually
+recorded something. A step record holds the
+[`PlannedOperation`][reemote.drivers.PlannedOperation] it computed and the
+[`LogEntry`][reemote.drivers.LogEntry] it produced (`None` in dry mode); a
+barrier record holds the barrier and its `outcome`.
+`WaveReport.apply_report(wave, scope)` slices one wave's applied entries to a
+scope prefix — the value a [`checkpoint`][reemote.stages.checkpoint] sends back,
+so [`changed_hosts`][reemote.handlers.changed_hosts] reads only the entries that
+role emitted. `WaveReport.merged()` folds every applied entry back into a plain
+[`ApplyReport`][reemote.drivers.ApplyReport] — the analogue of `run`'s report —
+so existing consumers work unchanged, and
+[`format_waves`][reemote.drivers.format_waves] (aliased as `WaveReport.tree()`)
+renders the scope/wave tree, each request line byte-identical to what
+[`format_plan`][reemote.drivers.format_plan] and
+[`format_log`][reemote.drivers.format_log] print today. Barrier failures reuse
+the action aggregator, so a connection, timeout or privilege error across
+several parked hosts merges into one aggregate naming every affected host.
+
 ## Reference
 
 ::: reemote.drivers
@@ -169,13 +220,17 @@ aborts the run.
         - run
         - run_prepare
         - run_apply
+        - run_waves
         - materialize
         - gather_fact
         - command_shell
         - send_command
         - format_plan
         - format_log
+        - format_waves
         - ApplyReport
+        - WaveReport
+        - StageRecord
         - PlannedOperation
         - LogEntry
         - DeterminismError

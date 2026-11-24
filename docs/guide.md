@@ -461,6 +461,48 @@ A sub-deploy's privilege policy fills any operation left `UNSET`, but honours an
 
 With `dedupe=True`, `compose` drops requests that repeat an earlier one. Dedupe compares the *resolved* elevation decision, the function, args, kwargs and guards — but **not** the display name. Full request equality (used by the determinism guard) additionally includes the name and the tri-state privilege values.
 
+### Roles are resumable deploys
+
+A **role** is a deploy factory: an ordinary function that closes over resolved [variables](rolevars.md) and returns a per-host generator. Where a plain deploy yields only [`OperationRequest`][reemote.core.OperationRequest]s and runs under [`run`][reemote.drivers.run], a role may also yield a **barrier** — a value that parks the generator until the driver executes it and resumes the body with the result via `gen.send(value)`. Roles run under [`run_waves`][reemote.drivers.run_waves], the wave-loop driver, which runs **one pass per request** (materialize and apply in the same step), so the body is never re-invoked and there is no determinism comparison.
+
+There are four barriers, because they are the four things a *synchronous* generator body cannot do for itself:
+
+| Barrier | Constructor | Sends back |
+|---|---|---|
+| Fact | `fact(FileExists, path)` | the fact's value, read on that host |
+| Action | `act(Shell, command=...)` | a [`Result`][reemote.actions.Result] (a non-zero exit is data) |
+| Checkpoint | `checkpoint("done")` | the wave's [`ApplyReport`][reemote.drivers.ApplyReport], sliced to scope |
+| Control | `control(fetch, url)` | the coroutine's return value, run on the controller |
+
+```python
+from reemote import act, changed_hosts, checkpoint, files, op, run_waves, systemd
+
+def apache(v):
+    def deploy(host):
+        conf = v.for_host(host)
+        yield op(files.file, name="Write config", path=conf.path)
+        ver = yield act(Shell, command="apache2 -v", name="apache -v")   # park; the driver runs it
+        if "2.4" not in ver["stdout"]:
+            yield op(files.file, name="Pin module", path=conf.load)
+        report = yield checkpoint("configure done")                       # close the wave
+        if changed_hosts(report, {"Write config"}):
+            yield op(systemd.service, name="Restart apache", service="apache2", restarted=True, sudo=True)
+    return deploy
+
+report, hosts = await run_waves(inventory, apache(v))
+print(report.tree())                                                      # format_waves(report)
+```
+
+Roles compose with `yield from`, optionally wrapped in [`scoped`][reemote.stages.scoped] to give each role its own report path in the tree. [`compose`][reemote.core.compose] and [`sub_deploy`][reemote.core.sub_deploy] sequence request streams only and reject a barrier. The barriers and their constructors are documented in [Stages](stages.md), variable resolution in [Role variables](rolevars.md), and the loop in [`run_waves`][reemote.drivers.run_waves].
+
+!!! warning "A `dry` preview is one wave deep"
+
+    `run_waves(..., dry=True)` plans the first wave and then **stops at the first
+    barrier**: a barrier's outcome may depend on requests that were planned but
+    never applied, so nothing past it can be predicted, and the parked barrier is
+    recorded `unknown` rather than run. A role with no barriers previews fully;
+    a role with barriers previews exactly one wave.
+
 ### Running a deploy
 
 `run` is the single entry point:
@@ -514,6 +556,20 @@ The practical rules that follow:
 
 Determinism does **not** mean the two phases produce identical *commands* or identical *changed* flags. Prepare reads the state before any change; apply re-reads it as it goes, and state genuinely changes between steps. What must stay identical is the **request sequence** — the steps themselves. The decisions and generated commands may legitimately differ because the world moved.
 
+!!! note "These rules are `run()`'s"
+
+    Everything above is a truth of the two-phase [`run`][reemote.drivers.run]
+    path. The wave-loop driver [`run_waves`][reemote.drivers.run_waves] runs a
+    deploy body **once**, so the sequence is never re-derived and there is no
+    second pass for [`DeterminismError`][reemote.drivers.DeterminismError] to trip
+    on: a role body may read a fact or a report into its own control flow through
+    a [barrier](stages.md), branch on it, and rebuild requests freely, because
+    nothing is replayed. Treat that as latitude the model now *grants*, not a
+    licence to be careless — a role body should still be a pure function of its
+    variables and barrier results, and a control-flow effect must come from a
+    barrier or factory code, never from untracked time, randomness or a controller
+    read inside the body.
+
 ### Change notification (handlers)
 
 reemote has **no first-class handler mechanism** — there is no `notify`/`handler` keyword and no event bus. A conditional restart — "restart the service only if the config changed" — is built from the *results of a previous run*, in ordinary Python, outside the deploy body. This is the **two-deploy outcome split**: run the notifying tasks, read their `ApplyReport` in the gap *between* two complete prepare/apply cycles, freeze the hosts that reported a change, and pass that frozen set into a second deploy as a stable input.
@@ -541,6 +597,8 @@ async def main() -> None:
 `changed` is a fixed value by the time `restart_handler` builds the deploy, so the returned generator branches on a snapshot — never a live fact or report — and stays pure and deterministic across both of its phases. An empty `changed` yields an empty deploy: no host restarts, the converged no-op Ansible's handler gives for free. The restart happens in a *second* full prepare/apply cycle, and a `dry=True` preview of pass 1 cannot know whether the handler will fire (Ansible check mode skips handlers for the same reason); a `dry=True` preview of pass 2 *is* honest, because it consults the frozen outcome of pass 1.
 
 `systemd.service(restarted=True)` restarts a unit that is already running; the operation's default `running=True` starts a stopped one, and `reloaded=True` reloads a running one — so `restart_handler`, `reload_handler` and `service_handler(action="running")` cover the `state: restarted`/`reloaded`/`started` idioms. Each also takes a `name` template, a `sudo` flag (default `True`) and a `when` guard, all forwarded to every request. For a handler that is not a systemd service action — a script, a custom command — build the same shape yourself: a factory closing over `changed_hosts(...)`. See the [handlers reference](handlers.md) plus the runnable [handler example](examples/demonstrations/composition.md#restarting-a-service-only-when-a-notifying-operation-changed).
+
+Under a [`run_waves`][reemote.drivers.run_waves] role the split is not needed at all: a [`checkpoint`][reemote.stages.checkpoint] barrier closes the current wave and sends back its [`ApplyReport`][reemote.drivers.ApplyReport] sliced to the role's scope, so the body reads [`changed_hosts`][reemote.handlers.changed_hosts] *in stream* and branches a follow-up [`systemd.service`][reemote.modules.systemd.systemd.service] request on it in the same pass. The two-deploy split above is therefore the **barrier-free** idiom — the way to notify inside a plain [`run`][reemote.drivers.run] deploy, where a body cannot observe its own outcomes. Both feed the same [`changed_hosts`][reemote.handlers.changed_hosts] and [`service_handler`][reemote.handlers.service_handler] helpers; only the report's source differs (a snapshot taken between two runs, or a checkpoint's slice). See [Stages](stages.md).
 
 ## Facts
 
@@ -678,8 +736,11 @@ Three actions ship with the library:
 
 Actions are the pragmatic edge of the model. Everything inside a deploy is pure, planned and idempotent; an action is none of those things, which is exactly why it lives outside the deploy and why the runner refuses to let one slip into a generator.
 
+Under a [`run_waves`][reemote.drivers.run_waves] role, though, an action has an **in-stream** form: `yield act(Shell, command=...)` parks the generator and the driver runs the action between waves, sending the [`Result`][reemote.actions.Result] back. That is not a direct `gather_action` call — the guard still raises on `gather_action` written inside any deploy body, the wave path included — it is the sanctioned way for a role to run a bespoke command and branch on its outcome. See [Stages](stages.md#the-four-barriers).
+
 ## Where to go next
 
 - Browse the **API Reference → Modules** pages for the operations your tasks need; each lists arguments, return types, exceptions and a runnable example.
+- Write reusable **roles** — resumable deploys that read facts and reports back into their own control flow — with [Stages](stages.md), [Role variables](rolevars.md) and [`run_waves`][reemote.drivers.run_waves].
 - Read the connector pages ([ssh](connectors/ssh.md), [docker](connectors/docker.md)) for the connection options your inventory can carry.
 - Study the runnable programs under `examples/` — every one loads an inventory, builds requests and prints the plan and log, and they cover composition, privilege and each module's operations.

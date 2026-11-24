@@ -25,7 +25,12 @@ The awaited [`gather_action`][reemote.actions.gather_action] is a barrier:
 every host's command has completed before the next deploy starts or the next
 fact is read. Composed deploys never contain an action; composition operates on
 [`OperationRequest`][reemote.core.OperationRequest] sequences, which actions
-are not.
+are not. Under a `run_waves` role, though, an action has an in-stream form:
+`yield act(Shell, command=...)` parks the generator and the driver runs the
+action between waves, sending the `Result` back. That is not a direct
+`gather_action` call — the in-deploy guard still raises on one written inside any
+deploy body, wave path included — so the rule above holds for `gather_action`
+itself; see the Stages reference for `act`.
 
 ```python
 from reemote import Host, Shell, gather_action, run

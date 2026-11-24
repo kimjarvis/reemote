@@ -197,5 +197,6 @@ Preview and apply as before. This removes only the named regular file. For packa
 - Read the [Guide](guide.md) for a roughly one-hour progression through inventories, useful deployments, facts, actions, composition and the execution model.
 - Use **API Reference → Modules** to find facts and operations by subject. Start with [files](modules/files.md), [apt](modules/apt.md), [dnf](modules/dnf.md), [server](modules/server.md) or [systemd](modules/systemd.md). Class-style names such as `FileContents` are facts; lowercase functions such as `install` are operations. Entry types describe returned data, not additional commands to run.
 - Use the [Actions reference](actions/actions.md) for immediate commands, and the [SSH](connectors/ssh.md) or [Docker/Podman](connectors/docker.md) pages for connection settings.
+- To package work as reusable **roles** that read facts and reports back into their own logic, see [Stages](stages.md), [Role variables](rolevars.md) and the wave-loop driver [`run_waves`](drivers.md#wave-loop).
 
 The guide also explains [how to read the reference and find examples](guide.md#finding-facts-operations-and-examples), so you can extend your deployment without reading the whole API first.

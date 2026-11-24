@@ -95,6 +95,7 @@ plugins:
               - "!^[A-Z][A-Z0-9_]*$"
               - "!^(parse|parse_.+|process|command|shell|transfer|wait)$" # fact/descriptor plumbing (e.g. DefaultIpv4Address.parse_route), not public API
               - "!^(name|group|args|kwargs)$" # Host/OperationRequest/LogEntry/InventoryEntry plumbing fields
+              - "!^(close_wave|mark_unknown)$" # WaveReport driver-internal bookkeeping (signatures reference the private WaveRuntime), not consumer API
 
 nav:
   - Home: index.md
@@ -148,6 +149,8 @@ nav:
           - docker: connectors/docker.md
           - ssh: connectors/ssh.md
       - Handlers: handlers.md
+      - Stages: stages.md
+      - Role Variables: rolevars.md
   - Migrating: migrating.md
   - Examples:
 #      - Overview: examples.md
