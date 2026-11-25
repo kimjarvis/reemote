@@ -5,18 +5,22 @@
 A handler is the single most common Ansible construct: a task carries
 `notify: restart nginx`, and the named handler in `handlers/` runs once at the
 end of the play, on the hosts where a notifying task actually *changed*
-something. reemote has **no first-class handler** — there is no `notify:`
-keyword and no event bus — because a deploy body cannot observe its own earlier
-outcomes: `ctx.changed` flows one way (operation → driver →
-[`ApplyReport`][reemote.drivers.ApplyReport]), and branching on it inside a
-single deploy would make the prepare and apply phases yield different request
+something. Under a barrier-free `run()` deploy, reemote has **no first-class
+handler** — there is no `notify:` keyword and no event bus — because a deploy body
+cannot observe its own earlier outcomes: `ctx.changed` flows one way (operation →
+driver → [`ApplyReport`][reemote.drivers.ApplyReport]), and branching on it inside
+a single deploy would make the prepare and apply phases yield different request
 sequences, tripping [`DeterminismError`][reemote.drivers.DeterminismError].
 
 The migration is therefore not a keyword swap but a **shape** change: the
 notification read moves out of the deploy and into the gap *between* two
 complete prepare/apply cycles. [`reemote.handlers`](handlers.md) packages that
 shape into two helpers so you stop hand-rolling a bespoke
-`notifying_hosts`/`build_restart_*` pair.
+`notifying_hosts`/`build_restart_*` pair. Under a `run_waves` role this split is
+not needed — a `checkpoint` [barrier](stages.md) closes the notifying wave and
+resumes the body with its report slice, so `changed_hosts` runs in stream; the
+two-deploy shape below is the **barrier-free** idiom, and its in-stream twin is
+[A handler as an in-stream `checkpoint`](examples/demonstrations/waves.md#a-handler-as-an-in-stream-checkpoint).
 
 ### The mapping
 
@@ -50,7 +54,8 @@ shape into two helpers so you stop hand-rolling a bespoke
    per service, for the notified hosts only. Because its branch consults a
    snapshot taken *before* its own prepare phase, both phases resolve it
    identically and the determinism guard holds.
-5. **Run pass 2.** The restart happens in a second full prepare/apply cycle.
+5. **Run pass 2.** The restart happens in a second full prepare/apply cycle (a
+   `run_waves` role needs no pass 2 — its `checkpoint` read is in-stream).
 
 ### Before / after
 
@@ -279,13 +284,17 @@ A role that supports several distributions usually carries one var file per
 OS — `vars/RedHat.yml`, `vars/Debian.yml` — and pulls the right one in at run
 time with `include_vars: "{{ ansible_os_family }}.yml"`, keyed on a **gathered
 fact**. Every later task then references `{{ nginx_package }}`, which resolves
-to a different value on each host. reemote has no `include_vars`, and the
+to a different value on each host. reemote has no `include_vars`, and under a barrier-free `run()` deploy the
 deeper problem is that a deploy **cannot read a fact and branch on it**: the
 runner executes the deploy twice (prepare, then apply), so a generator body
 that reads [`server.LinuxDistribution`][reemote.modules.server.server.LinuxDistribution]
 and picks a package from it yields a different request sequence per phase and
 trips [`DeterminismError`][reemote.drivers.DeterminismError] (see
-[Guide — Determinism](guide.md#determinism)).
+[Guide — Determinism](guide.md#determinism)). Under `run_waves` that read is a
+`fact` [barrier](stages.md) the body awaits in stream, so a role branches on a
+live distribution with no pre-gathered snapshot — see
+[Branching on a `fact` barrier](examples/demonstrations/waves.md#branching-on-a-fact-barrier-in-one-stream).
+The gather → snapshot → factory recipe below is the barrier-free path.
 
 The migration is the same **shape** change the handler and the two-deploy split
 use: the fact-driven selection moves *out* of the deploy and into the gap
@@ -474,17 +483,22 @@ immutable values, which cannot express the structures a real template loops
 over. The example suite enforces this statically: `tests/test_examples.py`
 rejects any mutable container literal handed to `op(...)`.
 
-**2. There is no way to inject a host fact into a render inside a deploy.** The
+**2. There is no way to inject a host fact into a render inside a `run()`
+deploy.** The
 Ansible idiom `stat` → `register: cert` → `template: … vars: {has_cert:
-cert.stat.exists}` feeds a *gathered fact* into the render. A reemote deploy
+cert.stat.exists}` feeds a *gathered fact* into the render. A `run()` deploy
 cannot: the runner executes the deploy generator twice (prepare against
 pre-deployment state, apply against live state), so a body that reads
 [`files.FileExists`][reemote.modules.files.files.FileExists] and renders
 differently on the answer yields a different request sequence per phase and
 trips [`DeterminismError`][reemote.drivers.DeterminismError] (see
 [Guide — Determinism](guide.md#determinism)). reemote renders control-side from
-*static* data only; a live fact can never reach a render that happens inside the
-deploy.
+*static* data only; a live fact can never reach a `run()` render inside the
+deploy. Under `run_waves` the fact is a `fact` [barrier](stages.md) the body
+awaits in stream and renders against there — which is how the
+[`apache`](roles/apache.md) role turns a per-vhost `FileExists` read into its
+rendered config; see
+[Branching on a `fact` barrier](examples/demonstrations/waves.md#branching-on-a-fact-barrier-in-one-stream).
 
 The migration is the same **shape** change the handler and include_vars
 migrations use, with a render step dropped into the gap: **pre-render
