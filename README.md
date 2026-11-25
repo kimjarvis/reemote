@@ -89,7 +89,7 @@ def deploy(host):
 
 Point that deploy at your staging inventory with `dry=True` first and you get a per-host, per-operation diff of what staging is about to look like — the packages that will be installed, the file that will change, the service that will be started or left alone — before any of it happens. Read it, then run the same code without `dry=True` to apply.
 
-The program is asynchronous. Operations are dispatched to every host in the inventory concurrently, and the controller waits for every host to finish an operation before advancing to the next.
+The library is asynchronous. Operations are dispatched to every host in the inventory concurrently, and the controller waits for every host to finish an operation before advancing to the next.
 
 `run(...)` returns the plans and the report as structured objects your program can inspect, so the dry-run diff is not just printable text — it is data you can gate a rollout on, log to a dashboard, or attach to a pull request.
 
