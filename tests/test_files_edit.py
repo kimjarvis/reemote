@@ -142,19 +142,23 @@ async def test_file_contents_present_but_empty_returns_empty_string():
 
 def test_file_contents_command_guards_on_existence():
     """The command cats the file only behind a ``test -e`` guard and leads with
-    the marker, so absence stays distinguishable from empty."""
+    the marker, so absence stays distinguishable from empty. The whole
+    read-back rides an ``sh -c`` composite so the elevated re-read elevates the
+    compound, not just its leading ``test -e`` (the firewalld fact idiom)."""
     command = FileContents.command(REMOTE_PATH)
-    assert command.startswith(f"test -e {REMOTE_PATH}")
+    assert command.startswith("sh -c ")
+    assert f"test -e {REMOTE_PATH}" in command
     assert FileContents.MARKER in command
     assert f"cat -- {REMOTE_PATH}" in command
 
 
 def test_file_contents_command_marks_a_failed_cat():
     """The cat's failure arm prints the UNREADABLE marker, so a present but
-    unreadable file stays distinguishable from an empty one on stdout alone."""
+    unreadable file stays distinguishable from an empty one on stdout alone.
+    The ``printf`` format is double-quoted inside the ``sh -c`` composite."""
     command = FileContents.command(REMOTE_PATH)
     assert (
-        f"cat -- {REMOTE_PATH} || printf '{FileContents.UNREADABLE}\\n'" in command
+        f'cat -- {REMOTE_PATH} || printf "{FileContents.UNREADABLE}\\n"' in command
     )
 
 

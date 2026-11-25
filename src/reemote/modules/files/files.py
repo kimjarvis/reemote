@@ -433,7 +433,7 @@ class FileContents:
     **Commands:**
 
     ```bash
-    test -e <path> && { printf '#reemote-filecontents\\n'; cat -- <path> || printf '#reemote-filecontents-unreadable\\n'; }
+    sh -c 'test -e <path> && { printf "#reemote-filecontents\\n"; cat -- <path> || printf "#reemote-filecontents-unreadable\\n"; }'
     ```
 
     **Returns:**
@@ -488,12 +488,24 @@ class FileContents:
         leads with the marker line. A ``cat`` that fails (the login user
         cannot read the file) prints ``UNREADABLE`` instead of content, so an
         unreadable file stays distinguishable from an empty one.
+
+        The read-back is carried by an explicit ``sh -c`` composite (the
+        firewalld fact idiom). ``process`` re-reads an unreadable file through
+        ``run_shell_privileged(..., sudo=True)``, and ``sudo``/``doas`` exec
+        their command directly rather than through a shell, so a bare
+        ``test -e ... && { ...; }`` would elevate only the leading ``test`` and
+        run the ``cat`` -- the entire point of the fallback -- as the login
+        user, failing on exactly the file the tier exists to read. Wrapping the
+        compound in ``sh -c`` makes it one simple command, so the elevated tier
+        reads it as root. The ``printf`` formats are double-quoted so the
+        wrapped composite stays free of nested single-quote escaping.
         """
         quoted = shlex.quote(path)
-        return (
-            f"test -e {quoted} && {{ printf '{cls.MARKER}\\n'; "
-            f"cat -- {quoted} || printf '{cls.UNREADABLE}\\n'; }}"
+        inner = (
+            f'test -e {quoted} && {{ printf "{cls.MARKER}\\n"; '
+            f'cat -- {quoted} || printf "{cls.UNREADABLE}\\n"; }}'
         )
+        return f"sh -c {shlex.quote(inner)}"
 
     @classmethod
     async def process(cls, host: Host, path: str) -> str | None:
