@@ -155,7 +155,7 @@ nav:
 #      - Role Variables: rolevars.md
   # Migrated Ansible roles, now first-class library citizens: one page per role
   # under docs/roles/, fronted by the docs/roles/index.md catalogue. The legacy
-  # Examples -> Roles pages retire with their monoliths, one row per role commit.
+  # Examples -> Roles pages and their examples/roles/* monoliths are retired.
       - Roles:
           - Overview: roles/index.md
           - repo_epel: roles/repo_epel.md
