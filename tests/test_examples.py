@@ -196,33 +196,6 @@ SNAPSHOT_ARGS = {
             "dest_exists": False,
         }
     },
-    # The Composer role migration: three factories, each closing over the
-    # frozen plan main() builds between its runs. The need-install shape
-    # drains the download, the copy + cleanup and the profile requests; the
-    # signature is the 96-char sha384 hex str files.fetch_url returns.
-    (
-        "examples/roles/ansible-role-composer/ansible-role-composer.py",
-        "build_download",
-    ): lambda name: {name: {"need_install": True, "signature": "0" * 96}},
-    (
-        "examples/roles/ansible-role-composer/ansible-role-composer.py",
-        "build_configure",
-    ): lambda name: {
-        name: {
-            "need_install": True,
-            "composer_path": "/usr/local/bin/composer",
-            "home": "/root/.composer",
-            "home_owner": "root",
-            "home_group": "root",
-            "auth_content": '{\n    "github-oauth": {\n        "github.com": "seed"\n    }\n}\n',
-        }
-    },
-    (
-        "examples/roles/ansible-role-composer/ansible-role-composer.py",
-        "build_profile",
-    ): lambda name: {
-        name: {"profile_content": "export PATH=$PATH:/root/.composer/vendor/bin\n"}
-    },
 }
 
 

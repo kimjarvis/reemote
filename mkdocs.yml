@@ -165,6 +165,7 @@ nav:
           - nginx: roles/nginx.md
           - postgresql: roles/postgresql.md
           - datadog: roles/datadog.md
+          - composer: roles/composer.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md
@@ -199,7 +200,6 @@ nav:
 #          - Environment: examples/demonstrations/environment.md
 #          - Privilege: examples/demonstrations/privilege.md
 #      - Roles:
-#          - ansible-role-composer: examples/roles/ansible-role-composer.md
 #          - ansible-role-docker: examples/roles/ansible-role-docker.md
 #          - ansible-role-drush: examples/roles/ansible-role-drush.md
 #          - ansible-role-java: examples/roles/ansible-role-java.md

@@ -38,6 +38,7 @@ stays in lockstep with the role modules on disk.
 """
 
 from .apache import ApacheOutputs, ApacheVars, apache
+from .composer import ComposerVars, composer
 from .datadog import DatadogVars, datadog
 from .nginx import NginxVars, nginx
 from .php import PhpOutputs, PhpVars, php
@@ -48,6 +49,7 @@ from .repo_epel import EpelVars, repo_epel
 __all__: list[str] = [
     "ApacheOutputs",
     "ApacheVars",
+    "ComposerVars",
     "DatadogVars",
     "EpelVars",
     "NginxVars",
@@ -56,6 +58,7 @@ __all__: list[str] = [
     "PhpXdebugVars",
     "PostgresqlVars",
     "apache",
+    "composer",
     "datadog",
     "nginx",
     "php",
