@@ -1,63 +1,99 @@
 
 # Reemote
 
-Reemote is a Python library for configuring and deploying servers, specifically built to support the automated migration of Ansible-based workflows into pure Python.
+[Reemote](https://reemote.org/) is a Python library for configuring and deploying servers, specifically built to support the migration of Ansible-based workflows into pure Python.
 
-## Scope
+## Try it in under a minute (docker connector)
 
-Reemote is a library, not a deployment tool. It ships no CLI and no
-inventory format: hosts are a plain *inventory* (a list of dictionaries) handed
-to `run`. The transport is real — the default `Host.from_inventory` factory
-opens an [asyncssh] connection per entry, gathers facts and runs commands over
-it, and `run` closes the connections when it finishes.
-
-## Documentation
-
-A getting-started guide, the API reference for every module,
-actions and connectors, and runnable examples — is available at
-**[https://reemote.org/](https://reemote.org/)**.
-
-## Installation
-
-The *controller* is the machine running your Python script. It needs **Python
-3.13 or newer**. You do not install reemote on the target servers.
-
-**Installing from source is the recommended route**, because the checkout also
-gives you the runnable `examples/` tree and lets you pin the exact revision you
-deploy from. Run this in a directory where you want to keep the project:
+Reemote ships a **docker connector** that runs your deploy inside a local container, so you need neither a remote host nor an SSH key to see the two phases work. **Docker or Podman must be installed locally** — the connector shells out to whichever CLI you name in the inventory, and there is no default. Two steps:
 
 ```bash
-git clone https://github.com/kimjarvis/reemote.git
-cd reemote
-uv sync
-source .venv/bin/activate
+# 1. Install (Python 3.13+; pip works just as well as uv)
+uv venv .venv && source .venv/bin/activate && uv pip install reemote
+
+# 2. Save the script below as hello.py, then run it
+python hello.py
 ```
 
-`uv sync` creates `.venv`, installs reemote in editable mode and resolves its
-declared dependencies — `asyncssh`, `distro` and `pydantic` — so the SSH
-transport needs no separate install step. Here we use 
-[uv](https://docs.astral.sh/uv/); `venv` and `pip` work just as well if you
-prefer them.
+```python
+# hello.py
+import asyncio
 
-The package is **also published on [PyPI](https://pypi.org/project/reemote/)**,
-which is enough if you only need the library and not the examples:
+from reemote import files, format_log, format_plan, op, run
 
-```bash
-uv pip install reemote
+INVENTORY = [{
+    "host": "demo",
+    "family": "Alpine",
+    "connection": {
+        "connector": "docker",
+        "identifier": "alpine:3.20",
+        "docker_cmd": "podman",   # or "docker"
+    },
+}]
+
+
+def deploy(host):
+    yield op(files.install,
+             name="Write a greeting",
+             content="Hello from reemote!\n",
+             dest="/tmp/reemote-hello.txt",
+             mode="0644")
+
+
+async def main():
+    # Dry run: facts are gathered for real, nothing is mutated.
+    plans, _, _ = await run(INVENTORY, deploy, dry=True)
+    print("== Dry run: what would change ==")
+    print(format_plan(plans))
+
+    # Apply: the same deploy, executed against a fresh container.
+    _, report, _ = await run(INVENTORY, deploy)
+    print("\n== Applied: what changed ==")
+    assert report is not None
+    print(format_log(report))
+
+
+asyncio.run(main())
 ```
 
-Inside a project of your own, use `uv add reemote` instead so it lands in your
-`pyproject.toml`.
+Reemote starts a throwaway `alpine:3.20` container, previews the change without touching it, then runs the same deploy for real against a second container, prints the resulting command log, and finally commits each container into a new image and removes it. Verified output:
 
-## Supported Linux Targets
+```text
+== Dry run: what would change ==
+demo: Write a greeting         [changed: content /tmp/reemote-hello.txt is absent, will install]
 
-reemote manages **Linux servers**. The supported targets are the Red Hat family
-(RHEL, CentOS, Rocky Linux, AlmaLinux, Fedora, openEuler), the Ubuntu / Debian
-family, and Alpine.
+== Applied: what changed ==
+demo: Write a greeting         [changed: content /tmp/reemote-hello.txt is absent, will install]
+    $ scp <files install> -> /tmp/reemote-install-2e52d4f8373a608a/content
+    $ sh -c 'mkdir -p /tmp && cp /tmp/reemote-install-2e52d4f8373a608a/content /tmp/reemote-hello.txt && chmod 644 /tmp/reemote-hello.txt && rm -rf /tmp/reemote-install-2e52d4f8373a608a'
+```
 
-**BSD, macOS and Windows targets are not supported.**
+The dry-run line and the first line of the apply log are the same line — that is the point. The plan the dry-run showed you is the plan the apply executed, verbatim, with the shell commands appended. Each `run(...)` starts its own throwaway container from `alpine:3.20`, so both phases observe the same absent file; the demo is about the two-phase pattern, not idempotence.
 
-The `examples/` tree is verified on CentOS 9, openEuler 24.03 LTS SP4, Ubuntu 26.04 LTS and Alpine 3.24.
+The inventory is a plain Python list of host dictionaries carrying connection information. Reemote is agentless: for SSH targets the connection block is passed to asyncssh.
+
+A deploy is a generator that yields operation requests in order — here, a single `files.install`. In general these operations map closely to their Ansible counterparts, so the vocabulary will be familiar.
+
+The following deploy installs and starts nginx:
+
+```python
+def deploy(host):
+    yield op(apt.packages, name="Install nginx",
+             packages=("nginx",), sudo=True)
+    yield op(files.install, name="Write landing page",
+             content=PAGE, dest="/var/www/html/index.html",
+             mode="0644", sudo=True)
+    yield op(systemd.service, name="Run nginx",
+             service="nginx", running=True, enabled=True, sudo=True)
+```
+
+Point that deploy at your staging inventory with `dry=True` first and you get a per-host, per-operation diff of what staging is about to look like — the packages that will be installed, the file that will change, the service that will be started or left alone — before any of it happens. Read it, then run the same code without `dry=True` to apply.
+
+The program is asynchronous. Operations are dispatched to every host in the inventory concurrently, and the controller waits for every host to finish an operation before advancing to the next.
+
+`run(...)` returns the plans and the report as structured objects your program can inspect, so the dry-run diff is not just printable text — it is data you can gate a rollout on, log to a dashboard, or attach to a pull request.
+
+Reemote is a Python library for automation. It has no CLI, and there is no DSL to learn. The library is thoroughly documented, and this repository contains over 400 usage examples.
 
 ## License & Intellectual Property
 
@@ -70,5 +106,3 @@ This software is part of a commercially available application. It is being relea
 
 ### Originality & Attribution
 This codebase was independently developed and was inspired by the design concepts of Pyinfra by Nick Mills-Barrett. This project is an original work and does not contain, incorporate, or derive from any source code or copyrighted material of Pyinfra.
-
-[asyncssh]: https://asyncssh.readthedocs.io/
