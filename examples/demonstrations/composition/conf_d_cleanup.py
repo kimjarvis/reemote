@@ -7,11 +7,13 @@ This is a *usage* example, not part of the library. It is the recipe the
 directory-listing facts exist for: the DataDog Ansible role's cleanup
 question, "delete every ``conf.d/*/conf.yaml`` that is NOT one of the
 tracked checks" -- names the deploy author does not know, so no static
-deploy can enumerate them. Written as ONE deploy it is doubly illegal:
-the enumeration is a mutable-fact read, and branching on it after the
-install steps would yield a different request sequence per phase and
-trip ``DeterminismError``. Like ``two_deploy_split.py``, the fix moves
-the read into the gap between two complete prepare/apply cycles:
+deploy can enumerate them. Written as ONE deploy under ``run()`` it is doubly
+illegal: the enumeration is a mutable-fact read, and branching on it after the
+install steps would yield a different request sequence per phase and trip
+``DeterminismError``. Like ``two_deploy_split.py``, the fix moves
+the read into the gap between two complete prepare/apply cycles -- on the
+``run_waves`` barrier path a single ``fact`` barrier replaces the whole split
+(see the closing paragraph below).
 
 1. ``ensure_tracked_checks`` -- a branch-free deploy that installs the
    tracked checks' ``conf.yaml`` files with ``files.install`` (the
@@ -58,6 +60,17 @@ The inventory is read from the ``inventory.json`` in the current working directo
 and the snapshot filters the host list the same way (``gather_fact`` takes no ``when``
 parameter), so the work stays on the RedHat hosts and deploy 2's lookup defaults to
 empty for the others.
+
+On the barrier path (``run_waves``) this cleanup is one stream: the ``FindFiles``
+enumeration becomes ``yield fact(files.FindFiles, ...)`` inside the body, the
+subtract-and-remove loop follows it there, and ``run_waves`` allows that
+mid-deploy read precisely because there is no second pass to disagree with --
+``examples/demonstrations/waves/barrier_fact.py`` demonstrates that fact-barrier
+shape. This script keeps the two-``run()`` split for the whole-deploy
+``dry=True`` preview of the removal list, which a barrier parked mid-stream
+cannot offer (everything past it is ``unknown until run``). It is also the
+``datadog`` role's own recipe for the same question. Freshness versus
+previewability is the choice; neither idiom is the only legal one.
 
 Run it with::
 

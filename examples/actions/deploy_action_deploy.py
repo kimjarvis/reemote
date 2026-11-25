@@ -5,7 +5,10 @@
 
 This is a *usage* example, not part of the library. It is the action analogue
 of ``examples/demonstrations/composition/two_deploy_split.py`` and shows
-where actions belong: BEFORE, BETWEEN and AFTER deploys, never inside one.
+where a direct ``gather_action`` call belongs under ``run()``: BEFORE, BETWEEN
+and AFTER deploys, never inside one. (On the ``run_waves`` barrier path an
+action has an in-body form, ``yield act(Shell, ...)`` -- see the closing
+paragraph below.)
 The scenario is "install nginx, probe it with a bespoke command, then
 configure it only where the probe succeeded":
 
@@ -54,6 +57,18 @@ Connection lifecycle: ``run`` closes the hosts it owns, and ``gather_action``
 re-connects them for the probe then closes them again (each action call
 re-connects). Run 2 builds fresh hosts from the same inventory via the default
 factory, so no manual ``aclose`` is needed anywhere in this script.
+
+On the barrier path (``run_waves``) this is one stream: the ``nginx -v`` probe
+becomes ``result = yield act(Shell, command="nginx -v")`` inside the body and
+the configure branch reads ``result["exit_status"]`` there -- the driver parks
+the generator, runs the action between waves and resumes it with the
+``Result``, so there is no live-action await to forbid and no second pass to
+disagree. ``examples/demonstrations/waves/barrier_act.py`` is that twin. This
+script keeps the deploy/action/deploy shape because on the ``run()`` path a
+direct ``gather_action`` inside a body still raises ``ActionInDeployError`` and
+a synchronous generator cannot await anyway; running the action *between* two
+``run()`` cycles is the legitimate way to fold a bespoke probe into a plan that
+stays fully previewable.
 
 Run it with::
 

@@ -4,13 +4,14 @@
 """Example: splitting a fact-dependent deploy into two deterministic deploys.
 
 This is a *usage* example, not part of the library. It demonstrates the
- sanctioned workaround for a task the determinism rule otherwise forbids:
-"install nginx, then configure it only if the install actually put it on
-the box". Written as ONE deploy, that branch is illegal -- the deploy
-generator runs twice (prepare against pre-deployment state, apply against
-live state), so a generator body branching on ``dnf.DnfPackages`` after a
-``dnf.packages`` install yields a different request sequence per phase and
-``run_apply`` raises ``DeterminismError``.
+ sanctioned workaround for a task the ``run()`` determinism rule otherwise
+forbids: "install nginx, then configure it only if the install actually put it
+on the box". Written as ONE deploy under ``run()``, that branch is illegal --
+the generator runs twice (prepare against pre-deployment state, apply against
+live state), so a body branching on ``dnf.DnfPackages`` after a ``dnf.packages``
+install yields a different request sequence per phase and ``run_apply`` raises
+``DeterminismError``. On the ``run_waves`` barrier path the very same branch is
+the point of the model, not a violation -- see the closing paragraph below.
 
 The fix is to move the mutable-fact read OUT of the generator and into the
 gap between two complete prepare/apply cycles:
@@ -57,6 +58,19 @@ the script filters the materialized host list to the RedHat family before the fa
 the ``DnfPackages`` read would fail on the Alpine and Ubuntu hosts, which have no
 ``dnf``. The snapshot is therefore keyed by RedHat host only, and deploy 2's lookup uses
 a default for the hosts it never covers.
+
+On the barrier path (``run_waves``) this scenario is one stream, not two runs:
+the ``DnfPackages`` read becomes ``yield fact(dnf.DnfPackages, ...)`` and the
+configure branch moves inside the generator, which ``run_waves`` permits
+precisely because it pulls each body once -- there is no second pass to
+flatten differently. ``examples/demonstrations/waves/barrier_fact.py`` is that
+form, in a third of the machinery. This script keeps the two-``run()`` split
+for what the barrier path cannot give here: a whole-deploy ``dry=True`` preview
+of the configure step. The real trade-off is freshness against previewability --
+a mid-stream barrier reads live state but marks everything past it ``unknown
+until run``, while this frozen snapshot is stale yet fully previewable. Both
+idioms are legitimate; the two-phase rule is a ``run()`` rule, not an
+absolute one.
 
 Run it with::
 

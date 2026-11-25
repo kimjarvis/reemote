@@ -16,9 +16,11 @@ an earlier operation's outcome back into a later request:
 - ``when`` guards read static inventory data only, never run outcomes;
 - ``ctx.changed`` flows one way (operation -> driver -> ``ApplyReport``),
   so a deploy body cannot observe its own earlier operations' results;
-- branching on "did the config write change?" inside ONE deploy would
-  yield different request sequences per phase (prepare sees pre-state,
-  apply sees live state) and ``run_apply`` raises ``DeterminismError``.
+- under ``run()``, branching on "did the config write change?" inside ONE
+  deploy would yield different request sequences per phase (prepare sees
+  pre-state, apply sees live state) and ``run_apply`` raises
+  ``DeterminismError``. On the ``run_waves`` barrier path a ``checkpoint``
+  reads those same outcomes in-stream -- see the closing paragraph below.
 
 The fix is the **two-deploy outcome split**, a sibling of the fact split
 in ``two_deploy_split.py``: the outcome read moves into the gap between
@@ -61,6 +63,18 @@ The inventory is read from the ``inventory.json`` in the current working directo
 (validated up front with ``validate_inventory``); every request carries
 ``when=is_redhat`` so the ``dnf``/``systemd`` work runs only on the RedHat hosts, and
 the run-2 factory builds fresh hosts from the same inventory via the default factory.
+
+On the barrier path (``run_waves``) this is one stream, not two runs: the
+notification read becomes ``notified = changed_hosts(yield
+checkpoint("configure done"), NOTIFYING)`` and the handler requests follow in
+the same body -- the checkpoint closes the wave whose ``changed`` flags it
+reports, so the branch needs no frozen snapshot and no second ``run()``. The
+library still ships the two-deploy form because ``run()`` has no ``checkpoint``:
+a plain deploy body cannot observe its own earlier outcomes, so the split into
+``changed_hosts(report, NOTIFYING)`` between two cycles is how a ``run()``
+deploy notifies. ``examples/demonstrations/waves/checkpoint_handler.py`` is the
+in-stream twin. The two-``run()`` split below stays legitimate -- and is what a
+deploy on the barrier-free path must use.
 
 Run it with::
 

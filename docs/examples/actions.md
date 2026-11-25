@@ -90,6 +90,15 @@ This script needs **no real host** — the guard fires during prepare, before an
 fact is gathered or connection opened — so it runs offline and treats the error
 as the expected outcome.
 
+The three reasons the guard gives are properties of `run()`'s two-phase model,
+not of the deploy model: on the `run_waves` barrier path a body is pulled once,
+so the re-invocation and plan-phase-pairing arguments fall away. The *behaviour*
+still holds — the wave loop keeps the `ContextVar` set around every pull, so a
+direct `gather_action` raises here too — but an action is no longer confined to
+outside a deploy: its sanctioned in-body form is `yield act(Shell, ...)`,
+demonstrated in
+[An `act` probe whose result is data](demonstrations/waves.md#an-act-probe-whose-result-is-data).
+
 ::: action_in_deploy_guard
     options:
       members: []
@@ -106,6 +115,16 @@ put carries `when=is_redhat`. The second deploy
 is built by a factory closing over the frozen `Result` dict, so its branch is a
 pure function of static input and the determinism guard holds — the action
 analogue of the two-deploy fact split.
+
+On the barrier path the whole deploy/action/deploy sequence collapses to one
+stream: the `nginx -v` probe becomes `result = yield act(Shell, command="nginx
+-v")` inside the body and the configure branch reads `result["exit_status"]`
+there — see
+[An `act` probe whose result is data](demonstrations/waves.md#an-act-probe-whose-result-is-data)
+(`examples/demonstrations/waves/barrier_act.py`). This script keeps the three-step
+shape for the `run()` path, where a direct `gather_action` inside a body still
+raises and running the action *between* cycles is the legitimate way to keep the
+plan fully previewable.
 
 ::: deploy_action_deploy
     options:

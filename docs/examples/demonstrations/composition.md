@@ -4,11 +4,19 @@ Scripts under `examples/demonstrations/composition/` — scenarios that cross
 module boundaries to demonstrate the composition helpers
 [`sub_deploy`][reemote.core.sub_deploy] and [`compose`][reemote.core.compose]
 — one scenario each, in the order the [guide](../../guide.md#composing-deploys)
-introduces them — plus a role-selection scenario keyed on the inventory's
-`group`/`tags`, a `when`-guard scenario that keeps one shared schedule
-across hosts, and three two-deploy scenarios that move a mutable read — a
-fact snapshot or the apply report — into the gap between two complete
-prepare/apply cycles. All read the shared
+introduces them. Both helpers sequence **request streams only**: `compose` and
+`sub_deploy` reject a barrier with `DeployRequestError`, so a deploy that needs
+a mid-run read composes with `yield from` under
+[`run_waves`][reemote.drivers.run_waves] instead — the
+[wave demonstrations](waves.md). Alongside the pure-composition scenarios sit
+a role-selection scenario keyed on the inventory's `group`/`tags`, a
+`when`-guard scenario that keeps one shared schedule across hosts, and three
+two-deploy scenarios. Those three move a mutable read — a fact snapshot or the
+apply report — into the gap between two complete `run()` prepare/apply cycles:
+the **barrier-free** idiom, legitimate precisely because `run()` still gives a
+whole-deploy `dry=True` preview a mid-stream barrier cannot. Each has a
+one-stream `run_waves` twin under [examples/demonstrations/waves/](waves.md).
+All read the shared
 project-root `inventory.json` (validated up front) and guard their `dnf` work
 to the RedHat family with a stable `is_redhat` predicate, so the Alpine and
 Ubuntu hosts are skipped without their facts being read; every one follows the
@@ -82,6 +90,14 @@ staged with `files.put` to `/tmp` (transfers are never elevated); the
 trade-off — a frozen snapshot, no mid-run replanning — is spelled out in the
 script's own docstring below.
 
+On the barrier path this same scenario is one stream rather than two runs: the
+`DnfPackages` read becomes a `fact` barrier and the configure branch moves inside
+the body. Its runnable twin is
+[Branching on a `fact` barrier](waves.md#branching-on-a-fact-barrier-in-one-stream)
+(`examples/demonstrations/waves/barrier_fact.py`), which trades this script's
+whole-deploy `dry=True` preview for a live mid-run read. The two-phase rule the
+docstring below states is a `run()` rule, not an absolute one.
+
 ::: two_deploy_split
     options:
       members: []
@@ -102,6 +118,15 @@ the tracked paths from the frozen snapshot and yields one `files.file`
 exactly what the cleanup would remove, and re-running the whole script
 converges to zero removals. The same shape answers the apt legacy-`.list`
 cleanup — swap the directory, the filter and the tracked set.
+
+The cleanup has the same one-stream twin: under `run_waves` the `FindFiles`
+enumeration is a single `fact` barrier and the subtract-and-remove loop follows it
+in the body — see
+[Branching on a `fact` barrier](waves.md#branching-on-a-fact-barrier-in-one-stream)
+(`examples/demonstrations/waves/barrier_fact.py`). This script keeps the split for
+the `dry=True` preview of the removal list, which a mid-stream barrier marks
+`unknown until run`; it is also the shape the `datadog` role reaches for the same
+question on the barrier-free path.
 
 ::: conf_d_cleanup
     options:
@@ -131,6 +156,14 @@ end-of-run flushing come free — at most one restart per host, after every
 config write landed — and a converged re-run queues no restart at all.
 The guide's [Change notification](../../guide.md#change-notification-handlers)
 section spells out why this is the sanctioned shape.
+
+The handler has an in-stream twin: under `run_waves` the notification read is
+`changed_hosts(yield checkpoint(...), NOTIFYING)`, so no frozen snapshot or second
+run is needed — see
+[A handler as an in-stream `checkpoint`](waves.md#a-handler-as-an-in-stream-checkpoint)
+(`examples/demonstrations/waves/checkpoint_handler.py`). This two-`run()` split
+stays the sanctioned shape on the barrier-free path, where a plain deploy body
+cannot observe its own earlier outcomes.
 
 ::: handler_restart
     options:

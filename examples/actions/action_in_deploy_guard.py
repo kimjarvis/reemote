@@ -10,7 +10,8 @@ inside a deploy, and the library enforces it rather than trusting convention.
 ``illegal_deploy`` below calls ``gather_action`` from inside its generator
 body. The moment that call executes, ``gather_action`` raises
 ``ActionInDeployError`` -- synchronously, at the call site, before any
-coroutine is created. Three properties of the deploy model demand this:
+coroutine is created. Three properties of ``run()``'s two-phase model demand
+this:
 
 1. A deploy generator is re-invoked once per phase (prepare and apply), so an
    action inside it would run TWICE.
@@ -18,6 +19,16 @@ coroutine is created. Three properties of the deploy model demand this:
    the host mid-plan and poison every later fact read.
 3. The determinism guard pairs requests by value, and an immediate action has
    no plan-phase counterpart to pair with.
+
+Only the *behaviour* is universal; these three *reasons* are two-phase
+artifacts. ``run_waves`` pulls a body once, so reason 1's re-invocation and
+reason 3's plan-phase pairing do not exist on the wave path, and reason 2
+inverts -- each wave is applied as it is planned. The guard still fires all the
+same: the wave loop keeps the ``ContextVar`` set around every pull, so a direct
+``gather_action(...)`` in any body, ``run_waves`` included, raises
+``ActionInDeployError``. What the wave path adds is a sanctioned *in-body*
+action -- ``yield act(Shell, ...)`` -- so an action is no longer confined to
+before, between and after deploys there.
 
 The guard is a ``ContextVar`` the drivers set while ``run_prepare`` /
 ``run_apply`` run, so the check fires in BOTH phases and resets cleanly
