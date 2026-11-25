@@ -29,7 +29,8 @@ The template-rendering roles (``apache``, ``datadog``, ``memcached``, ``nginx``,
 in at import time, so ``import reemote.roles`` stays clean without the extra.
 ``php`` renders its four templates as plain f-strings, so it never needs the
 extra even though it templates files -- and ``php_xdebug`` inherits that, since
-its one template is pure substitution too.
+its one template is pure substitution too. ``nfs`` builds ``/etc/exports`` with
+a Python join, the same no-extra case.
 
 Public names are added here as each role is migrated (T4-T17): append a
 ``from .<role> import (...)`` block and extend ``__all__`` to match that
@@ -44,6 +45,7 @@ from .docker import DockerVars, docker
 from .drush import DrushVars, drush
 from .java import JavaVars, java
 from .memcached import MemcachedVars, memcached
+from .nfs import NfsVars, nfs
 from .nginx import NginxVars, nginx
 from .ntp import NtpVars, ntp
 from .php import PhpOutputs, PhpVars, php
@@ -61,6 +63,7 @@ __all__: list[str] = [
     "EpelVars",
     "JavaVars",
     "MemcachedVars",
+    "NfsVars",
     "NginxVars",
     "NtpVars",
     "PhpOutputs",
@@ -74,6 +77,7 @@ __all__: list[str] = [
     "drush",
     "java",
     "memcached",
+    "nfs",
     "nginx",
     "ntp",
     "php",

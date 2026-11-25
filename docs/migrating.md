@@ -146,10 +146,15 @@ preview and inventory loading — is
   (`nfs_exports: []`) the service-start task is skipped — yet Ansible runs
   `exportfs -ra` whenever `/etc/exports` changed, with the unit still stopped.
   `reload_handler(changed, "nfs-kernel-server")` would start the unit the gate
-  left stopped and never run `exportfs`. The faithful shape is the gather
-  above; the full program is
-  `examples/roles/ansible-role-nfs/ansible-role-nfs.py` (its `reload_nfs`),
-  proven offline by `tests/test_roles_ansible_role_nfs.py`.
+  left stopped and never run `exportfs`. The faithful shape for a `run()`
+  program is the gather above.
+- **Under `run_waves` the same handler needs no gather.** A bare command *is*
+  spellable inside a deploy body once the body is resumable: an
+  `act(Shell, ...)` [barrier](stages.md) runs it in the wave the
+  notification checkpoint just closed, and the `Result` it resumes the body with
+  is still data, so the body raises [`CommandError`][reemote.hosts.CommandError]
+  itself on a non-zero exit. That is how the migrated
+  [`nfs`](roles/nfs.md) library role runs its `reload nfs` handler.
 - For the full rationale and the reference signatures, see the
   [handlers guide section](guide.md#change-notification-handlers) and the
   [handlers reference](handlers.md).

@@ -171,6 +171,7 @@ nav:
           - docker: roles/docker.md
           - java: roles/java.md
           - memcached: roles/memcached.md
+          - nfs: roles/nfs.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md
@@ -204,7 +205,5 @@ nav:
 #          - Connectors: examples/demonstrations/connectors.md
 #          - Environment: examples/demonstrations/environment.md
 #          - Privilege: examples/demonstrations/privilege.md
-#      - Roles:
-#          - ansible-role-nfs: examples/roles/ansible-role-nfs.md
 
 

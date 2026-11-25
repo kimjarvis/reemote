@@ -93,24 +93,6 @@ SNAPSHOT_ARGS = {
         "examples/modules/files/files_fetch_url.py",
         "build_installer",
     ): lambda name: "0" * 96,
-    # The NFS role migration: one factory closing over the frozen plan
-    # main() builds from static host_vars -- the exports tuple, the dedup'd
-    # export directories, the rendered /etc/exports content and the
-    # exports-non-empty service gate.
-    (
-        "examples/roles/ansible-role-nfs/ansible-role-nfs.py",
-        "build_nfs",
-    ): lambda name: {
-        name: {
-            "exports": ("/srv/nfs 192.0.2.0/24(rw,sync,no_subtree_check)",),
-            "directories": ("/srv/nfs",),
-            "exports_content": (
-                "# /etc/exports: managed by reemote\n"
-                "/srv/nfs 192.0.2.0/24(rw,sync,no_subtree_check)\n"
-            ),
-            "start_service": True,
-        }
-    },
 }
 
 
