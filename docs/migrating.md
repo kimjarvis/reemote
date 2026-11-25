@@ -1358,21 +1358,33 @@ is usually an **opt-in path, default off**, guarded by a `when:` flag and a
 `creates:`/`stat:` check so the expensive compile runs only when the tree is
 fresh or the binary is missing.
 
-This role does not migrate as one deploy, and the reason is structural, not a
-missing feature. reemote has **no generic command operation inside a deploy** —
-that is a deliberate determinism boundary. The runner executes the deploy
-generator twice (prepare against pre-deployment state, apply against live
-state), so a `make` step in the body would run *twice*, the prepare phase would
-mutate the host mid-plan (poisoning every later fact read), and an immediate
-command has no request value for the guard to pair — it trips
+Under a barrier-free `run()` deploy this role does not migrate as one deploy,
+and the reason is structural, not a missing feature. `run()` has **no generic
+command operation inside a deploy** — a deliberate determinism boundary. The
+runner executes the deploy generator twice (prepare against pre-deployment
+state, apply against live state), so a `make` step in the body would run
+*twice*, the prepare phase would mutate the host mid-plan (poisoning every
+later fact read), and an immediate command has no request value for the guard
+to pair — it trips
 [`DeterminismError`][reemote.drivers.DeterminismError] (see
 [Guide — Determinism](guide.md#determinism)). The compile half therefore belongs
 to [`Shell`][reemote.actions.Shell] / [`Script`][reemote.actions.Script] driven
-by [`gather_action`](guide.md#actions), **outside** the deploy —
-before, between or after it, never inside a generator. `gather_action` raises
-[`ActionInDeployError`](guide.md#actions) the moment it is
-called while a deploy is running, so the boundary is enforced, not conventional
-(see [Guide — Actions](guide.md#actions)).
+by [`gather_action`](guide.md#actions), **outside** the deploy — before,
+between or after it, never inside a `run()` generator. `gather_action` raises
+[`ActionInDeployError`](guide.md#actions) the moment it is called while a
+deploy is running, so the boundary is enforced, not conventional (see
+[Guide — Actions](guide.md#actions)); the same error still fires on the wave
+path, since the loop keeps the deploy guard around every pull. Under
+`run_waves` the sanctioned in-body form is `yield act(Shell, ...)`, a barrier
+that parks the generator until the build has finished and resumes the body
+with the [`Result`][reemote.actions.Result] as data — so the whole
+build-then-install sequence fits in one role body, and the
+[`php_xdebug`](roles/php_xdebug.md) library role ships exactly that shape
+(`fact(FileExists)` gate, `act(Shell)` build, then `files.copy` install, in
+one stream). A runnable twin is
+[An `act` probe whose result is data](examples/demonstrations/waves.md#an-act-probe-whose-result-is-data)
+(`examples/demonstrations/waves/barrier_act.py`). The gather → action →
+deploy recipe below is the barrier-free path.
 
 The migration is a **split**, not a swap: the declarative "converge the tree"
 half (clone, symlink, config write) becomes one idempotent deploy, the
@@ -1386,13 +1398,13 @@ config that depend on the built binary.
 | --- | --- |
 | `git: {repo, dest, version}` clone the source | [`git.repo(src=..., dest=..., branch=...)`][reemote.modules.git.git.repo] — inside a deploy |
 | `unarchive: {src: <url>, dest, creates, mode}` fetch + extract a tarball source | [`files.unarchive(src=..., dest=..., creates=..., mode=...)`][reemote.modules.files.files.unarchive] — inside a deploy; the URL is fetched control-side as binary and the `creates` gate is **in-operation** (a converged tree fetches nothing); `mode` is the issue #58 `chmod -R` of `dest` |
-| `command: ./buildconf --force` / `./configure …` / `make` / `make install` | [`gather_action(hosts, Shell, command="…")`](guide.md#actions) — **outside** any deploy, one action per step (or a staged build script run by [`Script`][reemote.actions.Script]) |
+| `command: ./buildconf --force` / `./configure …` / `make` / `make install` | barrier-free: [`gather_action(hosts, Shell, command="…")`](guide.md#actions) — **outside** any `run()` deploy, one action per step (or a staged build script run by [`Script`][reemote.actions.Script]); under `run_waves`: `result = yield act(Shell, command=..., name=..., sudo=True)` inside the body, one barrier per step |
 | `environment:` on a task | `env=` on the [`op(...)`][reemote.core.op] for the declarative half (the driver prefixes the rendered command `env K=V …` *innermost*, inside `sudo`/`su`/`doas`, and the values show up in the run log), `env=` on the `Shell`/`Script` action for the build steps — one shared spelling for both halves (issue #66, the deploy counterpart of #4's actions) |
 | `file: {src, dest, state: link}` symlink the binary | [`files.link(path=..., target=...)`][reemote.modules.files.files.link] — inside a deploy |
 | `copy:`/`template:` a config or unit file | [`files.install(content=..., dest=...)`][reemote.modules.files.files.install] — inside a deploy (pre-render a template control-side, see the [Jinja2 migration](#migrating-jinja2-templates)) |
 | `copy: {src: <built binary>, dest, remote_src: true, mode}` install the artifact | [`files.copy(src=..., dest=..., mode=..., overwrite=True)`][reemote.modules.files.files.copy] — inside the **post-build** deploy; `dest` auto-detects (existing directory → copy inside, else rename), sha1-gated so a converged install no-ops |
-| `when: build_from_source` (opt-in, default off) | a Python `if`/`when=` guard on static inventory data (`host.extra`, `host.group`, `host.tags`) — never on a fact read inside the deploy |
-| `creates: /usr/local/bin/foo` (skip if already built) | gather the built state *between* deploys — a fact, or a `Shell` probe whose [`Result`][reemote.actions.Result] you freeze — and gate the build action on it |
+| `when: build_from_source` (opt-in, default off) | a Python `if`/`when=` guard on static inventory data (`host.extra`, `host.group`, `host.tags`) — the *guard* reads only static data on both paths, since a `when` predicate is a plain `host -> bool`; under `run_waves` the build step is additionally gated on a `fact(FileExists)` [barrier](stages.md) in the body (see the `creates:` row below) |
+| `creates: /usr/local/bin/foo` (skip if already built) | barrier-free: gather the built state *between* `run()` deploys — a fact, or a `Shell` probe whose [`Result`][reemote.actions.Result] you freeze — and gate the build action on it; under `run_waves`: `built = yield fact(FileExists, path=...)` in the body gates the following `act(Shell)` step in the same stream |
 | `register: build` + `failed_when` | read `result["exit_status"]`/`result["stdout"]` from the frozen `Result` dict; an action interprets nothing, so *you* decide what a non-zero build exit means |
 
 ### The process
@@ -1517,15 +1529,23 @@ hand.
 
 ### What to watch
 
-- **The compile never goes inside a generator.** `op(Shell, ...)` is refused
-  ([`materialize`][reemote.drivers.materialize] wants an async-generator
-  operation) and `gather_action(...)` inside a deploy raises
-  [`ActionInDeployError`](guide.md#actions). There is no
-  spelling that puts a `make` step in a deploy; the boundary is the point.
-- **A build is not idempotent, and that is fine — outside a deploy.** The
-  determinism guard only governs deploys. To avoid a needless recompile, do the
-  `creates:` check yourself: gather the built state (step 2) and skip the
-  `gather_action` for hosts whose binary already exists.
+- **Under `run()`, the compile never goes inside a generator.** `op(Shell, ...)`
+  is refused ([`materialize`][reemote.drivers.materialize] wants an
+  async-generator operation) and a direct `gather_action(...)` inside a body
+  raises [`ActionInDeployError`](guide.md#actions) on both paths — the wave
+  loop keeps the deploy guard active around every pull. There is no `run()`
+  spelling that puts a `make` step in a deploy; the boundary is the point. On
+  the wave path the boundary moves: `yield act(Shell, ...)` is the sanctioned
+  in-body form, executed by the driver *between* pulls, with the `Result` the
+  body receives as ordinary data.
+- **A build is not idempotent, and that is fine — outside a `run()` deploy.**
+  The determinism guard only governs `run()` deploys; `run_waves` has none, but
+  an ungated build still churns. To avoid a needless recompile, do the
+  `creates:` check yourself: on the barrier-free path gather the built state
+  (step 2) and skip the `gather_action` for hosts whose binary already exists;
+  under `run_waves` gate the in-body `act(Shell)` step on a preceding
+  `fact(FileExists)` barrier, exactly as the
+  [`php_xdebug`](roles/php_xdebug.md) role does.
 - **An action interprets nothing.** A non-zero `make` exit — even 127 — comes
   back as data in the [`Result`][reemote.actions.Result] (`exit_status`,
   `stdout`, `stderr`); it does not raise. Inspect it and raise yourself, exactly
@@ -1543,12 +1563,16 @@ hand.
   open-ended compile is an action. Resist the temptation to drag the whole role
   into one big `Shell` command; split it and each half keeps the guarantees its
   model makes.
-- **The post-build `files.copy` must follow the build barrier.**
-  [`files.copy`][reemote.modules.files.files.copy] validates `src` in **both**
-  phases (prepare reads pre-state), so a "build then copy" flow cannot share
-  one deploy — the copy belongs in the deploy *after* the build action. Its
-  rename `dest` needs an existing parent (create it with
-  [`files.directory`][reemote.modules.files.files.directory] in deploy 1), and
-  `overwrite=True` is sha1-gated: drift is overwritten (Ansible's
-  `force: yes`), equal content no-ops, and `mode`/`user`/`group` converge in
-  the same request — no separate `files.file` pass.
+- **The post-build `files.copy` must follow the build barrier.** On the
+  barrier-free path, [`files.copy`][reemote.modules.files.files.copy] validates
+  `src` in **both** `run()` phases (prepare reads pre-state), so a "build then
+  copy" flow cannot share one `run()` deploy — the copy belongs in the deploy
+  *after* the build action. Under `run_waves` the same ordering is in-body: the
+  `act(Shell)` barrier closes the build wave before the body emits the
+  `files.copy` request, so one role body carries the whole sequence (this is
+  what [`php_xdebug`](roles/php_xdebug.md) does). Either way the rename `dest`
+  needs an existing parent (create it with
+  [`files.directory`][reemote.modules.files.files.directory] in deploy 1 / the
+  setup wave), and `overwrite=True` is sha1-gated: drift is overwritten
+  (Ansible's `force: yes`), equal content no-ops, and `mode`/`user`/`group`
+  converge in the same request — no separate `files.file` pass.

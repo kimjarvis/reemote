@@ -141,9 +141,10 @@ instead of a fact snapshot, with the reusable helpers
 [`restart_handler`][reemote.handlers.restart_handler] shipped in
 `reemote.handlers` so a role migration does not hand-roll them.
 `systemd.service(restarted=True)` is
-stateless: it restarts a running unit on every deploy that reaches it,
-and neither `when` (static inventory data only) nor the deploy body (no
-access to earlier outcomes) can condition it on a change. Deploy 1
+stateless: it restarts a running unit on every `run()` deploy that reaches
+it, and on the barrier-free path neither `when` (static inventory data
+only) nor the deploy body (no access to earlier outcomes) can condition it
+on a change. Deploy 1
 (`configure_nginx`) installs nginx and writes a content-idempotent
 `conf.d` drop-in with `files.install`, both requests named after the
 script's `NOTIFYING` set; between the runs, `changed_hosts(report, NOTIFYING)`
