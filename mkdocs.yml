@@ -167,6 +167,7 @@ nav:
           - datadog: roles/datadog.md
           - composer: roles/composer.md
           - drush: roles/drush.md
+          - ntp: roles/ntp.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md
@@ -205,6 +206,5 @@ nav:
 #          - ansible-role-java: examples/roles/ansible-role-java.md
 #          - ansible-role-memcached: examples/roles/ansible-role-memcached.md
 #          - ansible-role-nfs: examples/roles/ansible-role-nfs.md
-#          - ansible-role-ntp: examples/roles/ansible-role-ntp.md
 
 

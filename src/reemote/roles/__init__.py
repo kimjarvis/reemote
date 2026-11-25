@@ -42,6 +42,7 @@ from .composer import ComposerVars, composer
 from .datadog import DatadogVars, datadog
 from .drush import DrushVars, drush
 from .nginx import NginxVars, nginx
+from .ntp import NtpVars, ntp
 from .php import PhpOutputs, PhpVars, php
 from .php_xdebug import PhpXdebugVars, php_xdebug
 from .postgresql import PostgresqlVars, postgresql, postgresql_data
@@ -55,6 +56,7 @@ __all__: list[str] = [
     "DrushVars",
     "EpelVars",
     "NginxVars",
+    "NtpVars",
     "PhpOutputs",
     "PhpVars",
     "PhpXdebugVars",
@@ -64,6 +66,7 @@ __all__: list[str] = [
     "datadog",
     "drush",
     "nginx",
+    "ntp",
     "php",
     "php_xdebug",
     "postgresql",

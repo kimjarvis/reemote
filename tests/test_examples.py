@@ -140,47 +140,6 @@ SNAPSHOT_ARGS = {
             "start_service": True,
         }
     },
-    # The NTP role migration: two factories. build_install closes over the
-    # frozen per-host plan main() builds from LinuxDistribution (the vars table
-    # selected through the with_first_found chain, the set_fact overrides
-    # applied, the timezone resolved); build_configure closes over the same plan
-    # plus the post-install systemd-timesyncd presence gate. build_handlers takes
-    # three required parameters, so the harness skips it entirely -- no entry.
-    (
-        "examples/roles/ansible-role-ntp/ansible-role-ntp.py",
-        "build_install",
-    ): lambda name: {
-        name: {
-            "packages": ("ntpsec",),
-            "tzdata_packages": ("tzdata",),
-            "timezone": "Etc/UTC",
-            "daemon": "ntpsec",
-            "cron_daemon": "cron",
-            "config_file": "/etc/ntpsec/ntp.conf",
-            "enabled": True,
-            "manage_config": True,
-            "cron_handler_enabled": False,
-            "config_content": "# Ansible managed\ndriftfile /var/lib/ntpsec/ntp.drift\n",
-        }
-    },
-    (
-        "examples/roles/ansible-role-ntp/ansible-role-ntp.py",
-        "build_configure",
-    ): lambda name: {
-        name: {
-            "packages": ("ntpsec",),
-            "tzdata_packages": ("tzdata",),
-            "timezone": "Etc/UTC",
-            "daemon": "ntpsec",
-            "cron_daemon": "cron",
-            "config_file": "/etc/ntpsec/ntp.conf",
-            "enabled": True,
-            "manage_config": True,
-            "cron_handler_enabled": False,
-            "config_content": "# Ansible managed\ndriftfile /var/lib/ntpsec/ntp.drift\n",
-            "timesyncd": True,
-        }
-    },
 }
 
 
