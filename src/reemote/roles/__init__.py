@@ -43,6 +43,7 @@ from .datadog import DatadogVars, datadog
 from .docker import DockerVars, docker
 from .drush import DrushVars, drush
 from .java import JavaVars, java
+from .memcached import MemcachedVars, memcached
 from .nginx import NginxVars, nginx
 from .ntp import NtpVars, ntp
 from .php import PhpOutputs, PhpVars, php
@@ -59,6 +60,7 @@ __all__: list[str] = [
     "DrushVars",
     "EpelVars",
     "JavaVars",
+    "MemcachedVars",
     "NginxVars",
     "NtpVars",
     "PhpOutputs",
@@ -71,6 +73,7 @@ __all__: list[str] = [
     "docker",
     "drush",
     "java",
+    "memcached",
     "nginx",
     "ntp",
     "php",

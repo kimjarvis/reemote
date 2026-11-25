@@ -93,16 +93,6 @@ SNAPSHOT_ARGS = {
         "examples/modules/files/files_fetch_url.py",
         "build_installer",
     ): lambda name: "0" * 96,
-    # The Memcached role migration: one factory closing over the frozen
-    # plan main() renders control-side from static host_vars -- the
-    # memcached.conf template already a plain str. The handler deploy is
-    # reemote's own restart_handler factory, not an example entrypoint.
-    (
-        "examples/roles/ansible-role-memcached/ansible-role-memcached.py",
-        "build_memcached",
-    ): lambda name: {
-        name: {"config_content": "# Ansible managed\n-d\n"}
-    },
     # The NFS role migration: one factory closing over the frozen plan
     # main() builds from static host_vars -- the exports tuple, the dedup'd
     # export directories, the rendered /etc/exports content and the
