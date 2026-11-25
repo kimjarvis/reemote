@@ -93,61 +93,6 @@ SNAPSHOT_ARGS = {
         "examples/modules/files/files_fetch_url.py",
         "build_installer",
     ): lambda name: "0" * 96,
-    # The DataDog role migration: five factories, each closing over the
-    # frozen reads its deploy branches on. The payloads are plain
-    # bytes/str/tuple/frozenset -- the shapes main() freezes between runs.
-    (
-        "examples/roles/ansible-datadog/ansible-datadog.py",
-        "build_pre_cleanup",
-    ): lambda name: {
-        name: {"skip_install": False, "legacy_units": ("datadog-installer.service",)}
-    },
-    (
-        "examples/roles/ansible-datadog/ansible-datadog.py",
-        "build_repository",
-    ): lambda name: {
-        name: {
-            "keys": (b"-----BEGIN PGP PUBLIC KEY BLOCK-----\n",) * 5,
-        }
-    },
-    (
-        "examples/roles/ansible-datadog/ansible-datadog.py",
-        "build_agent",
-    ): lambda name: {name: frozenset({"datadog-agent", "datadog-signing-keys"})},
-    (
-        "examples/roles/ansible-datadog/ansible-datadog.py",
-        "build_configure",
-    ): lambda name: {
-        name: {
-            "manage_config": True,
-            "check_running": True,
-            "enabled": True,
-            "exp_running": False,
-            "sysprobe_enabled": True,
-            "before_7180": False,
-            "units": frozenset(
-                {"datadog-agent.service", "datadog-agent-sysprobe.service"}
-            ),
-            "agent_user": "dd-agent",
-            "agent_group": "dd-agent",
-            "additional_groups": (),
-            "datadog_yaml": "api_key: seed\n",
-            "install_info": "---\ninstall_method:\n  tool: reemote\n",
-            "system_probe_yaml": "# managed\n",
-            "security_agent_yaml": None,
-            "checks": (("cpu", "instances:\n  - {}\n"),),
-            "custom_checks": (("mycheck", "# custom check\n"),),
-        }
-    },
-    (
-        "examples/roles/ansible-datadog/ansible-datadog.py",
-        "build_cleanup_conf_d",
-    ): lambda name: {
-        name: [
-            "/etc/datadog-agent/conf.d/cpu.d/conf.yaml",
-            "/etc/datadog-agent/conf.d/legacy.d/conf.yaml.example",
-        ]
-    },
     # The Docker role migration: one factory closing over the release
     # codename main() gathers from LinuxDistribution for the repo's Suites.
     (

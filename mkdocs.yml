@@ -164,6 +164,7 @@ nav:
           - php_xdebug: roles/php_xdebug.md
           - nginx: roles/nginx.md
           - postgresql: roles/postgresql.md
+          - datadog: roles/datadog.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md
@@ -198,7 +199,6 @@ nav:
 #          - Environment: examples/demonstrations/environment.md
 #          - Privilege: examples/demonstrations/privilege.md
 #      - Roles:
-#          - ansible-datadog: examples/roles/ansible-datadog.md
 #          - ansible-role-composer: examples/roles/ansible-role-composer.md
 #          - ansible-role-docker: examples/roles/ansible-role-docker.md
 #          - ansible-role-drush: examples/roles/ansible-role-drush.md
