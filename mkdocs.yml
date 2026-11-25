@@ -154,10 +154,10 @@ nav:
       - Barriers: stages.md
 #      - Role Variables: rolevars.md
   # Migrated Ansible roles, now first-class library citizens: one page per role
-  # under docs/roles/, with the catalogue (docs/roles/index.md) landing once the
-  # corpus has moved. The legacy Examples -> Roles pages retire with their
-  # monoliths, one row per role commit.
+  # under docs/roles/, fronted by the docs/roles/index.md catalogue. The legacy
+  # Examples -> Roles pages retire with their monoliths, one row per role commit.
       - Roles:
+          - Overview: roles/index.md
           - repo_epel: roles/repo_epel.md
           - apache: roles/apache.md
           - php: roles/php.md
