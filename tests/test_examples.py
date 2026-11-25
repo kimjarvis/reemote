@@ -21,7 +21,11 @@ ways, both of which stay offline:
   import the docs build already performs) and each deploy-shaped entrypoint is
   drained against a lazily built host, so the requests really are constructed
   and really are hashed. ``op()`` construction sends nothing, so no transport
-  is ever reached.
+  is ever reached. A deploy that yields a *barrier* is drained only up to that
+  first barrier (``drain(..., until_barrier=True)``) -- resuming past it would
+  inject ``None`` where the driver's fact value, action ``Result``, wave report
+  or control return belongs -- so a barrier-bearing stream cannot masquerade as
+  a lost request (§11.8). No barrier-free example is affected.
 
 Three deliberately network-free scripts -- the in-memory role demonstration,
 the in-memory proxied apt demonstration and the in-deploy action guard -- are
@@ -40,6 +44,7 @@ import pytest
 
 from reemote import Host, Result
 from reemote.core import OperationRequest
+from reemote.stages import Barrier, CheckpointRequest
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 EXAMPLES_ROOT = REPO_ROOT / "examples"
@@ -424,17 +429,41 @@ def seed_spool_transforms(module, host: Host) -> None:
 _NO_ARG = object()
 
 
-def build_requests(factory, argument, host: Host) -> list:
+def drain(stream, *, until_barrier: bool = False) -> list:
+    """Pull a deploy stream into a list, optionally stopping at the first barrier.
+
+    Without ``until_barrier`` this is a plain ``list(...)``: the body runs to
+    exhaustion. A barrier-bearing deploy -- a wave demonstration, or a role body
+    drained offline -- must instead be abandoned at the first barrier it yields.
+    Resuming past a barrier sends ``None`` back into the ``yield fact(...)`` /
+    ``yield act(...)`` expression where a fact value, an action ``Result``, an
+    ``ApplyReport`` or a control return belongs, so the body either crashes on
+    the ``None`` or builds a later ``op(...)`` it never yields -- which the
+    built-versus-yielded counter reports as a lost request. Stopping at the
+    barrier keeps that accounting balanced while still constructing (and so
+    hashing) every request the body reached before it (§11.8).
+    """
+    items = []
+    for item in stream:
+        items.append(item)
+        if until_barrier and isinstance(item, Barrier):
+            break
+    return items
+
+
+def build_requests(factory, argument, host: Host, *, until_barrier: bool = False) -> list:
     """Call an entrypoint and flatten whatever generator it produces.
 
     A factory that returns a deploy (``package_role(*packages)``,
     ``build_kill(snapshot)``) is called again with the host, so both layers get
-    exercised.
+    exercised. ``until_barrier`` is handed straight to :func:`drain`; it stays
+    ``False`` for the barrier-free example corpus and is set by the wave
+    demonstrations (§19).
     """
     produced = factory(argument) if argument is not _NO_ARG else factory()
     if callable(produced) and not isinstance(produced, types.GeneratorType):
         produced = produced(host)
-    return list(produced)
+    return drain(produced, until_barrier=until_barrier)
 
 
 def requests_in(items: list) -> list[OperationRequest]:
@@ -444,6 +473,36 @@ def requests_in(items: list) -> list[OperationRequest]:
     hand back callables as well, so the drain is filtered rather than assumed.
     """
     return [item for item in items if isinstance(item, OperationRequest)]
+
+
+def test_drain_stops_at_the_first_barrier():
+    """``until_barrier`` abandons the stream the moment it yields a barrier.
+
+    The tail is never reached, so a body that would build-but-not-yield past the
+    barrier is not exercised -- exactly the lost-request case the flag guards.
+    """
+    before = object()
+    barrier = CheckpointRequest(name="configure done")
+    after = object()
+
+    def stream():
+        yield before
+        yield barrier
+        yield after
+
+    assert drain(stream(), until_barrier=True) == [before, barrier]
+
+
+def test_drain_without_the_flag_runs_to_exhaustion():
+    """The default drain is the plain full pull the barrier-free corpus needs."""
+    barrier = CheckpointRequest(name="configure done")
+    tail = object()
+
+    def stream():
+        yield barrier
+        yield tail
+
+    assert drain(stream()) == [barrier, tail]
 
 
 @pytest.mark.parametrize("path", example_files(), ids=relative)
