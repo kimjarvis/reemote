@@ -93,12 +93,6 @@ SNAPSHOT_ARGS = {
         "examples/modules/files/files_fetch_url.py",
         "build_installer",
     ): lambda name: "0" * 96,
-    # The Docker role migration: one factory closing over the release
-    # codename main() gathers from LinuxDistribution for the repo's Suites.
-    (
-        "examples/roles/ansible-role-docker/ansible-role-docker.py",
-        "build_setup",
-    ): lambda name: {name: "noble"},
     # The Java role migration: one factory closing over the frozen plan
     # main() builds from LinuxDistribution -- the vars-table package list,
     # the >= 18 man1 gate and the rendered JAVA_HOME profile content.

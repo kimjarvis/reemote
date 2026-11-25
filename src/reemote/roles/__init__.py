@@ -40,6 +40,7 @@ stays in lockstep with the role modules on disk.
 from .apache import ApacheOutputs, ApacheVars, apache
 from .composer import ComposerVars, composer
 from .datadog import DatadogVars, datadog
+from .docker import DockerVars, docker
 from .drush import DrushVars, drush
 from .nginx import NginxVars, nginx
 from .ntp import NtpVars, ntp
@@ -53,6 +54,7 @@ __all__: list[str] = [
     "ApacheVars",
     "ComposerVars",
     "DatadogVars",
+    "DockerVars",
     "DrushVars",
     "EpelVars",
     "NginxVars",
@@ -64,6 +66,7 @@ __all__: list[str] = [
     "apache",
     "composer",
     "datadog",
+    "docker",
     "drush",
     "nginx",
     "ntp",
