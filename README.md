@@ -3,7 +3,7 @@
 
 [Reemote](https://reemote.org/) is a Python library for configuring and deploying servers, specifically built to support the migration of Ansible-based workflows into pure Python.
 
-## Try it in under a minute (docker connector)
+## Try it in under a minute
 
 Reemote ships a **docker connector** that runs your deploy inside a local container, so you need neither a remote host nor an SSH key to see the two phases work. **Docker or Podman must be installed locally** — the connector shells out to whichever CLI you name in the inventory, and there is no default. Two steps:
 
