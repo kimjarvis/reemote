@@ -42,6 +42,7 @@ from .composer import ComposerVars, composer
 from .datadog import DatadogVars, datadog
 from .docker import DockerVars, docker
 from .drush import DrushVars, drush
+from .java import JavaVars, java
 from .nginx import NginxVars, nginx
 from .ntp import NtpVars, ntp
 from .php import PhpOutputs, PhpVars, php
@@ -57,6 +58,7 @@ __all__: list[str] = [
     "DockerVars",
     "DrushVars",
     "EpelVars",
+    "JavaVars",
     "NginxVars",
     "NtpVars",
     "PhpOutputs",
@@ -68,6 +70,7 @@ __all__: list[str] = [
     "datadog",
     "docker",
     "drush",
+    "java",
     "nginx",
     "ntp",
     "php",

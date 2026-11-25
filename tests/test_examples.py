@@ -93,19 +93,6 @@ SNAPSHOT_ARGS = {
         "examples/modules/files/files_fetch_url.py",
         "build_installer",
     ): lambda name: "0" * 96,
-    # The Java role migration: one factory closing over the frozen plan
-    # main() builds from LinuxDistribution -- the vars-table package list,
-    # the >= 18 man1 gate and the rendered JAVA_HOME profile content.
-    (
-        "examples/roles/ansible-role-java/ansible-role-java.py",
-        "build_java",
-    ): lambda name: {
-        name: {
-            "packages": ("openjdk-21-jdk",),
-            "man_dir": True,
-            "java_home_content": "export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64\n",
-        }
-    },
     # The Memcached role migration: one factory closing over the frozen
     # plan main() renders control-side from static host_vars -- the
     # memcached.conf template already a plain str. The handler deploy is
