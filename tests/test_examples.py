@@ -27,9 +27,10 @@ ways, both of which stay offline:
   or control return belongs -- so a barrier-bearing stream cannot masquerade as
   a lost request (§11.8). No barrier-free example is affected.
 
-Three deliberately network-free scripts -- the in-memory role demonstration,
-the in-memory proxied apt demonstration and the in-deploy action guard -- are
-additionally run end to end as subprocesses, because they can be executed
+A dozen deliberately network-free scripts -- the in-memory role demonstration,
+the in-memory proxied apt demonstration, the in-deploy action guard, and the
+nine in-memory wave demonstrations under ``examples/demonstrations/waves/`` --
+are additionally run end to end as subprocesses, because they can be executed
 without touching the demo hosts at all.
 """
 
@@ -107,14 +108,31 @@ SNAPSHOT_ARGS = {
 # (covered by the scan below) and the script is run end to end further down.
 DRIVER_ONLY_ENTRYPOINTS = {
     ("examples/actions/action_in_deploy_guard.py", "illegal_deploy"),
+    # Every parent request in the outputs-relay demo is built *after* the
+    # scoped child's fact barrier, so a break-at-barrier drain reaches none of
+    # them; the op literals are covered by the static scan and the full body by
+    # the end-to-end offline run further down.
+    ("examples/demonstrations/waves/role_outputs_relay.py", "parent"),
 }
 
 # Scripts that run without a connection: in-memory hosts, or a guard that fires
-# during prepare before any transport is opened.
+# during prepare before any transport is opened. The nine wave demonstrations
+# under ``examples/demonstrations/waves/`` inject ``SimulatedHost`` through
+# ``run_waves``'s ``host_factory``, so their whole barrier path is exercised in
+# memory (§19).
 OFFLINE_EXAMPLES = (
     "examples/demonstrations/composition/composed_group_tag_roles.py",
     "examples/demonstrations/environment/environment_apt_proxy.py",
     "examples/actions/action_in_deploy_guard.py",
+    "examples/demonstrations/waves/barrier_fact.py",
+    "examples/demonstrations/waves/checkpoint_handler.py",
+    "examples/demonstrations/waves/barrier_act.py",
+    "examples/demonstrations/waves/control_fetch.py",
+    "examples/demonstrations/waves/scope_two_instances.py",
+    "examples/demonstrations/waves/role_outputs_relay.py",
+    "examples/demonstrations/waves/vars_typed.py",
+    "examples/demonstrations/waves/dry_one_wave.py",
+    "examples/demonstrations/waves/run_waves_report.py",
 )
 
 
@@ -538,7 +556,7 @@ def test_example_builds_hashable_requests_offline(path: pathlib.Path):
             argument = SNAPSHOT_ARGS[key](host.name)
         else:
             argument = _NO_ARG
-        items = build_requests(factory, argument, host)
+        items = build_requests(factory, argument, host, until_barrier=True)
         requests = requests_in(items)
         built += len(requests)
         for request in requests:

@@ -68,6 +68,7 @@ plugins:
             - examples/demonstrations/connectors
             - examples/demonstrations/environment
             - examples/demonstrations/privilege
+            - examples/demonstrations/waves
           options:
             docstring_style: google
             show_root_heading: true
@@ -205,5 +206,6 @@ nav:
 #          - Connectors: examples/demonstrations/connectors.md
 #          - Environment: examples/demonstrations/environment.md
 #          - Privilege: examples/demonstrations/privilege.md
+#          - Waves: examples/demonstrations/waves.md
 
 

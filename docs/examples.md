@@ -52,6 +52,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 | `examples/demonstrations/composition/` | [Composing deploys](examples/demonstrations/composition.md) |
 | `examples/demonstrations/connectors/` | [Connector demonstrations](examples/demonstrations/connectors.md) |
 | `examples/demonstrations/environment/` | [Task environments](examples/demonstrations/environment.md) |
+| `examples/demonstrations/waves/` | [Wave demonstrations](examples/demonstrations/waves.md) |
 
 !!! warning "The operation examples connect for real"
 
@@ -97,7 +98,11 @@ sub-directory. Pick a page from the navigation, or start from this table:
     `SimulatedHost`, so it opens no connection and needs no real hosts. The
     [`environment_apt_proxy`](examples/demonstrations/environment.md#installing-a-package-through-a-proxy)
     demonstration does too, for the same reason: its point is the rendered
-    command text, which the in-memory path produces unchanged.
+    command text, which the in-memory path produces unchanged. Every
+    [`wave` demonstration](examples/demonstrations/waves.md) runs entirely in
+    memory as well — each injects `SimulatedHost` via `run_waves`'s
+    `host_factory`, so its barriers are parked and answered without a
+    connection.
 
     The [`action_in_deploy_guard`](examples/actions.md#the-in-deploy-guard)
     example also opens no connection, though it uses the default factory and a
