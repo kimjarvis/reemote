@@ -34,14 +34,17 @@ model -- the target hosts are not hard-coded: the inventory comes from
 
 ``Pythons`` answers the question an install decision needs -- which interpreters
 are *already present* on this host, and which of them uv owns -- with one chained
-shell that runs ``uv python dir`` and then
+shell that runs ``uv python dir``, then ``pwd``, then
 ``uv python list --only-installed --output-format=json``. The
 ``--only-installed`` filter matters: without it uv
 prints its whole downloadable catalogue, so a machine holding no interpreter at
 all would appear to hold dozens. uv's JSON carries no managed flag, which is why
-the directory is asked for in the same shell -- an interpreter whose path lies
-under it is a uv download (``managed=True``), anything else (``/usr/bin/python3``)
-is a system interpreter uv merely discovered. Entries come back unique on
+the directory is asked for in the same shell -- and because uv prints a managed
+download's path *relative* to the shell's working directory whenever that
+directory is an ancestor of it, the chain captures ``pwd`` too and anchors every
+relative path on it, so an interpreter resolving under the directory is a uv
+download (``managed=True``) and anything else (``/usr/bin/python3``) is a system
+interpreter uv merely discovered. Entries come back unique on
 ``(key, path)`` and sorted by that pair, because uv repeats one key across every
 path at which it found the same interpreter. The fact takes no arguments.
 
@@ -131,9 +134,11 @@ async def main() -> None:
             print("\n== Skipped (when guard is_ubuntu): " + ", ".join(skipped) + " ==")
         # Gather the fact across the guarded hosts concurrently: gather_fact
         # fans Pythons.process out with asyncio.gather and returns a
-        # host-name-keyed mapping. process runs the chained shell over SSH, uses
-        # its first line as the managed Python directory and parses the JSON
-        # array beneath it, flagging each interpreter managed or system.
+        # host-name-keyed mapping. process runs the chained shell over SSH, reads
+        # the managed Python directory and the working directory from its first
+        # two lines, anchors any relative interpreter path on the latter and
+        # parses the JSON array beneath them, flagging each entry managed or
+        # system.
         uv_pythons = await gather_fact(hosts, Pythons)
     except (OSError, json.JSONDecodeError) as exc:
         # The inventory file is missing, unreadable or not valid JSON.

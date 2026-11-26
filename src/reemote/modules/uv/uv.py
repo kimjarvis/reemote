@@ -27,6 +27,7 @@
 
 
 import json
+import posixpath
 from collections.abc import Iterable
 from typing import ClassVar, TypedDict
 
@@ -168,9 +169,10 @@ class Packages:
 class InstallInfo(TypedDict):
     """
     Attributes:
-        version: The uv version with the leading ``uv `` token stripped
-            (``"0.9.22"``); a packaging build suffix stays when uv prints
-            one (``"0.8.5 (Homebrew 2025-08-05)"``).
+        version: The clean uv version number -- the leading ``uv `` token and
+            any trailing build parenthetical dropped (``"0.9.22"`` from
+            ``uv 0.9.22``, ``"0.12.21"`` from ``uv 0.12.21 (7af826859
+            2026-09-29 x86_64-unknown-linux-gnu)``).
         executable: The absolute path ``command -v`` resolves ``uv`` to on
             the target shell's PATH (``"/snap/bin/uv"``).
         tool_dir: Where uv installs isolated tool environments, the
@@ -240,12 +242,14 @@ class Info:
     # silently; an older uv that lacks one dir subcommand (verified present
     # in uv 0.9) simply short-circuits the ``&&`` chain, and the fields past
     # that point read ``None`` -- pyinfra's per-fact ``default = ""``
-    # answered the same absence as an empty string. The version is
-    # normalized the way the design asks: uv's leading ``uv `` token is
-    # stripped, where pyinfra's ``UvVersion`` kept the whole line. ``uv self
-    # version`` exists on self-managed installs but prints the same text, so
-    # the bare ``--version`` is the one probe; pyinfra's ``2>/dev/null``
-    # guards are dropped because ``run_shell`` reads stdout only.
+    # answered the same absence as an empty string. The version is normalized
+    # the way the design asks -- a clean version string: uv's leading ``uv ``
+    # token and any trailing build parenthetical are dropped, so the release
+    # binary's ``uv 0.12.21 (7af826859 2026-09-29 x86_64-unknown-linux-gnu)``
+    # reads ``"0.12.21"``, where pyinfra's ``UvVersion`` kept the whole line.
+    # ``uv self version`` exists on self-managed installs but prints the same
+    # text, so the bare ``--version`` is the one probe; pyinfra's
+    # ``2>/dev/null`` guards are dropped because ``run_shell`` reads stdout only.
 
     #: Shell gathering the whole record over SSH in one chained call; each
     #: command contributes exactly one stdout line, in ``FIELDS`` order.
@@ -272,16 +276,23 @@ class Info:
         """Map the chained shell's lines onto the install fields, positionally.
 
         Blank lines are skipped (a successful uv command prints none, but a
-        wrapper shell might), the first remaining line is the version -- with
-        uv's leading ``uv `` token stripped -- and each later line fills the
-        next ``FIELDS`` entry. A chain that short-circuited (or printed no
-        lines at all) leaves the missing fields ``None``. Pure and testable.
+        wrapper shell might), the first remaining line is the version --
+        reduced to its leading token, so uv's ``uv `` prefix and any trailing
+        build parenthetical are dropped -- and each later line fills the next
+        ``FIELDS`` entry. A chain that short-circuited (or printed no lines at
+        all) leaves the missing fields ``None``. Pure and testable.
         """
         lines = [line.strip() for line in output if line.strip()]
         values = dict(zip(cls.FIELDS, lines, strict=False))
         version = values.get("version")
         if version is not None:
-            version = version.removeprefix("uv ").strip()
+            # Release and packager builds append a parenthetical to the number
+            # (``uv 0.12.21 (7af826859 2026-09-29 x86_64-unknown-linux-gnu)``,
+            # ``uv 0.8.5 (Homebrew 2025-08-05)``); the design wants a clean
+            # version string, so only the leading token after the ``uv ``
+            # prefix survives, and a bare prefix reads ``None``.
+            tokens = version.removeprefix("uv ").split()
+            version = tokens[0] if tokens else None
         return {
             "version": version,
             "tool_dir": values.get("tool_dir"),
@@ -450,11 +461,13 @@ class PythonInfo(TypedDict):
         implementation: The implementation named by the key (``"cpython"``,
             ``"pypy"``).
         version: The interpreter version uv reports (``"3.12.8"``).
-        path: The executable path uv resolved (``"/usr/bin/python3.12"``); the
-            unique half of an entry's identity.
-        managed: ``True`` when the interpreter lives under ``uv python dir`` --
-            a uv-downloaded install -- and ``False`` for a system or otherwise
-            discovered interpreter.
+        path: The executable path uv resolved, anchored on the shell's working
+            directory and normalized to absolute (``"/usr/bin/python3.12"``,
+            ``"/root/.local/share/uv/python/.../bin/python3.14"``); the unique
+            half of an entry's identity.
+        managed: ``True`` when the resolved path lives under ``uv python dir``
+            -- a uv-downloaded install -- and ``False`` for a system or
+            otherwise discovered interpreter.
     """
 
     # One interpreter present on the host -- the entry of the ``Pythons``
@@ -476,7 +489,7 @@ class Pythons:
     **Commands:**
 
     ```bash
-    uv python dir && uv python list --only-installed --output-format=json
+    uv python dir && pwd && uv python list --only-installed --output-format=json
     ```
 
     **Returns:**
@@ -500,14 +513,21 @@ class Pythons:
     # JSON rows already carry the ``key``, ``implementation``, ``version`` and
     # ``path`` those two single-field views split apart.
     #
-    # Deliberate deviations from pyinfra. The leading ``uv python dir`` is not
-    # pyinfra's -- uv's JSON has no managed flag, so the fact asks uv where it
-    # keeps its own downloads and calls an interpreter managed when its path
-    # lies under that directory. pyinfra instead defaults to ``--managed-python``,
-    # which (verified against uv 0.9) hides every system interpreter, so its
-    # answer cannot carry the managed-versus-system split at all. The flag is
-    # dropped here while ``--only-installed`` is kept, so a bare host reports
-    # what is present rather than the whole download catalogue. And where
+    # Deliberate deviations from pyinfra. The leading ``uv python dir && pwd``
+    # is not pyinfra's -- uv's JSON has no managed flag, so the fact asks uv
+    # where it keeps its own downloads and calls an interpreter managed when its
+    # path lies under that directory. uv prints a managed download's path
+    # relative to the shell's working directory whenever that directory is an
+    # ancestor (the SSH chain runs from the login home, so
+    # ``.local/share/uv/python/...`` instead of the absolute form
+    # ``uv python dir`` itself prints), which is why the chain also captures
+    # ``pwd`` and the parse anchors every relative path on it -- without that
+    # anchoring a uv-managed interpreter reads as a system one. pyinfra instead
+    # defaults to ``--managed-python``, which (verified against uv 0.9 and
+    # 0.12) hides every system interpreter, so its answer cannot carry the
+    # managed-versus-system split at all. The flag is dropped here while
+    # ``--only-installed`` is kept, so a bare host reports what is present
+    # rather than the whole download catalogue. And where
     # pyinfra's ``process_json`` builds a ``dict[str, set[str]]`` keyed by
     # ``key``, uv reuses one key for the same interpreter at several paths
     # (``cpython-3.13.5-linux-x86_64-gnu`` at both ``/usr/bin/python3.13`` and
@@ -519,31 +539,40 @@ class Pythons:
     # ``CommandNotFoundError``. No interpreters, or uv failing to list, reads
     # as ``[]``.
 
-    #: Shell gathering the managed Python directory and the installed
-    #: interpreters over SSH in one chained call: the first stdout line is the
-    #: directory, the rest the JSON array.
+    #: Shell gathering the managed Python directory, the working directory the
+    #: JSON paths are relative to, and the installed interpreters, in one
+    #: chained call: the first stdout line is ``uv python dir``, the second
+    #: ``pwd``, the rest the JSON array.
     COMMAND: ClassVar[str] = (
-        "uv python dir && uv python list --only-installed --output-format=json"
+        "uv python dir && pwd"
+        " && uv python list --only-installed --output-format=json"
     )
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> list[PythonInfo]:
         """Split the chained shell and parse its interpreter rows.
 
-        The first non-blank line is the ``uv python dir`` answer, the text from
-        the first ``[`` onwards the JSON array -- leading noise is discarded,
-        and unparsable output or a document that is not a list reads as ``[]``.
-        Each mapping row holding string ``key``, ``implementation``, ``version``
-        and ``path`` becomes a ``PythonInfo`` whose ``managed`` flag asks
-        whether the path sits under the printed directory; any other row
+        The first non-blank line is the ``uv python dir`` answer, the second
+        the ``pwd`` the JSON paths hang off, and the text from the first ``[``
+        onwards the JSON array -- leading noise is discarded, and unparsable
+        output or a document that is not a list reads as ``[]``. Each mapping
+        row holding string ``key``, ``implementation``, ``version`` and ``path``
+        becomes a ``PythonInfo``: a relative path -- how uv prints a managed
+        download found under the working directory -- is anchored on that
+        ``pwd`` and normalized to absolute, and ``managed`` then asks whether
+        the resolved path sits under the printed directory; any other row
         contributes nothing. Entries are unique on ``(key, path)`` -- uv repeats
         a key across paths -- and sorted by that pair. Pure and testable.
         """
         lines = [line.strip() for line in output if line.strip()]
-        if not lines:
+        if len(lines) < 2:
             return []
-        python_dir = lines[0].rstrip("/")
-        text = "\n".join(lines[1:])
+        base = posixpath.normpath(lines[1])
+        raw_dir = lines[0]
+        python_dir = posixpath.normpath(
+            raw_dir if posixpath.isabs(raw_dir) else posixpath.join(base, raw_dir)
+        )
+        text = "\n".join(lines[2:])
         start = text.find("[")
         if start == -1:
             return []
@@ -564,12 +593,20 @@ class Pythons:
             values = (key, implementation, version, path)
             if not all(isinstance(value, str) for value in values):
                 continue
-            by_location[(key, path)] = {
+            # uv anchors a managed download's path on the shell's working
+            # directory when that directory is an ancestor of it, so a relative
+            # path is resolved against ``pwd`` before the comparison; system
+            # interpreters arrive absolute and are only normalized.
+            resolved = posixpath.normpath(
+                path if posixpath.isabs(path) else posixpath.join(base, path)
+            )
+            by_location[(key, resolved)] = {
                 "key": key,
                 "implementation": implementation,
                 "version": version,
-                "path": path,
-                "managed": path == python_dir or path.startswith(f"{python_dir}/"),
+                "path": resolved,
+                "managed": resolved == python_dir
+                or resolved.startswith(f"{python_dir}/"),
             }
         return [by_location[location] for location in sorted(by_location)]
 

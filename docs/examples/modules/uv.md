@@ -56,9 +56,10 @@ stdout the parse maps onto the fields positionally. Asking uv itself for the
 directories is what makes the answer the *effective* one: the target shell's
 `UV_TOOL_DIR`/`UV_PYTHON_DIR`/`UV_CACHE_DIR` and `XDG_*` overrides are already
 applied, so the record names the paths a later uv operation would use. uv's
-leading `uv ` version token is stripped, and a chain that stops early leaves
-the fields past that point `None`. The script awaits `provision_uv.py` and
-guards the gather exactly as the one above does.
+leading `uv ` version token and the build parenthetical current uv appends are
+both dropped, so the version reads as a clean number, and a chain that stops
+early leaves the fields past that point `None`. The script awaits
+`provision_uv.py` and guards the gather exactly as the one above does.
 
 ::: uv_info
     options:
@@ -82,10 +83,12 @@ phantom tool pyinfra files from it.
 
 ## Listing the interpreters present on the host
 
-The fact example for `Pythons`: one chained shell runs `uv python dir` and then
-`uv python list --only-installed --output-format=json`, and each row becomes a
-[`PythonInfo`][reemote.modules.uv.uv.PythonInfo] entry — uv's key, the
-implementation, the version and the resolved path — with `managed` derived from
+The fact example for `Pythons`: one chained shell runs `uv python dir`, then
+`pwd`, then `uv python list --only-installed --output-format=json`, and each row
+becomes a [`PythonInfo`][reemote.modules.uv.uv.PythonInfo] entry — uv's key, the
+implementation, the version and the resolved path (anchored on the `pwd` the
+chain prints, since uv lists a managed download relative to the working
+directory) — with `managed` derived from whether that resolved path sits under
 the directory the chain printed first, because uv's JSON carries no such flag.
 Only *installed* interpreters are listed, so a bare host does not report the
 whole downloadable catalogue, and — unlike pyinfra — the `--managed-python`

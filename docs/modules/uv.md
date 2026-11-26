@@ -54,11 +54,14 @@ parse maps the lines onto the `InstallInfo` fields positionally in one round
 trip. Because every directory comes from uv itself, the record reflects the
 *effective* paths after the target shell's `UV_*` and `XDG_*` overrides — the
 same environment a later uv operation runs in. The version keeps only its
-number (pyinfra's `UvVersion` returned the whole `uv 0.8.5 (Homebrew ...)`
-line); a chain that stops early, because an older uv lacks a dir subcommand,
-leaves the fields past that point `None` where pyinfra's separate facts
-answered their `default = ""`. `uv self version` exists on self-managed
-installs but prints the same text, so the bare `--version` is the one probe.
+number: uv's leading `uv ` token and the build parenthetical its release and
+packager binaries append are both dropped, so the snap's
+`uv 0.12.21 (7af826859 2026-09-29 x86_64-unknown-linux-gnu)` reads
+`"0.12.21"` where pyinfra's `UvVersion` returned the whole line; a chain that
+stops early, because an older uv lacks a dir subcommand, leaves the fields past
+that point `None` where pyinfra's separate facts answered their `default = ""`.
+`uv self version` exists on self-managed installs but prints the same text, so
+the bare `--version` is the one probe.
 
 `Tools` reports the isolated CLI tools uv installed — which ones, at what
 version, and which executables each linked onto the PATH — from pyinfra's
@@ -75,19 +78,23 @@ a tool named `No` at version `tools`; a row that is neither a header nor a
 bullet is noise, so an untouched host honestly answers `[]`.
 
 `Pythons` answers which interpreters are *present* on the host, and which of
-them uv owns, with one chained shell: `uv python dir` and then `uv python
-list --only-installed --output-format=json`. `--only-installed` is pyinfra's
-own filter and is kept — without it uv prints its downloadable catalogue, so
-a bare machine would appear to hold dozens of Pythons. pyinfra's
+them uv owns, with one chained shell: `uv python dir`, then `pwd`, then `uv
+python list --only-installed --output-format=json`. `--only-installed` is
+pyinfra's own filter and is kept — without it uv prints its downloadable
+catalogue, so a bare machine would appear to hold dozens of Pythons. pyinfra's
 `--managed-python` default is deliberately dropped: verified against uv, that
 flag hides every system interpreter, so the managed-versus-system split the
 fact reports cannot be read from an answer that already excludes one side.
 Since uv's JSON carries no managed flag either, the directory is asked for in
 the same shell and an interpreter under it is `managed=True`, one at
-`/usr/bin/python3` `managed=False`. And where pyinfra's `process_json` keys a
-`dict[str, set[str]]` by uv's `key`, that key repeats for one interpreter
-discovered at several paths, so a keyed dict silently overwrites; reemote
-returns `PythonInfo` entries unique on `(key, path)` and sorted by that pair.
+`/usr/bin/python3` `managed=False`; and because uv prints a managed download's
+path relative to the shell's working directory whenever that directory is an
+ancestor of it, `pwd` is captured too and every relative path is anchored on it
+before the comparison — without that anchoring a uv-managed interpreter reads as
+a system one. And where pyinfra's `process_json` keys a `dict[str, set[str]]`
+by uv's `key`, that key repeats for one interpreter discovered at several paths,
+so a keyed dict silently overwrites; reemote returns `PythonInfo` entries unique
+on `(key, path)` and sorted by that pair.
 
 pyinfra's `uv.packages` operation is not ported yet, so the namespace
 currently ships the four facts alone; when the operation lands it reads

@@ -268,13 +268,16 @@ async def test_uv_info_gathers_the_record_in_one_round_trip():
     assert host.last_shell == Info.COMMAND
 
 
-async def test_uv_info_strips_uvs_version_prefix():
+async def test_uv_info_reduces_the_version_to_its_number():
     """Where pyinfra's ``UvVersion`` kept the whole line, the record holds the
-    clean version -- and a packaging suffix uv prints after it survives."""
+    clean version string the design asks for: uv's ``uv `` prefix and the build
+    parenthetical release and packager binaries append are both dropped."""
     assert Info.parse(["uv 0.9.22"])["version"] == "0.9.22"
-    assert Info.parse(["uv 0.8.5 (Homebrew 2025-08-05)"])["version"] == (
-        "0.8.5 (Homebrew 2025-08-05)"
-    )
+    assert Info.parse(["uv 0.8.5 (Homebrew 2025-08-05)"])["version"] == "0.8.5"
+    # The current stable snap's real output, captured live on the demo host.
+    assert Info.parse(
+        ["uv 0.12.21 (7af826859 2026-09-29 x86_64-unknown-linux-gnu)"]
+    )["version"] == "0.12.21"
 
 
 async def test_uv_info_short_chain_leaves_later_fields_none():
@@ -456,12 +459,16 @@ async def test_gather_fact_uv_tools_fans_out():
 
 # --- Fact: Pythons -----------------------------------------------------------
 
-# pyinfra's ``tests/facts/uv.UvInstalledPythons*`` shape in one document: three
+# pyinfra's ``tests/facts/uv.UvInstalledPythons*`` shape in one document: the
+# ``uv python dir`` answer, the ``pwd`` the chained shell prints next, then three
 # installed cpython rows -- a uv-managed download plus the distro interpreter
 # found at two paths -- printed as uv really prints it, pretty across lines and
-# carrying keys (``os``, ``arch``, ``url``) the parse ignores.
+# carrying keys (``os``, ``arch``, ``url``) the parse ignores. The rows use
+# absolute paths here; the cwd-relative spelling uv really prints under the
+# working directory has its own test below.
 PYTHONS_OUTPUT = [
     "/root/.local/share/uv/python",
+    "/root",
     "[",
     "  {",
     '    "key": "cpython-3.14.0-linux-x86_64-gnu",',
@@ -499,19 +506,22 @@ def _rows(*paths: str) -> str:
 
 
 def test_uv_pythons_command_lists_only_installed():
-    """The chain asks for the directory and the installed interpreters: the
-    ``--only-installed`` filter keeps the download catalogue out, and
-    ``--managed-python`` is deliberately absent so system interpreters stay
-    visible for the ``managed`` split."""
+    """The chain asks for the directory, the working directory it anchors the
+    JSON paths on, and the installed interpreters: the ``--only-installed``
+    filter keeps the download catalogue out, and ``--managed-python`` is
+    deliberately absent so system interpreters stay visible for the ``managed``
+    split."""
     assert Pythons.COMMAND == (
-        "uv python dir && uv python list --only-installed --output-format=json"
+        "uv python dir && pwd"
+        " && uv python list --only-installed --output-format=json"
     )
 
 
 async def test_uv_pythons_splits_the_directory_from_the_document():
-    """The first line is the managed Python directory, the rest the JSON array;
-    entries come back sorted on ``(key, path)`` -- lexicographically, so uv's
-    3.13 keys order before its 3.14 one."""
+    """The first line is the managed Python directory, the second the working
+    directory, the rest the JSON array; entries come back sorted on
+    ``(key, path)`` -- lexicographically, so uv's 3.13 keys order before its
+    3.14 one."""
     host = CannedShellHost("\n".join(PYTHONS_OUTPUT) + "\n")
     assert await Pythons.process(host) == [
         _python("cpython-3.13.5-linux-x86_64-gnu", "3.13.5", "/usr/bin/python3"),
@@ -531,6 +541,7 @@ async def test_uv_pythons_flags_managed_by_directory():
     the chain printed is uv-managed and one outside it is not."""
     output = [
         "/root/.local/share/uv/python",
+        "/root",
         _rows(
             "/root/.local/share/uv/python/cpython-3.13.1/bin/python3.13",
             "/usr/bin/python3.13",
@@ -547,10 +558,36 @@ async def test_uv_pythons_flags_managed_by_directory():
     ]
 
 
+async def test_uv_pythons_anchors_a_cwd_relative_managed_path():
+    """The real-host case the absolute fixtures miss: current uv prints a
+    managed download relative to the shell's directory when that directory is an
+    ancestor (the SSH chain runs from the login home, so
+    ``.local/share/uv/python/...``), and the captured ``pwd`` anchors it -- the
+    entry resolves to an absolute path and reads ``managed=True``, where
+    comparing the bare relative path against the absolute directory read
+    ``False``."""
+    output = [
+        "/home/supervisor/.local/share/uv/python",
+        "/home/supervisor",
+        _rows(".local/share/uv/python/cpython-3.11.16-linux-x86_64-gnu/bin/python3.11"),
+    ]
+    assert Pythons.parse(output) == [
+        _python(
+            "cpython-3.13.1-linux-x86_64-gnu",
+            "3.13.1",
+            "/home/supervisor/.local/share/uv/python/"
+            "cpython-3.11.16-linux-x86_64-gnu/bin/python3.11",
+            managed=True,
+        )
+    ]
+
+
 async def test_uv_pythons_keeps_one_key_at_several_paths():
     """pyinfra keys its answer by uv's ``key``, which one interpreter found at
     two paths silently overwrites; both paths survive here."""
-    entries = Pythons.parse(["/uv", _rows("/usr/bin/python3.13", "/usr/bin/python3")])
+    entries = Pythons.parse(
+        ["/uv", "/", _rows("/usr/bin/python3.13", "/usr/bin/python3")]
+    )
     assert [entry["path"] for entry in entries] == ["/usr/bin/python3", "/usr/bin/python3.13"]
     assert {entry["key"] for entry in entries} == {"cpython-3.13.1-linux-x86_64-gnu"}
 
@@ -559,7 +596,7 @@ async def test_uv_pythons_empty_state_reads_as_no_interpreters():
     """pyinfra's ``empty`` fixture: the bare array -- a brand-new host, not the
     dozens of downloadable versions -- and a chain that printed no array at all
     both read as ``[]``."""
-    assert Pythons.parse(["/root/.local/share/uv/python", "[]"]) == []
+    assert Pythons.parse(["/root/.local/share/uv/python", "/root", "[]"]) == []
     assert Pythons.parse(["/root/.local/share/uv/python"]) == []
     assert Pythons.parse([]) == []
 
@@ -568,11 +605,11 @@ async def test_uv_pythons_parse_is_total():
     """Unparsable JSON, a document that is not an array, non-mapping rows and
     rows missing any of the four strings contribute nothing -- where pyinfra's
     ``process_json`` warns or raises -- while a good row alongside lands."""
-    assert Pythons.parse(["/uv", "no array here"]) == []
-    assert Pythons.parse(['/uv', '{"key": "not a list"}']) == []
-    assert Pythons.parse(['/uv', '["a string", {"key": "k"}]']) == []
+    assert Pythons.parse(["/uv", "/", "no array here"]) == []
+    assert Pythons.parse(['/uv', '/', '{"key": "not a list"}']) == []
+    assert Pythons.parse(['/uv', '/', '["a string", {"key": "k"}]']) == []
     assert Pythons.parse(
-        ["/uv", '7, ' + _rows("/usr/bin/python3.13")]
+        ["/uv", "/", '7, ' + _rows("/usr/bin/python3.13")]
     ) == [_python("cpython-3.13.1-linux-x86_64-gnu", "3.13.1", "/usr/bin/python3.13")]
 
 

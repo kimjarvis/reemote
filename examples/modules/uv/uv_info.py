@@ -38,9 +38,10 @@ lines onto the record's fields positionally. Every directory therefore comes fro
 uv itself, reflecting the *effective* paths after the target shell's ``UV_*`` and
 ``XDG_*`` overrides -- the same environment a later uv operation runs in -- and
 the executable is the one the chain just resolved. The version keeps only its
-number: uv's leading ``uv `` token is stripped, so a Homebrew build reports
-``"0.8.5 (Homebrew 2025-08-05)"`` instead of the whole line. The fact takes no
-arguments.
+number: uv's leading ``uv `` token and the build parenthetical its release and
+packager binaries append are both dropped, so ``uv 0.12.21 (7af826859 2026-09-29
+x86_64-unknown-linux-gnu)`` reports ``"0.12.21"`` rather than the whole line. The
+fact takes no arguments.
 
 pyinfra has no counterpart to this fact: it scatters the same questions over
 ``UvVersion``, ``UvToolDir``, ``UvPythonDir`` and a path lookup, each gated on its
