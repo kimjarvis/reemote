@@ -163,3 +163,61 @@ commands nor the fact behind them run, and plan and log render
 ::: go_packages
     options:
       members: []
+
+## Persisting go env settings
+
+`go.env` writes and clears persistent `go env` configuration through
+`go env -w`/`go env -u`. The script requests a small mapping as a tuple of
+`(key, value)` pairs — a `None` value unsets that key — and re-runs the same
+request twice: idempotence is per key against the `GoEnv` fact, so the second
+pass of each pair is a guaranteed no-op through the fresh per-step fact cache
+(an unset fires only for a key the host holds a non-empty value for, a set
+only for a value that drifts). The unset batch precedes the set batch, so a
+rename (clear one key, set another) reads cleanly. No request is elevated:
+`go env -w`/`-u` edit the *connecting user's* go env file, and `sudo` would
+touch root's instead. Like the other examples it reads the shared
+project-root `inventory.json` (validated with `validate_inventory`) and every
+request carries `when=is_ubuntu`.
+
+::: go_env
+    options:
+      members: []
+
+## Cleaning the go build/module cache
+
+`go.cache_clean` empties the build and/or module cache with `go clean`. The
+operation is stateless — the design's `GoCacheStats`/`min_total_mb` gate does
+not exist in reemote, so, as decided for the migration, it always cleans when
+a cache is selected, exactly like `dnf.clean`, leaving any size gate to the
+deploy. The script clears the build cache (`clear_build_cache`, on by default)
+then the module cache (`clear_mod_cache`) as two separate requests so the log
+shows `go clean -cache` and `go clean -modcache`; because it is stateless both
+report changed on every run. The clean empties the connecting user's
+`$GOCACHE`/`$GOMODCACHE`, so it runs unprivileged. Same shared flow and
+`when=is_ubuntu` guard as the other examples, awaiting `provision_go.py`.
+
+::: go_cache_clean
+    options:
+      members: []
+
+## Building a go binary
+
+`go.build` compiles a package into a binary with `go build`, idempotent
+against the `GoBinaryBuildInfo` fact: the script builds a small `main`
+package into an output path, then repeats the request so the second pass is a
+no-op once the binary's embedded compiler version matches the current
+toolchain. Two deviations from the design shape the script. It takes no `env`
+parameter — build-time `GOOS`/`GOARCH`/`CGO_ENABLED` come through `op(env=...)`
+(the driver prefixes the whole `sh -c`-wrapped build, so the environment
+reaches `go build` and not just the leading `mkdir`) — and a caller switching
+target platforms forces a rebuild with `force=True` rather than a settings
+comparison, because `go version -m` does not record the target platform unless
+the build injected it. `tags` ride as a tuple joined into one comma-separated
+`-tags` argument and `ldflags` as one `-ldflags` argument; every path is
+quoted. The build writes the output as the connecting user, so it stays
+unprivileged. Same shared flow and `when=is_ubuntu` guard, awaiting
+`provision_go.py`.
+
+::: go_build
+    options:
+      members: []

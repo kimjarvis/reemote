@@ -16,8 +16,13 @@
 #
 # Operation side: ``go.packages`` installs, re-installs or removes those
 # binaries -- bare import paths or ``<pkg>=<version>`` pins -- through its
-# ``GoInstallCommand``/``GoRemoveCommand`` descriptors. Operations are async
-# generators that receive an ``OpContext``, await facts, set
+# ``GoInstallCommand``/``GoRemoveCommand`` descriptors. ``go.env`` persists or
+# removes ``go env`` settings (``GoEnvSetCommand``/``GoEnvUnsetCommand``),
+# ``go.cache_clean`` empties the build and/or module cache
+# (``GoCleanCommand``, stateless), and ``go.build`` compiles a package into a
+# binary (``GoBuildCommand``) -- the latter three all shell out as the
+# connecting user and read the facts above for idempotence. Operations are
+# async generators that receive an ``OpContext``, await facts, set
 # ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never
 # touch the host directly.
 
@@ -1069,10 +1074,359 @@ async def packages(
     ctx.reason = "; ".join(reasons)
 
 
+# --- go.env ------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GoEnvSetCommand(Command):
+    """One ``go env -w KEY=VAL ...`` batch of persistent go config settings.
+
+    The write direction of ``go.env``. Each ``KEY=VAL`` is rendered as one
+    ``shlex``-quoted token so a value carrying spaces or metacharacters
+    reaches go as a single argument, and the pairs are emitted in sorted key
+    order so the command text is stable across the prepare and apply phases
+    whatever order the request spelled them in.
+    """
+
+    #: ``(key, value)`` pairs to persist; rendered sorted for a stable shell.
+    assignments: tuple[tuple[str, str], ...] = ()
+
+    def shell(self) -> str:
+        tokens = " ".join(
+            shlex.quote(f"{key}={value}") for key, value in sorted(self.assignments)
+        )
+        return f"go env -w {tokens}"
+
+
+@dataclass(frozen=True)
+class GoEnvUnsetCommand(Command):
+    """One ``go env -u KEY ...`` batch removing persistent go config keys.
+
+    The unset direction of ``go.env`` (a ``None`` value in the request). Keys
+    render in sorted order, each ``shlex``-quoted.
+    """
+
+    #: Keys to remove from the go env file; rendered sorted.
+    keys: tuple[str, ...] = ()
+
+    def shell(self) -> str:
+        return "go env -u " + " ".join(shlex.quote(key) for key in sorted(self.keys))
+
+
+async def env(
+    ctx: OpContext,
+    settings: tuple[tuple[str, str | None], ...],
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Set or unset persistent go env settings via ``go env -w`` / ``go env -u``.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        settings (tuple[tuple[str, str | None], ...]): ``(key, value)`` pairs
+            to persist; a ``None`` value unsets that key. Spelled as a tuple
+            of pairs rather than a dict because ``op()`` rejects unhashable
+            arguments.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The unset command (when keys are removed) then the set
+            command (when values change), each only for the keys that drift;
+            nothing when every key already holds its desired value.
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/go/go_env.py``.
+    """
+
+    # The design's ``go_env`` operation, ported (there is no upstream pyinfra
+    # go env operation, so the option set is the design's own). The mapping is
+    # a tuple-of-pairs for hashability -- the ``sysctl`` exemplar. Idempotence
+    # is per key against ``GoEnv``: an unset fires only for a key that
+    # currently holds a non-empty value, a set only for a key whose value
+    # differs, so an already-converged request yields no command at all. The
+    # unset batch precedes the set batch so a rename (unset old, set new)
+    # reads cleanly. ``go env -w``/``-u`` edit the *connecting user's* go env
+    # file, so the request stays unprivileged -- flagging ``sudo`` would edit
+    # root's file instead. ``**kwargs`` absorbs pyinfra's global arguments
+    # (``op()`` already strips ``name``/``sudo``/``su``/``doas``).
+    reasons: list[str] = []
+    desired = dict(settings)
+    if not desired:
+        ctx.reason = "no settings requested"
+        return
+
+    current = await ctx.facts.get(GoEnv, tuple(sorted(desired)))
+
+    to_unset = tuple(
+        key
+        for key, value in desired.items()
+        if value is None and current.get(key, "") != ""
+    )
+    to_set = tuple(
+        (key, value)
+        for key, value in desired.items()
+        if value is not None and current.get(key) != value
+    )
+
+    if to_unset:
+        ctx.changed = True
+        reasons.append(f"unset {', '.join(sorted(to_unset))}")
+        yield GoEnvUnsetCommand(keys=to_unset)
+    if to_set:
+        ctx.changed = True
+        reasons.append(f"set {', '.join(sorted(key for key, _ in to_set))}")
+        yield GoEnvSetCommand(assignments=to_set)
+    if not to_unset and not to_set:
+        reasons.append("settings already in place")
+
+    ctx.reason = "; ".join(reasons)
+
+
+# --- go.cache_clean ----------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GoCleanCommand(Command):
+    """``go clean [-cache] [-modcache]`` -- clear the build and/or module cache.
+
+    Both flags of the ``go.cache_clean`` operation fold into one command: a
+    build-cache-only request renders ``go clean -cache`` and selecting the
+    module cache appends ``-modcache``. The operation never emits this with
+    neither flag set.
+    """
+
+    #: Clear the build cache (``-cache``). Defaults to True.
+    build_cache: bool = True
+    #: Clear the module cache (``-modcache``). Defaults to False.
+    mod_cache: bool = False
+
+    def shell(self) -> str:
+        flags = []
+        if self.build_cache:
+            flags.append("-cache")
+        if self.mod_cache:
+            flags.append("-modcache")
+        return "go clean " + " ".join(flags)
+
+
+async def cache_clean(
+    ctx: OpContext,
+    clear_build_cache: bool = True,
+    clear_mod_cache: bool = False,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Clean the Go build and/or module caches via ``go clean``.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        clear_build_cache (bool, optional): Clear the build cache
+            (``go clean -cache``). Defaults to True.
+        clear_mod_cache (bool, optional): Clear the module cache
+            (``go clean -modcache``). Defaults to False.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The clean command, always when a cache is selected (the
+            operation is stateless); nothing only when neither is.
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/go/go_cache_clean.py``.
+    """
+
+    # The design's ``go_cache_clean`` operation, ported *without* its
+    # ``min_total_mb`` size gate. That gate read a ``GoCacheStats`` fact that
+    # does not exist in reemote, and rather than add a fact for a threshold no
+    # caller asked for, the operation is stateless -- it always cleans when
+    # asked, exactly like ``dnf.clean``/``dnf.makecache``, leaving the caller
+    # to gate it in the deploy. ``go clean`` empties the *connecting user's*
+    # ``$GOCACHE``/``$GOMODCACHE``, so the request stays unprivileged; a
+    # ``sudo`` clean would empty root's caches instead. Selecting neither
+    # cache is a no-op (there is nothing to clear). ``**kwargs`` absorbs
+    # pyinfra's global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``/``doas``).
+    reasons: list[str] = []
+    if not clear_build_cache and not clear_mod_cache:
+        ctx.reason = "no caches selected"
+        return
+
+    ctx.changed = True
+    selected = []
+    if clear_build_cache:
+        selected.append("build cache")
+    if clear_mod_cache:
+        selected.append("module cache")
+    reasons.append(f"clean {', '.join(selected)}")
+    yield GoCleanCommand(build_cache=clear_build_cache, mod_cache=clear_mod_cache)
+
+    ctx.reason = "; ".join(reasons)
+
+
+# --- go.build ----------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GoBuildCommand(Command):
+    """Build a Go package into an output binary with ``go build``.
+
+    The single mutation of ``go.build``. Renders the whole step as a
+    ``sh -c``-wrapped compound -- ``mkdir -p`` of the output's parent, ``cd``
+    into the source directory, then ``go build`` -- for two reasons: the
+    chain has to run together (the ``cd`` gives ``go build`` the module
+    context, the ``mkdir`` gives it a place to write), and the ``sh -c``
+    wrapper lets a request ``env=`` prefix (``GOOS``/``GOARCH``/
+    ``CGO_ENABLED``) apply to the entire build rather than only its leading
+    ``mkdir``. ``tags`` joins into one comma list ``-tags`` argument and
+    ``ldflags`` is one ``-ldflags`` argument; every path and value is
+    ``shlex``-quoted both within the inner chain and once around it.
+    """
+
+    #: Module directory to build from (the inner ``cd``).
+    src_dir: str
+    #: Binary path to write (``go build -o``); its parent is mkdir'd.
+    output_path: str
+    #: Package to build, relative to ``src_dir`` or a module path.
+    pkg: str = "."
+    #: A single ``-ldflags`` argument string, or None to omit.
+    ldflags: str | None = None
+    #: Build tags joined into one comma-separated ``-tags`` argument.
+    tags: tuple[str, ...] = ()
+
+    def shell(self) -> str:
+        parts = ["go", "build"]
+        if self.tags:
+            parts += ["-tags", shlex.quote(",".join(self.tags))]
+        if self.ldflags:
+            parts += ["-ldflags", shlex.quote(self.ldflags)]
+        parts += ["-o", shlex.quote(self.output_path), shlex.quote(self.pkg)]
+        if "/" in self.output_path:
+            out_dir = self.output_path.rsplit("/", 1)[0] or "/"
+        else:
+            # A bare name builds into the current directory -- ``mkdir -p``
+            # of the name itself would collide with the binary it writes.
+            out_dir = "."
+        inner = (
+            f"mkdir -p {shlex.quote(out_dir)} && "
+            f"cd {shlex.quote(self.src_dir)} && {' '.join(parts)}"
+        )
+        return f"sh -c {shlex.quote(inner)}"
+
+
+async def build(
+    ctx: OpContext,
+    src_dir: str,
+    output_path: str,
+    pkg: str = ".",
+    ldflags: str | None = None,
+    tags: Sequence[str] | None = None,
+    force: bool = False,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Build a Go package into ``output_path`` when it is missing, stale or forced.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        src_dir (str): The module directory to build from.
+        output_path (str): The binary path to write with ``go build -o``.
+        pkg (str, optional): The package to build, relative to ``src_dir`` or
+            a module path. Defaults to ".".
+        ldflags (str | None, optional): A single ``-ldflags`` argument string
+            (``"-X main.version=1.2.3"``). Defaults to None.
+        tags (Sequence[str] | None, optional): Build tags joined into one
+            ``-tags`` list. Prefer a tuple when building requests via ``op()``,
+            which rejects unhashable arguments. Defaults to None.
+        force (bool, optional): Build even when a matching binary is already
+            present. Defaults to False.
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The build command, only when the output binary is missing,
+            was built by a different toolchain, or ``force`` is set.
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/go/go_build.py``.
+    """
+
+    # The design's ``go_build`` operation, ported with two deliberate
+    # deviations. (1) It takes NO ``env`` parameter: build-time
+    # GOOS/GOARCH/CGO_ENABLED come through reemote's ``op(env=...)``
+    # meta-parameter (issue #66, which rejected a per-operation env keyword
+    # because the driver already owns env rendering), and ``GoBuildCommand``
+    # wraps its compound in ``sh -c`` so that ``env K=V ...`` prefix reaches
+    # ``go build`` and not just the leading ``mkdir``. (2) Idempotence
+    # compares only the embedded compiler ``go_version`` against the current
+    # toolchain, NOT the design's GOOS/GOARCH settings -- ``go version -m``
+    # does not record the target platform unless the build injected it, so
+    # that branch could never fire, and a caller switching target platforms
+    # passes ``force``. A missing binary, a toolchain mismatch or ``force``
+    # each rebuild; an up-to-date one is a no-op. ``go build`` writes
+    # ``output_path`` as the connecting user, so the request stays
+    # unprivileged unless that path is root-owned. ``**kwargs`` absorbs
+    # pyinfra's global arguments (``op()`` already strips
+    # ``name``/``sudo``/``su``/``doas``).
+    reasons: list[str] = []
+    normalized_tags = tuple(tags) if tags else ()
+    descriptor_kwargs = {
+        "src_dir": src_dir,
+        "output_path": output_path,
+        "pkg": pkg,
+        "ldflags": ldflags,
+        "tags": normalized_tags,
+    }
+
+    if force:
+        ctx.changed = True
+        reasons.append(f"forced build of {output_path}")
+        yield GoBuildCommand(**descriptor_kwargs)
+        ctx.reason = "; ".join(reasons)
+        return
+
+    current = await ctx.facts.get(GoVersion)
+    current_version = current["version"] if current else None
+    existing = await ctx.facts.get(GoBinaryBuildInfo, output_path)
+
+    if existing is not None and (
+        not current_version or existing["go_version"] == f"go{current_version}"
+    ):
+        reasons.append(f"{output_path} already built with the current toolchain")
+    else:
+        ctx.changed = True
+        if existing is None:
+            reasons.append(f"{output_path} missing, will build")
+        else:
+            reasons.append(
+                f"{output_path} built by "
+                f"{existing['go_version'] or 'an unknown toolchain'}, will rebuild"
+            )
+        yield GoBuildCommand(**descriptor_kwargs)
+
+    ctx.reason = "; ".join(reasons)
+
+
 __all__ = [
     "GoBinaryBuildInfo",
+    "GoBuildCommand",
     "GoBuildInfo",
+    "GoCleanCommand",
     "GoEnv",
+    "GoEnvSetCommand",
+    "GoEnvUnsetCommand",
     "GoInstallCommand",
     "GoInstalledSDKs",
     "GoModInfo",
@@ -1082,5 +1436,8 @@ __all__ = [
     "GoRemoveCommand",
     "GoVersion",
     "GoVersionInfo",
+    "build",
+    "cache_clean",
+    "env",
     "packages",
 ]

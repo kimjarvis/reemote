@@ -336,7 +336,11 @@ from reemote.modules.git.git import (
     GitWorktreeRemoveCommand,
 )
 from reemote.modules.go.go import (
+    GoBuildCommand,
     GoBuildInfo,
+    GoCleanCommand,
+    GoEnvSetCommand,
+    GoEnvUnsetCommand,
     GoInstallCommand,
     GoModInfo,
     GoRemoveCommand,
@@ -1402,16 +1406,19 @@ class SimulatedHost(Host):
     # ``GoBuildInfo`` dict ``GoBinaryBuildInfo`` returns for that file),
     # backing ``GoBinaryBuildInfo``: keyed by the same absolute path the
     # caller asks for, so an unseeded path reads None like a missing or
-    # non-Go binary whose guarded ``go version -m`` prints nothing. A
-    # read-only seam: a test seeds it directly.
+    # non-Go binary whose guarded ``go version -m`` prints nothing. The
+    # ``go.build`` mutator ``build_go_binary`` records the output binary on
+    # apply (embedding the current toolchain's version so a repeat build
+    # converges), and a test may seed it directly too.
     go_binaries: dict[str, GoBuildInfo] = field(default_factory=dict)
     # Effective ``go env`` configuration (variable -> value, values stored
     # unquoted -- the shape ``GoEnv.parse`` produces), backing ``GoEnv``.
     # ``GoEnv.process`` copies the store and, when the caller names keys,
     # keeps only the requested ones in order; unknown keys contribute
     # nothing. Defaults to {} -- an unseeded store and a host without go
-    # both answer {}, like the self-guarded command's empty read. A
-    # read-only seam: a test seeds it directly.
+    # both answer {}, like the self-guarded command's empty read. The
+    # ``go.env`` mutators ``set_go_env``/``unset_go_env`` maintain it through
+    # ``execute_command``, and a test may seed it directly too.
     go_env: dict[str, str] = field(default_factory=dict)
     # go.mod metadata of module directories (directory path -> its
     # ``GoModInfo`` dict ``GoModuleInfo`` returns for that path), backing
@@ -2870,6 +2877,14 @@ class SimulatedHost(Host):
                 self.install_go_packages(packages)
             case GoRemoveCommand(packages=packages):
                 self.remove_go_packages(packages)
+            case GoEnvSetCommand(assignments=env_assignments):
+                self.set_go_env(env_assignments)
+            case GoEnvUnsetCommand(keys=env_keys):
+                self.unset_go_env(env_keys)
+            case GoCleanCommand():
+                pass  # the simulation models no cache contents to clear
+            case GoBuildCommand(output_path=built_path):
+                self.build_go_binary(built_path)
             case PipInstallCommand(packages=packages):
                 self.install_pip_packages(packages)
             case PipUpgradeCommand():
@@ -8058,6 +8073,50 @@ class SimulatedHost(Host):
         """
         for package in packages:
             self.go_packages.pop(package, None)
+
+    def set_go_env(self, assignments: tuple[tuple[str, str], ...]) -> None:
+        """Record a simulated ``go env -w``: persist the KEY=VAL pairs.
+
+        ``go.env``'s write mutation. Each pair overwrites the key's entry in
+        ``go_env`` (the variable -> value store ``GoEnv`` reads), so a repeat
+        set of the same value is a no-op once the fresh per-step fact cache
+        sees it.
+        """
+        for key, value in assignments:
+            self.go_env[key] = value
+
+    def unset_go_env(self, keys: tuple[str, ...]) -> None:
+        """Record a simulated ``go env -u``: drop the keys.
+
+        ``go.env``'s unset mutation. Each key leaves ``go_env`` so ``GoEnv``
+        no longer reports it (an unset value simply has no entry, the same
+        shape a never-set variable has). An absent key is tolerated -- the
+        operation only yields keys the fact reported non-empty.
+        """
+        for key in keys:
+            self.go_env.pop(key, None)
+
+    def build_go_binary(self, output_path: str) -> None:
+        """Record a simulated ``go build``: register the output binary.
+
+        ``go.build``'s mutation. The binary lands in ``go_binaries`` (the
+        path -> ``GoBuildInfo`` store ``GoBinaryBuildInfo`` reads) keyed by
+        ``output_path``, embedding ``go`` + the current toolchain version from
+        the ``go_version`` seam -- the exact ``go_version`` half ``go.build``
+        compares for idempotence -- so a repeat build with an unchanged
+        toolchain converges. A host with no toolchain records an empty
+        version, matching a ``go version -m`` header with no ``go``-prefixed
+        field. The module/settings halves stay empty -- the simulation
+        compiles no real module.
+        """
+        version = self.go_version.get("version", "") if self.go_version else ""
+        self.go_binaries[output_path] = {
+            "go_version": f"go{version}" if version else "",
+            "path": "",
+            "module_path": "",
+            "module_version": "",
+            "settings": {},
+        }
 
     def install_snap_packages(self, packages: tuple[str, ...], channel: str) -> None:
         """Record a simulated ``snap install``: mark the snaps installed.

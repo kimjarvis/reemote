@@ -48,8 +48,12 @@ from reemote.hosts import Host
 from reemote.modules import go
 from reemote.modules.go.go import (
     GoBinaryBuildInfo,
+    GoBuildCommand,
     GoBuildInfo,
+    GoCleanCommand,
     GoEnv,
+    GoEnvSetCommand,
+    GoEnvUnsetCommand,
     GoInstallCommand,
     GoInstalledSDKs,
     GoModInfo,
@@ -1205,6 +1209,563 @@ async def test_gather_fact_keys_the_parameterized_facts():
     }
 
 
+# --- Operation descriptors: go.env / go.cache_clean / go.build rendering ---------
+
+
+def test_go_env_set_command_renders_sorted_pairs():
+    """One ``go env -w`` batch, every ``KEY=VAL`` a single ``shlex``-quoted
+    token in sorted key order -- a value with spaces or metacharacters
+    reaches go whole, and the request order never changes the shell."""
+    cmd = GoEnvSetCommand(
+        assignments=(("GOPROXY", "off"), ("GOFLAGS", "-mod=vendor -trimpath"))
+    )
+    assert cmd.shell() == "go env -w 'GOFLAGS=-mod=vendor -trimpath' GOPROXY=off"
+    # Same pairs, other spelling order: identical shell (sorted rendering).
+    same = GoEnvSetCommand(
+        assignments=(("GOFLAGS", "-mod=vendor"), ("GOPROXY", "off"))
+    )
+    assert same.shell() == "go env -w GOFLAGS=-mod=vendor GOPROXY=off"
+
+
+def test_go_env_unset_command_renders_sorted_keys():
+    """One ``go env -u`` batch of the removed keys, sorted and quoted."""
+    cmd = GoEnvUnsetCommand(keys=("GONOSUMCHECK", "GOFLAGS"))
+    assert cmd.shell() == "go env -u GOFLAGS GONOSUMCHECK"
+
+
+def test_go_clean_command_flags_follow_selection():
+    """``go clean`` carries ``-cache`` for the build cache and ``-modcache``
+    for the module cache; the operation never emits it with neither."""
+    assert GoCleanCommand(build_cache=True, mod_cache=False).shell() == (
+        "go clean -cache"
+    )
+    assert GoCleanCommand(build_cache=True, mod_cache=True).shell() == (
+        "go clean -cache -modcache"
+    )
+    assert GoCleanCommand(build_cache=False, mod_cache=True).shell() == (
+        "go clean -modcache"
+    )
+
+
+def test_go_build_command_wraps_the_chain_in_sh_c():
+    """The whole step is one ``sh -c``-wrapped compound -- ``mkdir -p`` of the
+    output's parent, ``cd`` into the source dir, then ``go build`` -- so the
+    chain runs together and an ``op(env=...)`` prefix reaches ``go build``.
+    ``tags`` join into one comma ``-tags`` list, ``ldflags`` is one argument,
+    and every path/value is quoted."""
+    cmd = GoBuildCommand(
+        src_dir="/srv/app",
+        output_path="/out/bin/app",
+        pkg="./cmd/server",
+        ldflags="-s -w -X main.version=1.2.3",
+        tags=("netgo", "osusergo"),
+    )
+    assert cmd.shell() == (
+        """sh -c 'mkdir -p /out/bin && cd /srv/app && go build """
+        """-tags netgo,osusergo -ldflags '"'"'-s -w -X main.version=1.2.3'"'"' """
+        """-o /out/bin/app ./cmd/server'"""
+    )
+
+
+def test_go_build_command_minimal_and_bare_output():
+    """With no tags/ldflags and the default ``.`` package only ``-o`` and the
+    package appear; a bare (no-directory) output builds into the current
+    directory (``mkdir -p .``), never ``mkdir`` of the binary's own name."""
+    minimal = GoBuildCommand(src_dir="/srv/app", output_path="/out/app")
+    assert minimal.shell() == (
+        "sh -c 'mkdir -p /out && cd /srv/app && go build -o /out/app .'"
+    )
+    bare = GoBuildCommand(src_dir="/srv/app", output_path="app")
+    assert bare.shell() == (
+        "sh -c 'mkdir -p . && cd /srv/app && go build -o app .'"
+    )
+
+
+def test_go_build_command_env_and_sudo_wrap_the_shell():
+    """The driver renders ``op(env=...)`` as an ``env K=V`` prefix ahead of the
+    ``sh -c`` wrapper (so it applies to the whole build, not just the leading
+    ``mkdir``) and ``sudo`` elevates the entire command."""
+    cmd = GoBuildCommand(src_dir="/srv/app", output_path="/out/bin/app")
+    plain = (
+        "sh -c 'mkdir -p /out/bin && cd /srv/app && go build -o /out/bin/app .'"
+    )
+    assert command_shell(cmd) == plain
+    assert command_shell(cmd, sudo=True, env={"GOOS": "linux"}) == (
+        f"sudo env GOOS=linux {plain}"
+    )
+
+
+# --- Operation: go.env idempotence ----------------------------------------------
+
+
+async def test_go_env_sets_new_key():
+    """A key the host has no value for is written with ``go env -w``."""
+    host = SimulatedHost(name="h")
+    ctx = _ctx(host)
+    commands = [c async for c in go.env(ctx, settings=(("GOPROXY", "off"),))]
+    assert ctx.changed
+    assert ctx.reason == "set GOPROXY"
+    assert commands == [GoEnvSetCommand(assignments=(("GOPROXY", "off"),))]
+
+
+async def test_go_env_noop_when_already_in_place():
+    """Every key already holding its desired value yields no command at all;
+    the reason is recorded even when unchanged."""
+    host = SimulatedHost(name="h", go_env={"GOPROXY": "off", "GOFLAGS": "-x"})
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in go.env(
+            ctx, settings=(("GOPROXY", "off"), ("GOFLAGS", "-x"))
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "settings already in place"
+    assert commands == []
+
+
+async def test_go_env_sets_changed_value_only():
+    """Only the keys that drift are written: a matching neighbour is left
+    out of the batch."""
+    host = SimulatedHost(name="h", go_env={"GOPROXY": "on", "GOFLAGS": "-x"})
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in go.env(
+            ctx, settings=(("GOPROXY", "off"), ("GOFLAGS", "-x"))
+        )
+    ]
+    assert ctx.changed
+    assert commands == [GoEnvSetCommand(assignments=(("GOPROXY", "off"),))]
+
+
+async def test_go_env_unsets_present_key():
+    """A ``None`` value removes a key the host currently has a non-empty
+    value for via ``go env -u``."""
+    host = SimulatedHost(name="h", go_env={"GOFLAGS": "-x"})
+    ctx = _ctx(host)
+    commands = [c async for c in go.env(ctx, settings=(("GOFLAGS", None),))]
+    assert ctx.changed
+    assert ctx.reason == "unset GOFLAGS"
+    assert commands == [GoEnvUnsetCommand(keys=("GOFLAGS",))]
+
+
+async def test_go_env_skips_unset_of_absent_key():
+    """Unsetting a key that is already empty -- or absent -- is a no-op: only
+    non-empty current values fire the ``-u`` batch."""
+    host = SimulatedHost(name="h", go_env={"GOFLAGS": ""})
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in go.env(
+            ctx, settings=(("GOFLAGS", None), ("GONOSUMCHECK", None))
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "settings already in place"
+    assert commands == []
+
+
+async def test_go_env_batches_unset_before_set():
+    """A rename (unset the old, set the new) yields both batches, the unset
+    first, and joins the two reasons."""
+    host = SimulatedHost(name="h", go_env={"GOOLD": "keep"})
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in go.env(
+            ctx, settings=(("GOOLD", None), ("GONEW", "v"))
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == "unset GOOLD; set GONEW"
+    assert commands == [
+        GoEnvUnsetCommand(keys=("GOOLD",)),
+        GoEnvSetCommand(assignments=(("GONEW", "v"),)),
+    ]
+
+
+async def test_go_env_none_is_a_noop():
+    """An empty settings request yields nothing and says so."""
+    host = SimulatedHost(name="h")
+    ctx = _ctx(host)
+    commands = [c async for c in go.env(ctx, settings=())]
+    assert not ctx.changed
+    assert ctx.reason == "no settings requested"
+    assert commands == []
+
+
+# --- Operation: go.cache_clean (stateless) --------------------------------------
+
+
+async def test_go_cache_clean_always_yields():
+    """The operation is stateless: an empty cache or a full one both fire
+    ``go clean -cache`` every run, like ``dnf.clean``."""
+    host = SimulatedHost(name="h")
+    ctx = _ctx(host)
+    commands = [c async for c in go.cache_clean(ctx)]
+    assert ctx.changed
+    assert ctx.reason == "clean build cache"
+    assert commands == [GoCleanCommand(build_cache=True, mod_cache=False)]
+
+
+async def test_go_cache_clean_selects_module_cache():
+    """``clear_mod_cache`` appends ``-modcache`` and the reason names both
+    selected caches."""
+    host = SimulatedHost(name="h")
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in go.cache_clean(
+            ctx, clear_build_cache=True, clear_mod_cache=True
+        )
+    ]
+    assert commands == [GoCleanCommand(build_cache=True, mod_cache=True)]
+    assert ctx.reason == "clean build cache, module cache"
+
+
+async def test_go_cache_clean_neither_is_a_noop():
+    """Selecting neither cache is a no-op -- there is nothing to clear."""
+    host = SimulatedHost(name="h")
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in go.cache_clean(
+            ctx, clear_build_cache=False, clear_mod_cache=False
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "no caches selected"
+    assert commands == []
+
+
+# --- Operation: go.build idempotence --------------------------------------------
+
+
+_BUILD_VERSION = {
+    "version": "1.23.4",
+    "raw": "go version go1.23.4 linux/amd64",
+    "goos": "linux",
+    "goarch": "amd64",
+}
+
+
+async def test_go_build_missing_binary_builds():
+    """No binary at ``output_path`` -- the build fires."""
+    host = SimulatedHost(name="h", go_version=dict(_BUILD_VERSION))
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in go.build(
+            ctx, src_dir="/srv/app", output_path="/out/bin/app"
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == "/out/bin/app missing, will build"
+    assert commands == [
+        GoBuildCommand(
+            src_dir="/srv/app",
+            output_path="/out/bin/app",
+            pkg=".",
+            ldflags=None,
+            tags=(),
+        )
+    ]
+
+
+async def test_go_build_matches_current_toolchain_is_noop():
+    """A binary whose embedded compiler equals the current toolchain is left
+    alone."""
+    host = SimulatedHost(
+        name="h",
+        go_version=dict(_BUILD_VERSION),
+        go_binaries={
+            "/out/bin/app": {
+                "go_version": "go1.23.4",
+                "path": "",
+                "module_path": "",
+                "module_version": "",
+                "settings": {},
+            }
+        },
+    )
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in go.build(
+            ctx, src_dir="/srv/app", output_path="/out/bin/app"
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "/out/bin/app already built with the current toolchain"
+    assert commands == []
+
+
+async def test_go_build_toolchain_mismatch_rebuilds():
+    """A binary built by a different compiler version is rebuilt, and the
+    reason names the toolchain that produced it."""
+    host = SimulatedHost(
+        name="h",
+        go_version=dict(_BUILD_VERSION),
+        go_binaries={
+            "/out/bin/app": {
+                "go_version": "go1.20.0",
+                "path": "",
+                "module_path": "",
+                "module_version": "",
+                "settings": {},
+            }
+        },
+    )
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in go.build(
+            ctx, src_dir="/srv/app", output_path="/out/bin/app"
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == "/out/bin/app built by go1.20.0, will rebuild"
+    assert len(commands) == 1
+
+
+async def test_go_build_unknown_current_version_keeps_binary():
+    """When the toolchain cannot report a version (a ``devel`` go), a present
+    binary is treated as up to date rather than force-rebuilt every run."""
+    host = SimulatedHost(
+        name="h",
+        go_binaries={
+            "/out/bin/app": {
+                "go_version": "go1.20.0",
+                "path": "",
+                "module_path": "",
+                "module_version": "",
+                "settings": {},
+            }
+        },
+    )
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in go.build(
+            ctx, src_dir="/srv/app", output_path="/out/bin/app"
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "/out/bin/app already built with the current toolchain"
+    assert commands == []
+
+
+async def test_go_build_force_skips_the_facts():
+    """``force`` rebuilds unconditionally -- the facts are never consulted, so
+    an up-to-date binary still re-runs the build (the caller switches target
+    platforms through ``force`` because ``go version -m`` records no GOOS."""
+    host = SimulatedHost(
+        name="h",
+        go_version=dict(_BUILD_VERSION),
+        go_binaries={
+            "/out/bin/app": {
+                "go_version": "go1.23.4",
+                "path": "",
+                "module_path": "",
+                "module_version": "",
+                "settings": {},
+            }
+        },
+    )
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in go.build(
+            ctx, src_dir="/srv/app", output_path="/out/bin/app", force=True
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == "forced build of /out/bin/app"
+    assert commands == [
+        GoBuildCommand(
+            src_dir="/srv/app",
+            output_path="/out/bin/app",
+            pkg=".",
+            ldflags=None,
+            tags=(),
+        )
+    ]
+
+
+async def test_go_build_normalizes_tags_and_absorbs_globals():
+    """A ``tags`` sequence becomes the tuple on the descriptor; ``**kwargs``
+    takes pyinfra's global arguments with no effect."""
+    host = SimulatedHost(name="h")
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in go.build(
+            ctx,
+            src_dir="/srv/app",
+            output_path="/out/app",
+            tags=["netgo", "osusergo"],
+            untar=False,
+            quote=True,
+        )
+    ]
+    assert commands[0].tags == ("netgo", "osusergo")
+
+
+# --- Operation: SimulatedHost seam dispatch (env/clean/build) -------------------
+
+
+async def test_go_env_set_unset_seam_mutates_store():
+    """``send_command`` maps the two env descriptors onto the ``go_env``
+    store: a set persists the pair, an unset drops the key."""
+    host = SimulatedHost(name="h", go_env={"GOFLAGS": "-x"})
+    await send_command(
+        host, GoEnvSetCommand(assignments=(("GOPROXY", "off"),))
+    )
+    assert host.go_env == {"GOFLAGS": "-x", "GOPROXY": "off"}
+    await send_command(host, GoEnvUnsetCommand(keys=("GOFLAGS",)))
+    assert host.go_env == {"GOPROXY": "off"}
+
+
+async def test_go_clean_seam_is_a_noop():
+    """The simulation models no cache contents, so a ``go clean`` command
+    dispatches without touching state (and without error)."""
+    host = SimulatedHost(name="h")
+    await send_command(host, GoCleanCommand(build_cache=True, mod_cache=True))
+    assert host.go_env == {}
+
+
+async def test_go_build_seam_registers_binary():
+    """A build records the output binary embedding ``go`` + the current
+    toolchain version -- the exact half ``go.build`` compares -- so a repeat
+    build with an unchanged toolchain converges."""
+    host = SimulatedHost(name="h", go_version=dict(_BUILD_VERSION))
+    await send_command(
+        host, GoBuildCommand(src_dir="/srv/app", output_path="/out/bin/app")
+    )
+    assert host.go_binaries["/out/bin/app"]["go_version"] == "go1.23.4"
+
+
+# --- Operation: end to end (env / cache_clean / build) --------------------------
+
+
+def env_deploy(host):
+    yield op(go.env, name="Tune go env", settings=(("GOPROXY", "off"),))
+
+
+def env_unset_deploy(host):
+    yield op(go.env, name="Clear go flag", settings=(("GOPROXY", None),))
+
+
+def clean_deploy(host):
+    yield op(go.cache_clean, name="Clean go cache")
+
+
+def build_deploy(host):
+    yield op(
+        go.build,
+        name="Build app",
+        src_dir="/srv/app",
+        output_path="/out/bin/app",
+    )
+
+
+async def test_go_env_end_to_end_set_then_unset_cycle():
+    """The dry run plans the set and sends nothing, the applied run persists
+    the value, a repeat set is a no-op, and the unset pass then clears it."""
+    host = SimulatedHost(name="h")
+
+    def factory(entry: dict) -> SimulatedHost:
+        return host
+
+    plans, dry_report, _hosts = await run(
+        INVENTORY, env_deploy, host_factory=factory, dry=True
+    )
+    assert dry_report is None
+    assert plans["h"][0].changed
+    assert plans["h"][0].reason == "set GOPROXY"
+    assert host.go_env == {}  # a dry run sends nothing
+
+    _plans, report, _hosts = await run(
+        INVENTORY, env_deploy, host_factory=factory
+    )
+    assert "$ go env -w GOPROXY=off" in format_log(report)
+    assert host.go_env == {"GOPROXY": "off"}
+
+    plans2, report2, _hosts2 = await run(
+        INVENTORY, env_deploy, host_factory=factory
+    )
+    assert not plans2["h"][0].changed
+    assert "[no change: settings already in place]" in format_log(report2)
+
+    _plans3, report3, _hosts3 = await run(
+        INVENTORY, env_unset_deploy, host_factory=factory
+    )
+    assert "$ go env -u GOPROXY" in format_log(report3)
+    assert host.go_env == {}
+
+
+async def test_go_cache_clean_end_to_end_always_fires():
+    """The stateless clean sends ``go clean -cache`` on every applied run --
+    it re-plans even after a run already cleaned -- and the dry run sends
+    nothing."""
+    host = SimulatedHost(name="h")
+
+    def factory(entry: dict) -> SimulatedHost:
+        return host
+
+    plans, _report, _hosts = await run(
+        INVENTORY, clean_deploy, host_factory=factory, dry=True
+    )
+    assert plans["h"][0].changed
+    assert plans["h"][0].reason == "clean build cache"
+
+    _plans, report, _hosts = await run(
+        INVENTORY, clean_deploy, host_factory=factory
+    )
+    assert "$ go clean -cache" in format_log(report)
+    plans2, report2, _hosts2 = await run(
+        INVENTORY, clean_deploy, host_factory=factory
+    )
+    assert plans2["h"][0].changed
+    assert "$ go clean -cache" in format_log(report2)
+
+
+async def test_go_build_end_to_end_build_then_noop():
+    """The dry run plans the build and writes nothing, the applied run
+    converges the binary into ``go_binaries``, and the second pass is a
+    no-op against the current toolchain."""
+    host = SimulatedHost(name="h", go_version=dict(_BUILD_VERSION))
+
+    def factory(entry: dict) -> SimulatedHost:
+        return host
+
+    plans, dry_report, _hosts = await run(
+        INVENTORY, build_deploy, host_factory=factory, dry=True
+    )
+    assert dry_report is None
+    assert plans["h"][0].changed
+    assert plans["h"][0].reason == "/out/bin/app missing, will build"
+    assert host.go_binaries == {}  # a dry run sends nothing
+
+    _plans, report, _hosts = await run(
+        INVENTORY, build_deploy, host_factory=factory
+    )
+    assert (
+        "$ sh -c 'mkdir -p /out/bin && cd /srv/app && "
+        "go build -o /out/bin/app .'" in format_log(report)
+    )
+    assert host.go_binaries["/out/bin/app"]["go_version"] == "go1.23.4"
+
+    plans2, report2, _hosts2 = await run(
+        INVENTORY, build_deploy, host_factory=factory
+    )
+    assert not plans2["h"][0].changed
+    assert "[no change: /out/bin/app already built with the current toolchain]" in (
+        format_log(report2)
+    )
+
+
 # --- Exports ----------------------------------------------------------------------
 
 
@@ -1218,6 +1779,11 @@ def test_go_module_exports():
     assert go.packages is not None
     assert go.GoInstallCommand is GoInstallCommand
     assert go.GoRemoveCommand is GoRemoveCommand
+    assert go.env is not None and go.cache_clean is not None and go.build is not None
+    assert go.GoEnvSetCommand is GoEnvSetCommand
+    assert go.GoEnvUnsetCommand is GoEnvUnsetCommand
+    assert go.GoCleanCommand is GoCleanCommand
+    assert go.GoBuildCommand is GoBuildCommand
     for name in (
         "GoVersion",
         "GoVersionInfo",
@@ -1244,6 +1810,13 @@ def test_go_module_exports():
         "GoModInfo",
         "GoBinaryBuildInfo",
         "GoBuildInfo",
+        "GoEnvSetCommand",
+        "GoEnvUnsetCommand",
+        "GoCleanCommand",
+        "GoBuildCommand",
     ):
         assert getattr(reemote, name) is globals()[name]
         assert name in reemote.__all__
+    # The operation functions are reached through the namespace, never the
+    # top level.
+    assert not hasattr(reemote, "cache_clean")

@@ -15,6 +15,9 @@
         - GoBuildInfo
         - GoBinaryBuildInfo
         - packages
+        - env
+        - cache_clean
+        - build
 
 
 
@@ -158,5 +161,46 @@ descriptors render every package token `shlex`-quoted, byte-identical to the
 baseline's `QuoteString` output. All three baseline options map — `packages`,
 `present` and `latest` — with the single-package-as-string shorthand and the
 `packages=None` no-op kept; `go` has no further baseline options to drop.
+
+`go.env` persists or removes `go env` configuration through `go env -w` /
+`go env -u`. Its one option, `settings`, is a tuple of `(key, value)` pairs —
+the mapping spelled as pairs because `op()` rejects an unhashable dict, the
+`sysctl` exemplar — and a `None` value means "unset this key". Idempotence is
+per key against the `GoEnv` fact: an unset fires only for a key the host
+currently holds a non-empty value for, a set only for a key whose value
+drifts, so an already-converged request yields no command; the unset batch
+precedes the set batch so a rename reads cleanly. `go env -w`/`-u` edit the
+*connecting user's* go env file, so the request stays unprivileged — flagging
+`sudo` would edit root's file instead. The design carried no option beyond the
+mapping, so there is nothing to drop.
+
+`go.cache_clean` empties the build and/or module cache with `go clean`. The
+design gated it on a `GoCacheStats` fact and a `min_total_mb` threshold; that
+fact does not exist in reemote and no caller asked for the threshold, so —
+by the developer's decision — the operation is instead stateless, always
+cleaning when a cache is selected exactly like `dnf.clean`/`dnf.makecache`,
+leaving any size gate to the deploy. `clear_build_cache` (default on) and
+`clear_mod_cache` (default off) fold into a single `GoCleanCommand`; selecting
+neither is a no-op. Like `go.env` it acts on the connecting user's caches, so
+the request stays unprivileged.
+
+`go.build` compiles a package into a binary with `go build`, idempotent
+against the `GoBinaryBuildInfo` fact. Two deliberate deviations from the
+design. It takes **no `env` parameter**: build-time `GOOS`/`GOARCH`/
+`CGO_ENABLED` come through reemote's `op(env=...)` meta-parameter, and the
+`GoBuildCommand` wraps its whole step — `mkdir -p` of the output's parent,
+`cd` into the source directory, then `go build` — in one `sh -c` compound so
+that the driver's `env K=V` prefix reaches `go build` and not just the leading
+`mkdir`. And idempotence compares only the embedded compiler `go_version`
+against the current toolchain, **not** the design's `GOOS`/`GOARCH` settings:
+`go version -m` records the target platform only if the build injected it, so
+that branch could never fire, and a caller switching target platforms passes
+`force`. A missing binary, a toolchain mismatch or `force` each rebuild; an
+up-to-date one — or one present while the toolchain reports no version (a
+`devel` go) — is left alone. `tags` join into one comma-separated `-tags`
+argument (a tuple, for the same hashability reason as the env mapping) and
+`ldflags` is one `-ldflags` argument; every path and value is `shlex`-quoted.
+`go build` writes `output_path` as the connecting user, so the request stays
+unprivileged unless that path is root-owned.
 
 --->
