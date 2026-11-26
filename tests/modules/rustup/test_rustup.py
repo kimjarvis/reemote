@@ -564,8 +564,10 @@ def _ctx(host: SimulatedHost) -> OpContext:
 
 async def test_rustup_toolchains_installs_missing():
     """Only the toolchains absent from the fact are installed, in one batch;
-    the default is left alone when it already matches."""
-    host = SimulatedHost(name="h", rustup_toolchains={"stable": True})
+    the default is left alone when it already matches. The store carries the
+    qualified names a real ``rustup toolchain list`` prints, so the
+    comparison must resolve the request's short aliases against them."""
+    host = SimulatedHost(name="h", rustup_toolchains={"stable-x86_64-unknown-linux-gnu": True})
     ctx = _ctx(host)
     commands = [
         c
@@ -584,8 +586,9 @@ async def test_rustup_toolchains_installs_missing():
 
 async def test_rustup_toolchains_sets_a_differing_default():
     """When the requested default differs from the current one, a
-    ``rustup default`` command follows the install batch."""
-    host = SimulatedHost(name="h", rustup_toolchains={"stable": True})
+    ``rustup default`` command follows the install batch; the reason names
+    the current default exactly as the qualified fact key spells it."""
+    host = SimulatedHost(name="h", rustup_toolchains={"stable-x86_64-unknown-linux-gnu": True})
     ctx = _ctx(host)
     commands = [
         c
@@ -595,8 +598,8 @@ async def test_rustup_toolchains_sets_a_differing_default():
     ]
     assert ctx.changed
     assert ctx.reason == (
-        "toolchain nightly not installed, will install; default is stable, "
-        "will set nightly"
+        "toolchain nightly not installed, will install; default is "
+        "stable-x86_64-unknown-linux-gnu, will set nightly"
     )
     assert commands == [
         RustupToolchainInstallCommand(toolchains=("nightly",)),
@@ -605,8 +608,10 @@ async def test_rustup_toolchains_sets_a_differing_default():
 
 
 async def test_rustup_toolchains_noop_when_present():
-    """Installed toolchains and a matching default yield nothing."""
-    host = SimulatedHost(name="h", rustup_toolchains={"stable": True})
+    """Installed toolchains and a matching default yield nothing -- a short
+    alias counts as installed through its qualified (triple-qualified) fact
+    key, the way rustup itself resolves it."""
+    host = SimulatedHost(name="h", rustup_toolchains={"stable-x86_64-unknown-linux-gnu": True})
     ctx = _ctx(host)
     commands = [
         c
@@ -620,8 +625,10 @@ async def test_rustup_toolchains_noop_when_present():
 
 
 async def test_rustup_toolchains_removes_installed():
-    """``present=False`` uninstalls only the installed subset."""
-    host = SimulatedHost(name="h", rustup_toolchains={"stable": True})
+    """``present=False`` uninstalls only the installed subset -- an alias in
+    the request selects its qualified store key, and the command keeps
+    carrying the alias rustup resolves."""
+    host = SimulatedHost(name="h", rustup_toolchains={"stable-x86_64-unknown-linux-gnu": True})
     ctx = _ctx(host)
     commands = [
         c
@@ -632,6 +639,29 @@ async def test_rustup_toolchains_removes_installed():
     assert ctx.changed
     assert ctx.reason == "toolchain stable installed, will uninstall"
     assert commands == [RustupToolchainRemoveCommand(toolchains=("stable",))]
+
+
+async def test_rustup_toolchains_alias_matches_only_qualifier_remainders():
+    """The leading-field rule is guarded at the separator: a short alias is
+    satisfied only by a host-triple remainder, so the bare ``nightly``
+    request is NOT satisfied by the dated ``nightly-2026-05-01-x86_64-...``
+    install -- rustup treats those as distinct toolchains -- while
+    ``stable`` is satisfied by its qualified name."""
+    host = SimulatedHost(
+        name="h",
+        rustup_toolchains={
+            "stable-x86_64-unknown-linux-gnu": True,
+            "nightly-2026-05-01-x86_64-unknown-linux-gnu": False,
+        },
+    )
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in rustup.toolchains(ctx, toolchains=("stable", "nightly"))
+    ]
+    assert ctx.changed
+    assert ctx.reason == "toolchain nightly not installed, will install"
+    assert commands == [RustupToolchainInstallCommand(toolchains=("nightly",))]
 
 
 async def test_rustup_toolchains_scopes_rustup_home():
@@ -790,13 +820,21 @@ async def test_rustup_seam_mutates_the_stores():
     """Each descriptor maps onto its store through ``send_command``: an
     install adds a non-default entry, ``rustup default`` moves the flag,
     target/component add seed the toolchain's row."""
-    host = SimulatedHost(name="h", rustup_toolchains={"stable": True})
+    host = SimulatedHost(
+        name="h", rustup_toolchains={"stable-x86_64-unknown-linux-gnu": True}
+    )
     await send_command(
         host, RustupToolchainInstallCommand(toolchains=("nightly",))
     )
-    assert host.rustup_toolchains == {"stable": True, "nightly": False}
+    assert host.rustup_toolchains == {
+        "stable-x86_64-unknown-linux-gnu": True,
+        "nightly-x86_64-unknown-linux-gnu": False,
+    }
     await send_command(host, RustupDefaultCommand(toolchain="nightly"))
-    assert host.rustup_toolchains == {"stable": False, "nightly": True}
+    assert host.rustup_toolchains == {
+        "stable-x86_64-unknown-linux-gnu": False,
+        "nightly-x86_64-unknown-linux-gnu": True,
+    }
     await send_command(
         host, RustupTargetAddCommand(targets=("wasm32-unknown-unknown",), toolchain="nightly")
     )
@@ -810,7 +848,7 @@ async def test_rustup_removal_seam_reconciles_stores():
     a target/component remove shrinks just the named entry."""
     host = SimulatedHost(
         name="h",
-        rustup_toolchains={"nightly": False},
+        rustup_toolchains={"nightly-x86_64-unknown-linux-gnu": False},
         rustup_targets={"nightly": ["wasm32-unknown-unknown"]},
         rustup_components={"nightly": ["rustfmt"]},
     )
@@ -825,7 +863,7 @@ async def test_rustup_removal_seam_reconciles_stores():
     await send_command(
         host, RustupToolchainRemoveCommand(toolchains=("nightly",))
     )
-    assert "nightly" not in host.rustup_toolchains
+    assert "nightly-x86_64-unknown-linux-gnu" not in host.rustup_toolchains
     assert "nightly" not in host.rustup_targets
     assert "nightly" not in host.rustup_components
 
@@ -868,7 +906,10 @@ async def test_rustup_toolchains_end_to_end_converges():
     log = format_log(report)
     assert "$ rustup toolchain install stable nightly --profile=minimal" in log
     assert "$ rustup default stable" in log
-    assert host.rustup_toolchains == {"stable": True, "nightly": False}
+    assert host.rustup_toolchains == {
+        "stable-x86_64-unknown-linux-gnu": True,
+        "nightly-x86_64-unknown-linux-gnu": False,
+    }
 
     plans2, _report2, _hosts = await run(
         INVENTORY, toolchains_deploy, host_factory=factory

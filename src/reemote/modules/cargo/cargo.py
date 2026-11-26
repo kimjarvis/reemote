@@ -497,8 +497,10 @@ async def packages(
         git (str | None, optional): Git repository URL to install from
             (``--git``). A git install is not idempotent: there is no
             installed-source revision view to compare against, so it
-            re-installs and reports changed on every run. Only meaningful
-            with ``present=True``. Defaults to None.
+            re-installs (with ``--force``, since cargo refuses to overwrite
+            the binary its previous install left) and reports changed on
+            every run. Only meaningful with ``present=True``.
+            Defaults to None.
         branch (str | None, optional): Branch to install from when ``git``
             is set (``--branch``). Defaults to None.
         tag (str | None, optional): Tag to install from when ``git`` is set
@@ -556,8 +558,9 @@ async def packages(
         )
 
         # Install from a git source -- cargo's own grammar picks the
-        # repository's packages by name (not idempotent either)
-        # -> cargo install --git https://github.com/rust-cli/rustup.git
+        # repository's packages by name, forced like every git install
+        # (not idempotent either)
+        # -> cargo install --git https://github.com/rust-cli/rustup.git --force
         yield op(
             cargo.packages,
             name="Install rustup from git",
@@ -606,9 +609,14 @@ async def packages(
     # install non-idempotent like ``latest``: with no installed-source
     # revision view to compare, a git request always re-yields (cargo's
     # ``--git <url> [crate...]`` grammar takes *names*, so pins drop to bare
-    # names there), and it only means the install direction -- a
+    # names there) and always carries ``--force``, because re-running against
+    # the crate binary the previous install left behind is exactly what
+    # cargo refuses unprompted; it only means the install direction -- a
     # ``present=False`` request uninstalls by name alone, mirroring how
-    # ``latest`` is ignored there. ``branch``/``tag``/``rev`` are cargo's
+    # ``latest`` is ignored there. The same refusal shapes ``--force`` on a
+    # registry install batch that *moves* an installed crate to another
+    # pinned version (a version-gated reinstall), while a batch of purely
+    # new crates stays unprompted. ``branch``/``tag``/``rev`` are cargo's
     # mutually exclusive ref selectors for ``--git``; bad combinations are
     # static request arguments, refused up front with ``ValueError`` (the
     # design note's pyinfra-idiomatic ``OperationError`` transliterated to
@@ -698,6 +706,12 @@ async def packages(
             branch=branch,
             tag=tag,
             rev=rev,
+            # ``--force``: a git install always re-runs, and cargo refuses
+            # to overwrite the binary its previous install of the same
+            # crate left in ``$CARGO_HOME/bin`` (``error: binary ... already
+            # exists``), so without it the second deploy of one git request
+            # would fail the shell.
+            force=True,
             **install_kwargs,
         )
         ctx.reason = "; ".join(reasons)
@@ -741,8 +755,18 @@ async def packages(
             if to_install:
                 ctx.changed = True
                 reasons.append(f"{len(to_install)} package(s) to install")
+                # A pin moved onto a crate installed at another version
+                # overwrites that crate's binary, which cargo refuses
+                # unprompted; ``--force`` covers the whole batch and is
+                # inert for the genuinely new crates alongside it (pyinfra
+                # omits it -- a divergence, since its command would fail
+                # the same way on a real host).
+                install_force = any(
+                    _split_version(pkg)[0] in versions_by_name for pkg in to_install
+                )
                 yield CargoInstallCommand(
                     packages=tuple(_cargo_package_spec(pkg) for pkg in to_install),
+                    force=install_force,
                     **install_kwargs,
                 )
             if to_upgrade:

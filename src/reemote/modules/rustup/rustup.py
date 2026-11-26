@@ -61,6 +61,35 @@ def _toolchain_channel(name: str) -> str:
     return "custom"
 
 
+def _toolchain_matches(requested: str, installed_name: str) -> bool:
+    """Whether a requested toolchain spec selects one installed name.
+
+    ``rustup toolchain list`` prints fully-qualified names
+    (``stable-x86_64-unknown-linux-gnu``) while a request names rustup's
+    resolvable aliases (``stable``, ``nightly-2026-05-01``), so a bare
+    ``in``/``==`` comparison against the fact never converges on a real
+    host. A spec selects the installed name when it names it exactly or
+    as its whole leading fields -- the separator rule
+    ``_toolchain_channel`` applies -- with one guard past the boundary:
+    the remainder must be rustup's host triple, and host triples open
+    with an architecture token while dated/versioned toolchain segments
+    open with a digit. That keeps a bare ``nightly`` request from being
+    falsely satisfied by a ``nightly-2026-05-01-x86_64-...`` install,
+    which rustup treats as a distinct toolchain. Partial version
+    prefixes (``1.83`` for ``1.83.0-...``) are not expanded, consistent
+    with ``_toolchain_channel`` mapping only whole fields. The yielded
+    commands keep carrying the requested alias; rustup resolves it the
+    same way on the host. Pure and testable.
+    """
+    if installed_name == requested:
+        return True
+    prefix = requested + "-"
+    if not installed_name.startswith(prefix):
+        return False
+    remainder = installed_name[len(prefix) :]
+    return bool(remainder) and not remainder[0].isdigit()
+
+
 def _rustup_shell(*subcommand: str, rustup_home: str | None = None) -> str:
     """Join one rustup invocation, optionally under an explicit ``RUSTUP_HOME``.
 
@@ -696,13 +725,22 @@ async def toolchains(
         )
 
     requested = _normalize_request(toolchains)
+    # ``rustup toolchain list`` prints qualified names, so every comparison
+    # below runs through ``_toolchain_matches`` rather than ``in``/``==``:
+    # the fact's keys (``stable-x86_64-unknown-linux-gnu``) are selected by
+    # the request's aliases exactly as rustup itself resolves them.
     installed = await ctx.facts.get(RustupToolchains, rustup_home=rustup_home)
+    installed_names = set(installed)
     current_default = next(
         (name for name, info in installed.items() if info["default"]), None
     )
 
     if present:
-        missing = [name for name in requested if name not in installed]
+        missing = [
+            name
+            for name in requested
+            if not any(_toolchain_matches(name, key) for key in installed_names)
+        ]
         if missing:
             ctx.changed = True
             reasons.append(
@@ -722,7 +760,10 @@ async def toolchains(
         # differs from the current one, and ``rustup default`` installs an
         # as-yet-unselected toolchain itself, so no separate install reason.
         if default is not None:
-            if default != current_default:
+            default_is_current = current_default is not None and _toolchain_matches(
+                default, current_default
+            )
+            if not default_is_current:
                 ctx.changed = True
                 reasons.append(
                     f"default is {current_default or 'unset'}, will set {default}"
@@ -731,7 +772,11 @@ async def toolchains(
             else:
                 reasons.append(f"default already {default}")
     else:
-        installed_requested = [name for name in requested if name in installed]
+        installed_requested = [
+            name
+            for name in requested
+            if any(_toolchain_matches(name, key) for key in installed_names)
+        ]
         if installed_requested:
             ctx.changed = True
             reasons.append(

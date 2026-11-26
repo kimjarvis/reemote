@@ -120,7 +120,9 @@ changed feature selection on an installed crate is what `latest` re-installs.
 `git` installs from a repository (`cargo install --git <url> [crate…]`, whose
 cargo grammar takes *names*, so a pin drops to its bare name) and, like
 `latest`, is deliberately non-idempotent — with no installed-source revision
-view to compare, a git request always re-yields; it means only the install
+view to compare, a git request always re-yields, always with `--force`: the
+re-run installs over the binary its previous git install left, which cargo
+refuses unprompted; it means only the install
 direction, so a `present=False` request uninstalls by name and ignores it.
 `branch`/`tag`/`rev` are cargo's mutually exclusive ref selectors for `--git`;
 a request carrying two, or a selector without a source, is a static argument
@@ -130,9 +132,15 @@ the plan fails rather than the SSH shell. `cargo_home` scopes the whole
 request, forwarding to the `CargoPackages` read *and* both descriptors as one
 `CARGO_HOME=<quoted>` env prefix — the `gem.packages` invariant that the fact
 reads and the commands mutate one tree. The note's `latest` re-install also
-adopts cargo's own `--force`: without it cargo refuses to overwrite a current
+does not exist in pyinfra and adopts cargo's own `--force`: without it cargo
+refuses to overwrite a current
 crate's binary, so a bare re-install could never actually update on a host
-where the crate is already present.
+where the crate is already present. The same refusal decides the plain install
+batch: it carries `--force` whenever a requested pin *moves* an installed
+crate to another version (overwriting that crate's binary), and stays
+unprompted when every requested crate is new — a divergence from pyinfra's
+literal `add_packages` fixture command, which would fail the same way on a
+real host.
 
 `cargo.cache_clean` empties cargo's caches or one project's build directory.
 It is a design-note operation ported *without* the note's `min_bytes` size

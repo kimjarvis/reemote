@@ -436,7 +436,10 @@ async def test_cargo_packages_installs_per_pyinfra_add_fixture():
     """pyinfra's ``cargo.packages`` ``add_packages`` fixture verbatim (its
     ``@`` pins spelled as reemote's ``=`` pins): git sits at 1.0 and fails
     the ``git=1.1`` exact-version check, react is absent, test@1.1 is
-    present -- one ``cargo install git@1.1 react`` command results."""
+    present -- one ``cargo install git@1.1 react`` command results, carried
+    with ``--force`` because the moved git pin overwrites the binary the
+    1.0 install left (a deliberate divergence: pyinfra's command would
+    fail the same way on a real host)."""
     host = SimulatedHost(name="h", cargo_packages={"git": ["1.0"], "test": ["1.1"]})
     ctx = _ctx(host)
     commands = [
@@ -447,7 +450,9 @@ async def test_cargo_packages_installs_per_pyinfra_add_fixture():
     ]
     assert ctx.changed
     assert ctx.reason == "2 package(s) to install"
-    assert commands == [CargoInstallCommand(packages=("git@1.1", "react"))]
+    assert commands == [
+        CargoInstallCommand(packages=("git@1.1", "react"), force=True)
+    ]
 
 
 async def test_cargo_packages_no_change_when_installed():
@@ -476,7 +481,8 @@ async def test_cargo_packages_latest_pin_counts_as_unpinned():
 async def test_cargo_packages_pin_present_only_on_exact_version():
     """A pinned ``<pkg>=<version>`` is present only when that *exact*
     version is installed (the ``ensure_packages`` rule apt/npm/gem follow);
-    the other pin installs as its own token."""
+    the other pin installs as its own token, with ``--force`` because it
+    moves the crate already installed at 14.1.0 onto another binary."""
     host = SimulatedHost(name="h", cargo_packages={"ripgrep": ["14.1.0"]})
     ctx = _ctx(host)
     commands = [
@@ -487,7 +493,22 @@ async def test_cargo_packages_pin_present_only_on_exact_version():
     commands = [
         c async for c in cargo.packages(ctx, packages=("ripgrep=15.0.0",))
     ]
-    assert commands == [CargoInstallCommand(packages=("ripgrep@15.0.0",))]
+    assert commands == [
+        CargoInstallCommand(packages=("ripgrep@15.0.0",), force=True)
+    ]
+
+
+async def test_cargo_packages_fresh_batch_needs_no_force():
+    """A batch of crates none of which is installed yet runs unprompted --
+    ``--force`` only appears once a requested name would overwrite an
+    existing binary."""
+    host = SimulatedHost(name="h", cargo_packages={"other": ["1.0"]})
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in cargo.packages(ctx, packages=("ripgrep", "zed=1.0"))
+    ]
+    assert commands == [CargoInstallCommand(packages=("ripgrep", "zed@1.0"))]
 
 
 async def test_cargo_packages_accepts_a_bare_string():
@@ -858,8 +879,10 @@ async def test_cargo_packages_rides_ci_flags_on_every_install():
 async def test_cargo_packages_git_always_reinstalls_by_name():
     """A ``git`` source is non-idempotent and names packages inside the repo,
     so any pin drops to its bare name; the fact is never read for a
-    comparison. A git request with ``present=False`` is still an install
-    (``git`` only means the install direction)."""
+    comparison and the command always carries ``--force``, because a
+    re-install over the binary the previous git install left is exactly
+    what cargo refuses unprompted. A git request with ``present=False`` is
+    still an install (``git`` only means the install direction)."""
     host = SimulatedHost(name="h", cargo_packages={"rustup": ["1.0"]})
     ctx = _ctx(host)
     commands = [
@@ -871,13 +894,16 @@ async def test_cargo_packages_git_always_reinstalls_by_name():
     assert ctx.changed
     assert ctx.reason == "install rustup from git"
     assert commands == [
-        CargoInstallCommand(packages=("rustup",), git="https://g/rustup.git")
+        CargoInstallCommand(
+            packages=("rustup",), git="https://g/rustup.git", force=True
+        )
     ]
 
 
 async def test_cargo_packages_git_without_names_installs_repo_default():
     """A ``git`` request with no crate names installs the repository's
-    default package -- one bare ``cargo install --git`` command."""
+    default package -- one bare ``cargo install --git`` command, forced
+    like every git install."""
     host = SimulatedHost(name="h")
     ctx = _ctx(host)
     commands = [
@@ -885,7 +911,9 @@ async def test_cargo_packages_git_without_names_installs_repo_default():
     ]
     assert ctx.reason == "install from git"
     assert commands == [
-        CargoInstallCommand(packages=(), git="https://g/x.git", rev="abc123")
+        CargoInstallCommand(
+            packages=(), git="https://g/x.git", rev="abc123", force=True
+        )
     ]
 
 

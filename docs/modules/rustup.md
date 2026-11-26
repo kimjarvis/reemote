@@ -80,8 +80,14 @@ exists; reemote is the origin of this surface) and read the facts above for
 their idempotence. `rustup.toolchains` installs, updates or removes toolchains
 and selects the default: `present=True` installs only the requested names the
 `RustupToolchains` read lacks, in one batch carrying the optional
-`--profile`/`--component`/`--target` flags, `present=False` uninstalls only
-those still installed, and a `default` differing from the current one yields
+`--profile`/`--component`/`--target` flags, and `present=False` uninstalls only
+those still installed. The read keys on the fully-qualified names
+`rustup toolchain list` prints (`stable-x86_64-unknown-linux-gnu`), so every
+comparison resolves a request's short alias through the same leading-field rule
+the channel derivation uses — guarded at the separator so a bare `nightly` is
+not satisfied by a dated `nightly-2026-05-01-…` install, which rustup treats as
+a distinct toolchain — while the yielded commands keep carrying the alias rustup
+resolves on the host. A `default` differing from the current one yields
 `rustup default <toolchain>` — the current default derived from that same
 read rather than awaiting `RustupDefaultToolchain`, whose process-level
 composition would issue a second shell outside the fact cache for an answer

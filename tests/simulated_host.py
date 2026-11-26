@@ -95,7 +95,8 @@ a real asyncssh transport is missing:
   / ``systemd_unit_properties`` / ``systemd_version`` / ``http_endpoints``
   / ``tcp_endpoints`` / ``os_timezone`` / ``os_user`` / ``os_users``
   / ``ufw_applications`` / ``ufw_rules`` / ``ufw_status``
-  / ``uptime_seconds`` / ``uv_packages`` / ``virtualenv_python_versions`` / ``command_paths``:
+  / ``uptime_seconds`` / ``uv_install`` / ``uv_packages`` / ``uv_pythons``
+  / ``uv_tools`` / ``virtualenv_python_versions`` / ``command_paths``:
   the state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
   ``File``, ``Directory``, ``Link``, ``Socket``, ``SameFile``, ``FileFlags``,
   ``FindFiles``, ``FindDirectories``, ``FindLinks``, ``FindInFile``,
@@ -126,7 +127,8 @@ a real asyncssh transport is missing:
   ``GroupDetails`` (which reads ``os_groups`` for the names and the parallel
   ``os_group_details`` seam for the gid/members, defaulting a name missing
   there to an unknown gid), ``Groups``,
-  ``HasGui``, ``Home``, ``Hostname``, ``HttpEndpoint``, ``Ip6tablesChains``,
+  ``HasGui``, ``Home``, ``Hostname``, ``HttpEndpoint``, ``Info`` (the uv fact
+  reads the ``uv_install`` seam), ``Ip6tablesChains``,
   ``Ip6tablesRules``, ``Ip6tablesRulesOrdered``, ``Ip6tablesTables``,
   ``Ip6tablesVersion``, ``IpSets``, ``IptablesChains``, ``IptablesRules``,
   ``IptablesRulesOrdered``, ``IptablesTables``, ``IptablesVersion``,
@@ -150,6 +152,7 @@ a real asyncssh transport is missing:
   ``PipPackages`` (the pip-local ``_VirtualenvPython`` probe reads the
   ``virtualenv_python_versions`` seam), ``Port``, ``Processes``,
   ``PythonVersion``,
+  ``Pythons`` (the uv fact reads the ``uv_pythons`` seam),
   ``PostgresqlConnections``, ``PostgresqlDatabases``,
   ``PostgresqlDefaultPrivileges``,
   ``PostgresqlExtensions``, ``PostgresqlIndexes``, ``PostgresqlPrivileges``,
@@ -158,7 +161,10 @@ a real asyncssh transport is missing:
   ``PostgresqlSettings``, ``PostgresqlSubscriptions``, ``PostgresqlTables``,
   ``PostgresqlTablespaces``, ``RustupComponents``, ``RustupDefaultToolchain``
   (which projects the ``rustup_toolchains`` store through
-  ``RustupToolchains``), ``RustupTargets``, ``RustupToolchains``,
+  ``RustupToolchains``), ``RustupTargets``, ``RustupToolchains`` (whose store
+  is keyed by the qualified names ``rustup toolchain list`` prints, its
+  mutators resolving a command's alias through the operation's own
+  ``_toolchain_matches`` rule),
   ``SEBoolean``, ``Booleans``, ``FileContext``, ``FileContextMapping``,
   ``SEPorts``, ``SEPort``, ``Mode``, ``SELogin``, ``SEUser``, ``Modules``,
   ``PermissiveDomains``, ``SelinuxConfigFile`` (the selinux-local ``_Which``
@@ -186,6 +192,7 @@ import io
 import json
 import posixpath
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
@@ -531,6 +538,7 @@ from reemote.modules.rustup.rustup import (
     RustupTargetRemoveCommand,
     RustupToolchainInstallCommand,
     RustupToolchainRemoveCommand,
+    _toolchain_matches,
 )
 from reemote.modules.selinux.selinux import (
     AUTORELABEL_PATH,
@@ -635,6 +643,12 @@ from reemote.modules.ufw.ufw import (
 )
 
 
+from reemote.modules.uv.uv import (
+    PythonInfo,
+    ToolInfo,
+)
+
+
 class UnseededShellResult(Exception):
     """A simulated host was asked to run an action shell with no seeded answer.
 
@@ -646,6 +660,36 @@ class UnseededShellResult(Exception):
     seeding ``host.shell_results[shell]`` with a
     ``{exit_status, stdout, stderr}`` record makes the gather pass.
     """
+
+
+#: The host triple the simulation appends to an installed toolchain alias,
+#: mirroring the fully-qualified name ``rustup toolchain list`` prints on a
+#: real x86_64 machine (``rustup toolchain install stable`` creates
+#: ``stable-x86_64-unknown-linux-gnu``), so the ``rustup_toolchains`` store
+#: holds qualified keys and a ``rustup.toolchains`` deploy converges through
+#: the same alias resolution the operation applies instead of masking it.
+_RUSTUP_HOST_TRIPLE = "x86_64-unknown-linux-gnu"
+
+
+def _qualify_rustup_toolchain(name: str) -> str:
+    """Model rustup expanding a toolchain alias to its installed triple name.
+
+    A bare or dated alias (``stable``, ``nightly-2026-05-01``) gains the
+    simulated host triple; a name already carrying the triple stays whole.
+    """
+    if name.endswith("-" + _RUSTUP_HOST_TRIPLE):
+        return name
+    return f"{name}-{_RUSTUP_HOST_TRIPLE}"
+
+
+def _select_rustup_toolchain(name: str, keys: Iterable[str]) -> str | None:
+    """The store key a rustup alias selects, through the operation's own rule.
+
+    Reuses ``rustup.rustup._toolchain_matches`` (the shared-lookup-table
+    rule) so the install/default/removal mutators can never resolve an
+    alias differently than ``rustup.toolchains`` compares it.
+    """
+    return next((key for key in keys if _toolchain_matches(name, key)), None)
 
 
 @dataclass
@@ -1350,6 +1394,41 @@ class SimulatedHost(Host):
     # ported yet, so no ``execute_command`` mutator maintains it and a test
     # seeds it directly.
     uv_packages: dict[str, str] = field(default_factory=dict)
+    # The resolved uv installation -- the state store ``Info`` reads, kept as
+    # one mapping of field name -> resolved string (``version`` ->
+    # ``"0.9.22"``, ``tool_dir`` -> ``"/root/.local/share/uv/tools"``) so a test
+    # seeds only the handful of fields a check cares about. ``Info.process``
+    # names every field in its literal and reads it through ``get``, so an
+    # unseeded field answers ``None`` exactly like a line the chained shell
+    # never printed -- an empty store is the all-None record. Named with the
+    # uv_ prefix (like ``uv_packages``) so the uv-side state never mixes with
+    # the pip-side stores. A read-only seam: no operation writes uv's own
+    # install layout, so no ``execute_command`` mutator maintains it and a test
+    # seeds it directly.
+    uv_install: dict[str, str] = field(default_factory=dict)
+    # Installed ``uv tool install`` tools -- the state store ``Tools`` reads,
+    # keyed by the printed tool name -> its ``ToolInfo`` record (version plus
+    # the entrypoints the tool links onto the PATH), the very shape
+    # ``Tools.parse`` returns. Names stay verbatim -- uv prints the
+    # distribution name and neither the parse nor the seam normalizes -- and a
+    # record may carry ``version=None`` (a local or git source) or an empty
+    # ``entrypoints`` list; ``Tools.process`` rebuilds each entry so callers
+    # never mutate simulated state. Defaults to {} -- no tools installed, so the
+    # fact answers ``[]``. A read-only seam: pyinfra's tool operations are not
+    # ported yet, so no mutator maintains it and a test seeds it directly.
+    uv_tools: dict[str, ToolInfo] = field(default_factory=dict)
+    # Interpreters present on the host -- the state store ``Pythons`` reads,
+    # keyed by the interpreter path -> its ``PythonInfo`` record. The path is
+    # the unique half of an entry's identity because uv repeats one ``key``
+    # across every path at which it discovers the same interpreter, so one
+    # version found twice seeds two entries; ``managed`` distinguishes a
+    # uv-downloaded interpreter under ``uv python dir`` from a system one.
+    # ``Pythons.process`` copies every record and fills the fields an
+    # incompletely seeded one omits. Defaults to {} -- a host with no
+    # interpreter uv knows about, so the fact answers ``[]``. A read-only seam:
+    # no ``uv python install`` operation is ported yet, so a test seeds it
+    # directly.
+    uv_pythons: dict[str, PythonInfo] = field(default_factory=dict)
     # Interpreter command -> the version it reports (the ``PythonVersionInfo``
     # entry ``server.PythonVersion`` returns), backing that fact: the key is
     # exactly how the caller names the interpreter (``python3``,
@@ -2112,11 +2191,16 @@ class SimulatedHost(Host):
     # derived from the name, so the store cannot contradict it -- and
     # ``RustupDefaultToolchain``, which projects the flagged entry through
     # ``RustupToolchains.process``. Defaults to {} -- a simulated machine
-    # with rustup but no toolchains installed. The fact's ``rustup_home``
-    # argument does not filter the store (the ``GoInstalledSDKs`` rule).
+    # with rustup but no toolchains installed. Keys are the qualified names
+    # ``rustup toolchain list`` prints (``stable-x86_64-unknown-linux-gnu``
+    # for an alias install of ``stable``, see ``_qualify_rustup_toolchain``);
+    # a test may also seed qualified names directly. The fact's
+    # ``rustup_home`` argument does not filter the store (the
+    # ``GoInstalledSDKs`` rule).
     # ``install_rustup_toolchains``/``remove_rustup_toolchains``/
     # ``set_rustup_default`` (the ``rustup.toolchains`` mutators) maintain
-    # it; a test may also seed it directly.
+    # it; they resolve a command's alias through the operation's own
+    # ``_toolchain_matches`` rule.
     rustup_toolchains: dict[str, bool] = field(default_factory=dict)
     # Installed target triples (toolchain name -> target list, the empty
     # string keying the *active* toolchain what an argument-less
@@ -8279,10 +8363,12 @@ class SimulatedHost(Host):
     def install_rustup_toolchains(self, toolchains: tuple[str, ...]) -> None:
         """Record a simulated ``rustup toolchain install``: mark them installed.
 
-        ``rustup.toolchains``' install mutation. Each name gains a
-        ``rustup_toolchains`` entry flagged non-default -- installing a
-        toolchain never steals the default flag, and an installed name keeps
-        whatever default state it carries (the ``install_*_packages``
+        ``rustup.toolchains``' install mutation. Each alias gains a
+        ``rustup_toolchains`` entry under the qualified name rustup really
+        installs (``_qualify_rustup_toolchain``, the triple-qualified key
+        ``rustup toolchain list`` prints) flagged non-default -- installing
+        a toolchain never steals the default flag, and an installed name
+        keeps whatever default state it carries (the ``install_*_packages``
         keep-existing precedent). The store records no profile/component/
         target install detail beyond nothing: ``rustup.targets`` and
         ``rustup.components`` read their own per-toolchain stores, so a
@@ -8291,22 +8377,28 @@ class SimulatedHost(Host):
         unseeded store reads.
         """
         for toolchain in toolchains:
-            self.rustup_toolchains.setdefault(toolchain, False)
+            self.rustup_toolchains.setdefault(
+                _qualify_rustup_toolchain(toolchain), False
+            )
 
     def remove_rustup_toolchains(self, toolchains: tuple[str, ...]) -> None:
         """Record a simulated ``rustup toolchain uninstall``: drop them.
 
-        The ``present=False`` direction of ``rustup.toolchains``. The name
-        leaves ``rustup_toolchains``, and its per-toolchain
+        The ``present=False`` direction of ``rustup.toolchains``. The alias
+        selects its qualified store key through the operation's own
+        ``_toolchain_matches`` rule (``_select_rustup_toolchain``), and the
+        name leaves ``rustup_toolchains``; its per-toolchain
         ``rustup_targets``/``rustup_components`` rows go with it -- removing
         the toolchain removes the targets and components installed for it
-        (the mutator-side store-reconciliation rule an apk removal's
-        ``remote_files`` pop follows). An absent name is tolerated (the real
-        command would exit non-zero, but the operation's fact check never
-        yields that removal in that case).
+        (those rows are keyed by the alias the command carries, the
+        ``rustup.targets``/``rustup.components`` seam keying). An absent
+        name is tolerated (the real command would exit non-zero, but the
+        operation's fact check never yields that removal in that case).
         """
         for toolchain in toolchains:
-            self.rustup_toolchains.pop(toolchain, None)
+            key = _select_rustup_toolchain(toolchain, self.rustup_toolchains)
+            if key is not None:
+                self.rustup_toolchains.pop(key, None)
             self.rustup_targets.pop(toolchain, None)
             self.rustup_components.pop(toolchain, None)
 
@@ -8315,15 +8407,21 @@ class SimulatedHost(Host):
 
         ``rustup.toolchains``' default mutation. Exactly one toolchain can be
         the default, so every other flag drops to False before the named one
-        rises; naming an uninstalled toolchain installs it first, as the real
-        command does (it downloads and selects the toolchain). The empty
+        rises; the alias selects its qualified store key through the
+        operation's own ``_toolchain_matches`` rule
+        (``_select_rustup_toolchain``), and naming an uninstalled toolchain
+        installs it (qualified) first, as the real command does (it
+        downloads and selects the toolchain). The empty
         ``rustup_targets``/``rustup_components`` stores of the freshly named
         toolchain stay absent -- an unlisted key reads [], the host triple's
         targets the real install would bring.
         """
+        key = _select_rustup_toolchain(toolchain, self.rustup_toolchains)
+        if key is None:
+            key = _qualify_rustup_toolchain(toolchain)
         for name in self.rustup_toolchains:
             self.rustup_toolchains[name] = False
-        self.rustup_toolchains[toolchain] = True
+        self.rustup_toolchains[key] = True
 
     def add_rustup_targets(self, targets: tuple[str, ...], toolchain: str | None) -> None:
         """Record a simulated ``rustup target add``: extend the toolchain's list.
