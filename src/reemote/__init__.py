@@ -91,6 +91,7 @@ from .hosts import (
 from .modules import (
     apk,
     apt,
+    cargo,
     crontab,
     dnf,
     files,
@@ -173,6 +174,12 @@ from .modules.apt.apt import (
     DebPackage,
     DebPackageInfo,
     SimulateOperationWillChange,
+)
+from .modules.cargo.cargo import (
+    CargoInstallCommand,
+    CargoPackageInfo,
+    CargoPackages,
+    CargoRemoveCommand,
 )
 from .modules.crontab.crontab import (
     Crontab,
@@ -830,6 +837,10 @@ __all__ = [
     "BlockDevice",
     "BlockDevices",
     "Booleans",
+    "CargoInstallCommand",
+    "CargoPackageInfo",
+    "CargoPackages",
+    "CargoRemoveCommand",
     "ChattrCommand",
     "ChconCommand",
     "CheckpointRequest",
@@ -1387,6 +1398,7 @@ __all__ = [
     "act",
     "apk",
     "apt",
+    "cargo",
     "changed_hosts",
     "checkpoint",
     "command_shell",

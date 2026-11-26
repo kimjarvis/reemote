@@ -5,7 +5,7 @@
 Runnable showcase scripts living in `examples/` — *usage* demonstrations
 through the public API only, never part of the library. The tree is split in
 three: `examples/modules/<namespace>/` holds one script per fact or operation
-of a library module (currently `apk`, `apt`, `dnf`, `files`, `firewalld`,
+of a library module (currently `apk`, `apt`, `cargo`, `dnf`, `files`, `firewalld`,
 `flatpak`, `gem`, `git`, `go`, `gpg`, `hardware`, `iptables`, `lxd`, `mysql`, `npm`,
 `openrc`, `pip`, `postgresql`, `selinux`,
 `server`, `snap`, `sysctl`, `systemd` and `ufw`), plus the cross-module `dnf_put_get`
@@ -26,6 +26,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 | --- | --- |
 | `examples/modules/apk/` | [Module examples: apk](examples/modules/apk.md) |
 | `examples/modules/apt/` | [Module examples: apt](examples/modules/apt.md) |
+| `examples/modules/cargo/` | [Module examples: cargo](examples/modules/cargo.md) |
 | `examples/modules/dnf/` | [Module examples: dnf](examples/modules/dnf.md) |
 | `examples/modules/files/` | [Module examples: files](examples/modules/files.md) |
 | `examples/modules/firewalld/` | [Module examples: firewalld](examples/modules/firewalld.md) |
@@ -77,6 +78,8 @@ sub-directory. Pick a page from the navigation, or start from this table:
     (their provisioning helper installs the `ruby-rubygems` deb there first),
     the `go` examples likewise on `is_ubuntu`
     (their provisioning helper installs the `golang-go` deb there first),
+    the `cargo` examples likewise on `is_ubuntu`
+    (their provisioning helper installs the `cargo` deb there first),
     and the `server_op_locale.py` example on the
     [server page](examples/modules/server.md) likewise on `is_ubuntu`
     because `/etc/locale.gen` + `locale-gen` are Debian-family only. The

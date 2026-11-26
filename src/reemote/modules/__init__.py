@@ -11,6 +11,9 @@ single source, so ``modules/apk/apk.py`` holds the apk fact classes
 command descriptors they yield,
 ``modules/apt/apt.py`` holds the apt fact classes (``AptKeys``,
 ``AptPackages``, ``AptUpgradable``, ``AptAutoremovable``),
+``modules/cargo/cargo.py`` holds the ``CargoPackages`` fact (with its
+``CargoPackageInfo`` entry type) beside the ``packages`` operation and the
+``CargoInstallCommand``/``CargoRemoveCommand`` descriptors it yields,
 ``modules/crontab/crontab.py`` holds the ``Crontab`` whole-table fact and
 its structured ``CrontabEntries`` companion beside the ``crontab``
 entry-management operation and the typed command descriptors it yields,
@@ -131,8 +134,8 @@ descriptors it yields, and
 ``modules/server/server.py`` holds the ``wait_service`` operation (which
 polls the relocated ``systemd.SystemdServiceState`` fact). The subpackages
 are re-exported here, so a deploy can keep writing
-``from reemote.modules import apk, apt, dnf, files, firewalld, flatpak, gem, git, go, gpg, hardware, iptables, lxd, mysql, npm, openrc, pip, postgresql, selinux, snap, sysctl, systemd, ufw, server``
-and read ``apk.ApkInstalledPackages`` / ``apt.AptKeys`` / ``dnf.packages`` /
+``from reemote.modules import apk, apt, cargo, dnf, files, firewalld, flatpak, gem, git, go, gpg, hardware, iptables, lxd, mysql, npm, openrc, pip, postgresql, selinux, snap, sysctl, systemd, ufw, server``
+and read ``apk.ApkInstalledPackages`` / ``apt.AptKeys`` / ``cargo.CargoPackages`` / ``cargo.packages`` / ``dnf.packages`` /
 ``files.link`` / ``firewalld.FirewalldZones`` / ``gem.GemPackages`` / ``git.GitBranch`` / ``go.GoPackages`` / ``gpg.GpgKeys`` / ``hardware.BlockDevices`` /
 ``iptables.IptablesChains`` / ``lxd.LxdInstances`` / ``mysql.MysqlDatabases`` / ``npm.NpmPackages`` / ``openrc.OpenrcStatus`` / ``postgresql.PostgresqlRoles`` /
 ``selinux.Mode`` / ``sysctl.setting`` / ``systemd.service`` / ``ufw.UfwRules`` / ``server.wait_service``.
@@ -141,6 +144,7 @@ and read ``apk.ApkInstalledPackages`` / ``apt.AptKeys`` / ``dnf.packages`` /
 from . import (
     apk,
     apt,
+    cargo,
     crontab,
     dnf,
     files,
@@ -169,6 +173,7 @@ from . import (
 __all__ = [
     "apk",
     "apt",
+    "cargo",
     "crontab",
     "dnf",
     "files",

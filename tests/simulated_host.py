@@ -34,7 +34,7 @@ a real asyncssh transport is missing:
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``rpm_gpg_keys`` / ``services`` / ``enabled_services``
-  / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_update_stamp`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cpu_info`` / ``cpus`` / ``crontab_text`` / ``deb_files``
+  / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_update_stamp`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cargo_packages`` / ``cpu_info`` / ``cpus`` / ``crontab_text`` / ``deb_files``
   / ``date`` / ``default_ipv4_addr`` / ``disk_stats`` / ``dmi_info`` / ``os_env``
   / ``firewall_reads_denied`` / ``firewalld_default_zone``
   / ``firewalld_ipsets`` / ``firewalld_lockdown`` / ``firewalld_panic_mode``
@@ -105,7 +105,7 @@ a real asyncssh transport is missing:
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``, ``RpmGpgKeys``,
   ``SystemdServiceState``, ``SystemdServiceEnabled``, ``SystemdNeedDaemonReload``, ``SystemdStatus``, ``SystemdEnabled``, ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState``, ``SystemdDependencies``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``ApkRepositoriesFile``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpdateStamp``, ``AptUpgradable``, ``Arch``,
-  ``AuthorizedKeys``, ``AuthorizedKeysFile``, ``BlockDevices``, ``CpuInfo``, ``Cpus``, ``Crontab`` (reads the whole-table ``crontab_text`` seam), ``Date``, ``DebPackage``,
+  ``AuthorizedKeys``, ``AuthorizedKeysFile``, ``BlockDevices``, ``CargoPackages``, ``CpuInfo``, ``Cpus``, ``Crontab`` (reads the whole-table ``crontab_text`` seam), ``Date``, ``DebPackage``,
   ``DefaultIpv4Address``, ``DiskStats``, ``DmiInfo``, ``Env``, ``EtcHosts`` (parses the shared
   ``remote_files`` seam at the hosts-file path), ``FirewalldStatus``, ``FirewalldDefaultZone``,
   ``FirewalldZones``, ``FirewalldServices``, ``FirewalldIpSets``,
@@ -235,6 +235,11 @@ from reemote.modules.apt.apt import (
     DebPackageInfo,
     _is_version_glob,
     _pin_satisfied_by,
+)
+from reemote.modules.cargo.cargo import (
+    CargoInstallCommand,
+    CargoRemoveCommand,
+    _cargo_split_spec,
 )
 from reemote.modules.crontab.crontab import (
     CrontabInstallCommand,
@@ -1041,6 +1046,20 @@ class SimulatedHost(Host):
     # -- a simulated machine with no devices listed, like the baseline's
     # ``default = dict`` for a failed read.
     block_devices: dict[str, BlockDevice] = field(default_factory=dict)
+    # Globally installed ``cargo install`` crates -- the state store the fact
+    # reads, kept as the crate name -> installed-version-list mapping (e.g.
+    # ``cargo-edit`` -> ``["0.11.6"]``) which ``CargoPackages.process``
+    # projects into the sorted, de-duplicated ``CargoPackageInfo`` entries it
+    # returns (the ``go_packages``/``gem_packages`` version-list per name
+    # precedent, keyed by the crate name). Names are stored verbatim --
+    # ``cargo install --list`` prints the registry spelling and
+    # ``CargoPackages.parse`` performs no normalization -- and the versions
+    # carry no ``v`` prefix, the parsed form. Defaults to {} -- a simulated
+    # machine with no globally installed crates, so the fact answers ``[]``.
+    # The ``cargo.packages`` mutators ``install_cargo_packages``/
+    # ``remove_cargo_packages`` maintain it through ``execute_command``, and
+    # a test may seed it directly too.
+    cargo_packages: dict[str, list[str]] = field(default_factory=dict)
     # CPU details (the parsed ``LANG=C lscpu`` rows), backing ``CpuInfo``:
     # each key maps to its stripped string value, except a ``flag``-bearing
     # key (e.g. ``Flags``) whose value is the list of whitespace-split tokens.
@@ -2885,6 +2904,10 @@ class SimulatedHost(Host):
                 pass  # the simulation models no cache contents to clear
             case GoBuildCommand(output_path=built_path):
                 self.build_go_binary(built_path)
+            case CargoInstallCommand(packages=packages):
+                self.install_cargo_packages(packages)
+            case CargoRemoveCommand(packages=packages):
+                self.remove_cargo_packages(packages)
             case PipInstallCommand(packages=packages):
                 self.install_pip_packages(packages)
             case PipUpgradeCommand():
@@ -8117,6 +8140,53 @@ class SimulatedHost(Host):
             "module_version": "",
             "settings": {},
         }
+
+    def install_cargo_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``cargo install``: mark the crates installed.
+
+        ``cargo.packages``' install mutation (the ``latest`` re-install batch
+        runs through the same descriptor). Each cargo token is split with the
+        library's own ``_cargo_split_spec``: a ``<crate>@<version>`` pin
+        REPLACES the crate's version list with that one version -- cargo
+        re-links a crate's binaries on a re-install at a new version rather
+        than keeping two side by side (without ``--force``), so a repeat
+        pinned install is a no-op and a version-changing deploy converges
+        (npm's overwrite precedent) -- while a bare name carries no registry
+        metadata to resolve a version from, so an absent crate gets the
+        ``[""]`` placeholder (pip's/apk's/gem's precedent) and an installed
+        crate keeps its recorded version.
+        """
+        for package in packages:
+            name, version = _cargo_split_spec(package)
+            if version is None:
+                self.cargo_packages.setdefault(name, [""])
+            else:
+                self.cargo_packages[name] = [version]
+
+    def remove_cargo_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``cargo uninstall``: drop the crates.
+
+        The ``present=False`` direction of ``cargo.packages``. The descriptor
+        carries cargo's tokens, pins included (cargo's package-ID spec
+        selects the installed version), so a bare name pops the whole entry
+        from ``cargo_packages`` while a ``<crate>@<version>`` token drops only
+        that version, popping the name once no versions remain (the
+        ``remove_apk_packages`` shape). An absent name/version is tolerated
+        (the real command would exit non-zero, but the operation's fact check
+        never yields that removal in that case).
+        """
+        for package in packages:
+            name, version = _cargo_split_spec(package)
+            if version is None:
+                self.cargo_packages.pop(name, None)
+                continue
+            versions = self.cargo_packages.get(name)
+            if versions is None:
+                continue
+            if version in versions:
+                versions.remove(version)
+            if not versions:
+                self.cargo_packages.pop(name, None)
 
     def install_snap_packages(self, packages: tuple[str, ...], channel: str) -> None:
         """Record a simulated ``snap install``: mark the snaps installed.
