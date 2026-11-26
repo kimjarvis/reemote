@@ -45,7 +45,7 @@ a real asyncssh transport is missing:
   / ``git_configs`` / ``git_head_detached`` / ``git_local_commits``
   / ``git_remote_commits`` / ``git_remote_urls`` / ``git_repos``
   / ``git_ssh_authenticated`` / ``git_statuses`` / ``git_submodules``
-  / ``git_tags`` / ``git_tracking_branches`` / ``gpg_key``
+  / ``git_tags`` / ``git_tracking_branches`` / ``go_packages`` / ``gpg_key``
   / ``gpg_key_details`` / ``gpg_keyrings``
   / ``gpg_keys`` / ``gpg_secret_keys`` / ``gpg_trust`` / ``gpg_verify``
   / ``os_group_details`` / ``os_groups`` / ``has_gui``
@@ -115,7 +115,7 @@ a real asyncssh transport is missing:
   ``GitHeadDetached``, ``GitIsRepo``, ``GitLocalCommit``,
   ``GitRemoteBranchCommit``, ``GitRemoteUrl``, ``GitSshKeyConfigured``,
   ``GitStatus``, ``GitSubmodule``, ``GitTag``,
-  ``GitTrackingBranch``, ``GpgKey``, ``GpgKeyDetails``, ``GpgKeyrings``,
+  ``GitTrackingBranch``, ``GoPackages``, ``GpgKey``, ``GpgKeyDetails``, ``GpgKeyrings``,
   ``GpgKeys``, ``GpgSecretKeys``, ``GpgTrust``, ``GpgVerify`` (the gpg-local
   ``_KeyringFileExists`` probe reads the shared ``existing_files`` seam),
   ``GroupDetails`` (which reads ``os_groups`` for the names and the parallel
@@ -1386,6 +1386,20 @@ class SimulatedHost(Host):
     # branch without an upstream. A read-only seam: a test seeds it
     # directly.
     git_tracking_branches: dict[str, str] = field(default_factory=dict)
+    # Installed ``go install`` binaries -- the state store the fact reads,
+    # kept as the import path -> installed-version-list mapping (e.g.
+    # ``github.com/bitmagnet-io/bitmagnet`` -> ``["v0.9.0"]``) which
+    # ``GoPackages.process`` projects into the sorted, de-duplicated
+    # ``GoPackageInfo`` entries it returns (the ``gem_packages`` version-list
+    # per name precedent, keyed by go's full import path instead of a short
+    # name). Paths are stored verbatim -- ``go version -m`` records the
+    # import path exactly, and ``GoPackages.parse`` performs no
+    # normalization -- and a ``(devel)`` (``go build``) binary simply has no
+    # entry. Defaults to {} -- a simulated machine with no ``go install``
+    # binaries in its go bin directory, so the fact answers ``[]``. A
+    # read-only seam: the namespace has no operations yet, so no
+    # ``execute_command`` mutator maintains it and a test seeds it directly.
+    go_packages: dict[str, list[str]] = field(default_factory=dict)
     # GPG key files' contents (src path -> the ``GpgKeyInfo`` entries
     # ``GpgKey`` returns for that file), backing ``GpgKey``. An unseeded
     # path reads as [], the simulated stand-in for a file gpg cannot read.

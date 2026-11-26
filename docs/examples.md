@@ -6,7 +6,7 @@ Runnable showcase scripts living in `examples/` — *usage* demonstrations
 through the public API only, never part of the library. The tree is split in
 three: `examples/modules/<namespace>/` holds one script per fact or operation
 of a library module (currently `apk`, `apt`, `dnf`, `files`, `firewalld`,
-`flatpak`, `gem`, `git`, `gpg`, `hardware`, `iptables`, `lxd`, `mysql`, `npm`,
+`flatpak`, `gem`, `git`, `go`, `gpg`, `hardware`, `iptables`, `lxd`, `mysql`, `npm`,
 `openrc`, `pip`, `postgresql`, `selinux`,
 `server`, `snap`, `sysctl`, `systemd` and `ufw`), plus the cross-module `dnf_put_get`
 health-check scenario under `files/`,
@@ -32,6 +32,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 | `examples/modules/flatpak/` | [Module examples: flatpak](examples/modules/flatpak.md) |
 | `examples/modules/gem/` | [Module examples: gem](examples/modules/gem.md) |
 | `examples/modules/git/` | [Module examples: git](examples/modules/git.md) |
+| `examples/modules/go/` | [Module examples: go](examples/modules/go.md) |
 | `examples/modules/gpg/` | [Module examples: gpg](examples/modules/gpg.md) |
 | `examples/modules/hardware/` | [Module examples: hardware](examples/modules/hardware.md) |
 | `examples/modules/iptables/` | [Module examples: iptables](examples/modules/iptables.md) |
@@ -74,6 +75,8 @@ sub-directory. Pick a page from the navigation, or start from this table:
     examples likewise on `is_ubuntu` (their provisioning helper installs
     Node.js and npm there first), the `gem` examples likewise on `is_ubuntu`
     (their provisioning helper installs the `ruby-rubygems` deb there first),
+    the `go` examples likewise on `is_ubuntu`
+    (their provisioning helper installs the `golang-go` deb there first),
     and the `server_op_locale.py` example on the
     [server page](examples/modules/server.md) likewise on `is_ubuntu`
     because `/etc/locale.gen` + `locale-gen` are Debian-family only. The

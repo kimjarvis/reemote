@@ -98,6 +98,7 @@ from .modules import (
     flatpak,
     gem,
     git,
+    go,
     gpg,
     hardware,
     iptables,
@@ -324,6 +325,10 @@ from .modules.git.git import (
     GitTrackingBranch,
     GitWorktreeAddCommand,
     GitWorktreeRemoveCommand,
+)
+from .modules.go.go import (
+    GoPackageInfo,
+    GoPackages,
 )
 from .modules.gpg.gpg import (
     GpgDearmorCommand,
@@ -961,6 +966,8 @@ __all__ = [
     "GitTrackingBranch",
     "GitWorktreeAddCommand",
     "GitWorktreeRemoveCommand",
+    "GoPackageInfo",
+    "GoPackages",
     "GpgDearmorCommand",
     "GpgDeleteKeyCommand",
     "GpgExportCommand",
@@ -1370,6 +1377,7 @@ __all__ = [
     "gather_fact",
     "gem",
     "git",
+    "go",
     "gpg",
     "hardware",
     "hello",

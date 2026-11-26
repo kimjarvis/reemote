@@ -40,6 +40,8 @@ descriptors it yields,
 ``GitRemoteBranchCommit``, ``GitRemoteUrl``, ``GitSshKeyConfigured``,
 ``GitStatus``, ``GitSubmodule``, ``GitTag`` and ``GitTrackingBranch``
 facts beside the ``config``, ``repo`` and ``worktree`` operations,
+``modules/go/go.py`` holds the ``GoPackages`` fact (with its
+``GoPackageInfo`` entry type),
 ``modules/gpg/gpg.py`` holds the ``GpgKey``, ``GpgKeyrings``, ``GpgKeys``
 and ``GpgSecretKeys`` facts,
 ``modules/hardware/hardware.py`` holds the ``BlockDevices``, ``CpuInfo``,
@@ -125,9 +127,9 @@ descriptors it yields, and
 ``modules/server/server.py`` holds the ``wait_service`` operation (which
 polls the relocated ``systemd.SystemdServiceState`` fact). The subpackages
 are re-exported here, so a deploy can keep writing
-``from reemote.modules import apk, apt, dnf, files, firewalld, flatpak, gem, git, gpg, hardware, iptables, lxd, mysql, npm, openrc, pip, postgresql, selinux, snap, sysctl, systemd, ufw, server``
+``from reemote.modules import apk, apt, dnf, files, firewalld, flatpak, gem, git, go, gpg, hardware, iptables, lxd, mysql, npm, openrc, pip, postgresql, selinux, snap, sysctl, systemd, ufw, server``
 and read ``apk.ApkInstalledPackages`` / ``apt.AptKeys`` / ``dnf.packages`` /
-``files.link`` / ``firewalld.FirewalldZones`` / ``gem.GemPackages`` / ``git.GitBranch`` / ``gpg.GpgKeys`` / ``hardware.BlockDevices`` /
+``files.link`` / ``firewalld.FirewalldZones`` / ``gem.GemPackages`` / ``git.GitBranch`` / ``go.GoPackages`` / ``gpg.GpgKeys`` / ``hardware.BlockDevices`` /
 ``iptables.IptablesChains`` / ``lxd.LxdInstances`` / ``mysql.MysqlDatabases`` / ``npm.NpmPackages`` / ``openrc.OpenrcStatus`` / ``postgresql.PostgresqlRoles`` /
 ``selinux.Mode`` / ``sysctl.setting`` / ``systemd.service`` / ``ufw.UfwRules`` / ``server.wait_service``.
 """
@@ -142,6 +144,7 @@ from . import (
     flatpak,
     gem,
     git,
+    go,
     gpg,
     hardware,
     iptables,
@@ -169,6 +172,7 @@ __all__ = [
     "flatpak",
     "gem",
     "git",
+    "go",
     "gpg",
     "hardware",
     "iptables",

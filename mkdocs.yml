@@ -48,6 +48,7 @@ plugins:
             - examples/modules/flatpak
             - examples/modules/gem
             - examples/modules/git
+            - examples/modules/go
             - examples/modules/gpg
             - examples/modules/hardware
             - examples/modules/iptables
@@ -132,6 +133,7 @@ nav:
           - flatpak: modules/flatpak.md
           - gem: modules/gem.md
           - git: modules/git.md
+          - go: modules/go.md
           - gpg: modules/gpg.md
           - hardware: modules/hardware.md
           - iptables: modules/iptables.md
@@ -192,6 +194,7 @@ nav:
 #          - flatpak: examples/modules/flatpak.md
 #          - gem: examples/modules/gem.md
 #          - git: examples/modules/git.md
+#          - go: examples/modules/go.md
 #          - gpg: examples/modules/gpg.md
 #          - hardware: examples/modules/hardware.md
 #          - iptables: examples/modules/iptables.md
