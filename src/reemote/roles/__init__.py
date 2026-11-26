@@ -31,7 +31,8 @@ in at import time, so ``import reemote.roles`` stays clean without the extra.
 ``php`` renders its four templates as plain f-strings, so it never needs the
 extra even though it templates files -- and ``php_xdebug`` inherits that, since
 its one template is pure substitution too. ``nfs`` builds ``/etc/exports`` with
-a Python join, the same no-extra case.
+a Python join, the same no-extra case, as does ``security``, whose four config
+files are f-string renders and fixpoint text transforms.
 
 Public names are added here as each role is migrated (T4-T17): append a
 ``from .<role> import (...)`` block and extend ``__all__`` to match that
@@ -56,6 +57,7 @@ from .php_xdebug import PhpXdebugVars, php_xdebug
 from .pip import PipPackage, PipVars, pip
 from .postgresql import PostgresqlVars, postgresql, postgresql_data
 from .repo_epel import EpelVars, repo_epel
+from .security import SecurityVars, security
 
 __all__: list[str] = [
     "ApacheOutputs",
@@ -79,6 +81,7 @@ __all__: list[str] = [
     "PipPackage",
     "PipVars",
     "PostgresqlVars",
+    "SecurityVars",
     "apache",
     "composer",
     "datadog",
@@ -97,4 +100,5 @@ __all__: list[str] = [
     "postgresql",
     "postgresql_data",
     "repo_epel",
+    "security",
 ]

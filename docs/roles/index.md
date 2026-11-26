@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships fourteen configuration roles as **library code**. Each one is the
+reemote ships eighteen configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -46,7 +46,10 @@ driver that understands barriers; `run()` is not.
 | [java](java.md) | [`geerlingguy.java`](https://github.com/geerlingguy/ansible-role-java) | Ubuntu | 2 | none | no | 1 |
 | [memcached](memcached.md) | [`geerlingguy.memcached`](https://github.com/geerlingguy/ansible-role-memcached) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
 | [nfs](nfs.md) | [`geerlingguy.nfs`](https://github.com/geerlingguy/ansible-role-nfs) | Ubuntu | 2 changed / 1 converged | none | no | 1 |
+| [nodejs](nodejs.md) | [`geerlingguy.nodejs`](https://github.com/geerlingguy/ansible-role-nodejs) | Ubuntu | exactly 1 | none | no | 1 |
+| [pip](pip.md) | [`geerlingguy.pip`](https://github.com/geerlingguy/ansible-role-pip) | Ubuntu | 2 | none | no | 1 |
 | [git](git.md) | [`geerlingguy.git`](https://github.com/geerlingguy/ansible-role-git) | Ubuntu | 1 | none | no | 1 |
+| [security](security.md) | [`geerlingguy.security`](https://github.com/geerlingguy/ansible-role-security) | Ubuntu | 2 changed / 1 converged | none | no | 1 |
 
 ## Reading the columns
 
@@ -116,9 +119,21 @@ driver that understands barriers; `run()` is not.
   the gated service, and `reload nfs`. The command-handler role: its handler is an
   `act(Shell, ...)` barrier running `exportfs -ra`, and the body raises its own
   `CommandError`.
+- **[nodejs](nodejs.md)** — the NodeSource key and deb822 repository, the
+  version-pinned `nodejs` package, npm's global prefix directory and `$PATH`
+  script, the global packages and the optional `package.json` install. Zero
+  barriers, one wave: nothing in the plan needs a read of the machine.
+- **[pip](pip.md)** — the distro's pip package, the PEP 668 `EXTERNALLY-MANAGED`
+  marker removed from the interpreter's own stdlib path, then the package list.
+  One `fact(PythonVersion)` barrier, because that path varies by release.
 - **[git](git.md)** — the apt-cache refresh and the `git_packages` install, as one
   request. The cheapest shape in the corpus: zero barriers, one wave, one
   operation, so a dry pass plans the whole wave rather than parking.
+- **[security](security.md)** — the eight `sshd_config` hardening directives and
+  the two access lists, both sudoers loops, Fail2Ban and unattended-upgrades, then
+  `reload systemd`, `restart ssh` and `reload fail2ban`. The one-checkpoint, three
+  channel case: a single `changed_hosts` report read three times, and ten edits of
+  one file composing inside a single wave.
 
 ## Running one
 
