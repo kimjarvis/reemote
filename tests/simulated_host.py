@@ -95,7 +95,7 @@ a real asyncssh transport is missing:
   / ``systemd_unit_properties`` / ``systemd_version`` / ``http_endpoints``
   / ``tcp_endpoints`` / ``os_timezone`` / ``os_user`` / ``os_users``
   / ``ufw_applications`` / ``ufw_rules`` / ``ufw_status``
-  / ``uptime_seconds`` / ``virtualenv_python_versions`` / ``command_paths``:
+  / ``uptime_seconds`` / ``uv_packages`` / ``virtualenv_python_versions`` / ``command_paths``:
   the state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
   ``File``, ``Directory``, ``Link``, ``Socket``, ``SameFile``, ``FileFlags``,
   ``FindFiles``, ``FindDirectories``, ``FindLinks``, ``FindInFile``,
@@ -146,6 +146,7 @@ a real asyncssh transport is missing:
   ``NpmPackages``,
   ``OpenrcConfigFile``, ``OpenrcEnabled``,
   ``OpenrcRunlevels``, ``OpenrcServices``, ``OpenrcStatus``, ``OpenrcVersion``,
+  ``Packages`` (the uv-local fact reads the ``uv_packages`` seam),
   ``PipPackages`` (the pip-local ``_VirtualenvPython`` probe reads the
   ``virtualenv_python_versions`` seam), ``Port``, ``Processes``,
   ``PythonVersion``,
@@ -1334,6 +1335,21 @@ class SimulatedHost(Host):
     # (the simulated ``pip install``/``uninstall``/``-r``) mutate it as the
     # corresponding pip commands would.
     pip_packages: dict[str, str] = field(default_factory=dict)
+    # Installed uv packages -- the state store the fact reads, kept as one
+    # mapping of the printed name -> version (e.g. ``pydash`` ->
+    # ``"3.48"``) which ``Packages.process`` projects into the sorted
+    # ``PackageInfo`` entries it returns (the ``pip_packages``
+    # mutated-dict-store precedent). Keys are verbatim -- uv prints the
+    # canonical name of each distribution and neither ``Packages.parse`` nor
+    # the seam normalizes, so simulated state must use the printed spelling
+    # too; one store models one environment, whatever uv resolves it to.
+    # Named with the uv_ prefix (like ``pip_packages``) so the uv-side state
+    # never mixes with the pip-side store. Defaults to {} -- a simulated
+    # machine with no uv environment, or an empty one, so the fact answers
+    # ``[]``. A read-only seam: pyinfra's ``uv.packages`` operation is not
+    # ported yet, so no ``execute_command`` mutator maintains it and a test
+    # seeds it directly.
+    uv_packages: dict[str, str] = field(default_factory=dict)
     # Interpreter command -> the version it reports (the ``PythonVersionInfo``
     # entry ``server.PythonVersion`` returns), backing that fact: the key is
     # exactly how the caller names the interpreter (``python3``,

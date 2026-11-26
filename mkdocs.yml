@@ -66,6 +66,7 @@ plugins:
             - examples/modules/sysctl
             - examples/modules/systemd
             - examples/modules/ufw
+            - examples/modules/uv
             - examples/actions
             - examples/demonstrations/composition
             - examples/demonstrations/connectors
@@ -153,6 +154,7 @@ nav:
           - sysctl: modules/sysctl.md
           - systemd: modules/systemd.md
           - ufw: modules/ufw.md
+          - uv: modules/uv.md
       - Actions: actions/actions.md
       - Connectors:
           - docker: connectors/docker.md
@@ -216,6 +218,7 @@ nav:
 #          - sysctl: examples/modules/sysctl.md
 #          - systemd: examples/modules/systemd.md
 #          - ufw: examples/modules/ufw.md
+#          - uv: examples/modules/uv.md
 #      - Demonstrations:
 #          - Composition: examples/demonstrations/composition.md
 #          - Connectors: examples/demonstrations/connectors.md

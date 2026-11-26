@@ -131,6 +131,9 @@ the typed command descriptors they yield,
 ``UfwApplications`` facts beside the ``state``, ``default_policy``,
 ``rule``, ``logging`` and ``reset`` operations and the typed command
 descriptors they yield,
+``modules/uv/uv.py`` holds the ``Packages`` fact (with its ``PackageInfo``
+entry type) -- the port of pyinfra's ``uv.UvPipPackages`` -- the namespace's
+sole surface until the ``uv.packages`` operation lands,
 ``modules/snap/snap.py`` holds the ``SnapPackage`` fact (with its
 ``SnapPackageInfo`` entry type) beside the ``package`` operation and the
 ``SnapInstallCommand``/``SnapRefreshCommand``/``SnapRemoveCommand``
@@ -138,11 +141,11 @@ descriptors it yields, and
 ``modules/server/server.py`` holds the ``wait_service`` operation (which
 polls the relocated ``systemd.SystemdServiceState`` fact). The subpackages
 are re-exported here, so a deploy can keep writing
-``from reemote.modules import apk, apt, cargo, dnf, files, firewalld, flatpak, gem, git, go, gpg, hardware, iptables, lxd, mysql, npm, openrc, pip, postgresql, rustup, selinux, snap, sysctl, systemd, ufw, server``
+``from reemote.modules import apk, apt, cargo, dnf, files, firewalld, flatpak, gem, git, go, gpg, hardware, iptables, lxd, mysql, npm, openrc, pip, postgresql, rustup, selinux, snap, sysctl, systemd, ufw, uv, server``
 and read ``apk.ApkInstalledPackages`` / ``apt.AptKeys`` / ``cargo.CargoPackages`` / ``cargo.packages`` / ``dnf.packages`` /
 ``files.link`` / ``firewalld.FirewalldZones`` / ``gem.GemPackages`` / ``git.GitBranch`` / ``go.GoPackages`` / ``gpg.GpgKeys`` / ``hardware.BlockDevices`` /
 ``iptables.IptablesChains`` / ``lxd.LxdInstances`` / ``mysql.MysqlDatabases`` / ``npm.NpmPackages`` / ``openrc.OpenrcStatus`` / ``postgresql.PostgresqlRoles`` / ``rustup.RustupToolchains`` /
-``selinux.Mode`` / ``sysctl.setting`` / ``systemd.service`` / ``ufw.UfwRules`` / ``server.wait_service``.
+``selinux.Mode`` / ``sysctl.setting`` / ``systemd.service`` / ``ufw.UfwRules`` / ``uv.Packages`` / ``server.wait_service``.
 """
 
 from . import (
@@ -173,6 +176,7 @@ from . import (
     sysctl,
     systemd,
     ufw,
+    uv,
 )
 
 __all__ = [
@@ -203,4 +207,5 @@ __all__ = [
     "sysctl",
     "systemd",
     "ufw",
+    "uv",
 ]

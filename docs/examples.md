@@ -8,7 +8,7 @@ three: `examples/modules/<namespace>/` holds one script per fact or operation
 of a library module (currently `apk`, `apt`, `cargo`, `dnf`, `files`, `firewalld`,
 `flatpak`, `gem`, `git`, `go`, `gpg`, `hardware`, `iptables`, `lxd`, `mysql`, `npm`,
 `openrc`, `pip`, `postgresql`, `rustup`, `selinux`,
-`server`, `snap`, `sysctl`, `systemd` and `ufw`), plus the cross-module `dnf_put_get`
+`server`, `snap`, `sysctl`, `systemd`, `ufw` and `uv`), plus the cross-module `dnf_put_get`
 health-check scenario under `files/`,
 `examples/actions/` holds [action](actions.md) demonstrations (bespoke shell,
 staged scripts, connection waits), and
@@ -50,6 +50,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 | `examples/modules/sysctl/` | [Module examples: sysctl](examples/modules/sysctl.md) |
 | `examples/modules/systemd/` | [Module examples: systemd](examples/modules/systemd.md) |
 | `examples/modules/ufw/` | [Module examples: ufw](examples/modules/ufw.md) |
+| `examples/modules/uv/` | [Module examples: uv](examples/modules/uv.md) |
 | `examples/actions/` | [Action examples](examples/actions.md) |
 | `examples/demonstrations/privilege/` | [Privilege demonstrations](examples/demonstrations/privilege.md) |
 | `examples/demonstrations/composition/` | [Composing deploys](examples/demonstrations/composition.md) |
@@ -85,6 +86,11 @@ sub-directory. Pick a page from the navigation, or start from this table:
     (their provisioning helper installs the `rustup` deb there first, and the
     `cargo` page's `cargo_cargo_config` example guards on it too even though
     its file read needs no provisioning),
+    the `uv` examples likewise on `is_ubuntu`
+    (their provisioning helper installs the `astral-uv` snap there first —
+    Ubuntu's `noble` apt suite ships no `uv`, and the module deliberately
+    drops pyinfra's `requires_command` gating, so a host without uv exits 127
+    and raises `CommandNotFoundError` rather than answering an empty listing),
     and the `server_op_locale.py` example on the
     [server page](examples/modules/server.md) likewise on `is_ubuntu`
     because `/etc/locale.gen` + `locale-gen` are Debian-family only. The

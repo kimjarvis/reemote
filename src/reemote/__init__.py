@@ -116,6 +116,7 @@ from .modules import (
     sysctl,
     systemd,
     ufw,
+    uv,
 )
 from .modules.apk.apk import (
     ApkAutoremovablePackages,
@@ -764,6 +765,10 @@ from .modules.ufw.ufw import (
     UfwStatus,
     UfwStatusInfo,
 )
+from .modules.uv.uv import (
+    PackageInfo,
+    Packages,
+)
 from .rolevars import (
     RoleVarsError,
     VarsSet,
@@ -1237,6 +1242,8 @@ __all__ = [
     "OpenrcVersion",
     "OperationError",
     "OperationRequest",
+    "PackageInfo",
+    "Packages",
     "PermissiveDomains",
     "PipInstallCommand",
     "PipPackageInfo",
@@ -1480,5 +1487,6 @@ __all__ = [
     "sysctl",
     "systemd",
     "ufw",
+    "uv",
     "validate_inventory",
 ]
