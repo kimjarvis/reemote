@@ -173,6 +173,7 @@ nav:
           - java: roles/java.md
           - memcached: roles/memcached.md
           - nfs: roles/nfs.md
+          - nodejs: roles/nodejs.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md

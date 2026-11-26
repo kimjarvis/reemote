@@ -47,6 +47,7 @@ from .java import JavaVars, java
 from .memcached import MemcachedVars, memcached
 from .nfs import NfsVars, nfs
 from .nginx import NginxVars, nginx
+from .nodejs import NodejsVars, NpmGlobalPackage, nodejs
 from .ntp import NtpVars, ntp
 from .php import PhpOutputs, PhpVars, php
 from .php_xdebug import PhpXdebugVars, php_xdebug
@@ -65,6 +66,8 @@ __all__: list[str] = [
     "MemcachedVars",
     "NfsVars",
     "NginxVars",
+    "NodejsVars",
+    "NpmGlobalPackage",
     "NtpVars",
     "PhpOutputs",
     "PhpVars",
@@ -79,6 +82,7 @@ __all__: list[str] = [
     "memcached",
     "nfs",
     "nginx",
+    "nodejs",
     "ntp",
     "php",
     "php_xdebug",
