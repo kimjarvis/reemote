@@ -15,11 +15,11 @@ no framework:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``nodejs_``-prefixed keys (``nodejs_version``, ``nodejs_npm_global_packages``,
-   ``nodejs_package_json_path`` -- the role variables of
-   :class:`~reemote.roles.nodejs.NodejsVars`) are bound and stripped, the
-   call-site ``NODEJS_OVERRIDES`` below wins over them, and a bad value raises
-   before any host is contacted.
+   ``nodejs`` role mapping (``version``, ``npm_global_packages``,
+   ``package_json_path`` and the rest of the
+   :class:`~reemote.roles.nodejs.NodejsVars` fields) is bound under the bare
+   field names, the call-site ``NODEJS_OVERRIDES`` below wins over them, and a
+   bad value raises before any host is contacted.
 3. Build the deploy -- ``nodejs(vars_set)`` is the role's whole task list, one
    per-host generator -- and drive it with ``run_waves``, the barrier-aware
    driver a role needs. This role happens to yield no barrier at all (no version
@@ -46,16 +46,16 @@ The call-site ``overrides`` channel
 ``npm_global_packages`` a couple of entries, so the demonstration exercises the
 whole stream -- the repository, the version-pinned ``nodejs`` install, the global
 npm directory, the profile script and the global-package loop -- and not just the
-repository. Overrides use the model's UNPREFIXED field names -- the ``nodejs_``
-prefix is an inventory-key binding, stripped before validation. Precedence is
-model defaults < inventory extra < these overrides.
+repository. Overrides and the inventory mapping both use the model's bare field
+names -- there is no key prefix anywhere. Precedence is model defaults <
+inventory role mapping < these overrides.
 
 Two knobs deliberately stay out of the overrides: ``npm_config_prefix`` and
-``npm_config_unsafe_perm`` carry an ``npm_`` prefix upstream, not the role's
-``nodejs_`` prefix, so they are *not* :class:`NodejsVars` fields -- the role
-reads them raw from each host's ``extra`` channel to preserve the existing
-inventory spelling (deviation D5, the datadog precedent). Set ``npm_config_prefix``
-in an inventory entry's top level to relocate npm's global prefix.
+``npm_config_unsafe_perm`` carry an ``npm_`` prefix upstream and are *not*
+:class:`NodejsVars` fields -- the role reads them raw from each host's
+``extra`` channel to preserve the existing inventory spelling (deviation D5,
+the datadog precedent). Set ``npm_config_prefix`` in an inventory entry's top
+level -- not its ``nodejs`` role mapping -- to relocate npm's global prefix.
 
 Installing and running
 ----------------------
@@ -106,11 +106,10 @@ from reemote.roles import NodejsVars, nodejs
 # repository name/URI and the ``nodejs=<major>.*`` apt pin); the two
 # ``npm_global_packages`` entries turn on the global-package loop so the
 # demonstration covers the full stream, not just the repository and install.
-# Overrides use the model's UNPREFIXED field names -- the ``nodejs_`` prefix only
-# binds inventory keys, and is stripped before validation -- and win over any
-# ``nodejs_``-prefixed key in the inventory for every host. ``npm_config_prefix``
-# is intentionally absent: it is read from each host's raw ``extra``, not from
-# the typed model (D5).
+# Overrides use the model's bare field names -- the same names the inventory's
+# ``nodejs`` role mapping uses -- and win over it for every host.
+# ``npm_config_prefix`` is intentionally absent: it is read from each host's raw
+# ``extra``, not from the typed model (D5).
 NODEJS_OVERRIDES = {
     "version": "20.x",
     "npm_global_packages": [
@@ -128,10 +127,12 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted: the
-        # inventory's nodejs_-prefixed keys, overlaid with the call-site
+        # inventory's nodejs role mappings, overlaid with the call-site
         # overrides. A rejected value raises here -- a pydantic ValidationError,
         # which is a ValueError -- not mid-run.
-        vars_set = resolve_vars(NodejsVars, "nodejs_", inventory, overrides=NODEJS_OVERRIDES)
+        vars_set = resolve_vars(
+            NodejsVars, "nodejs", inventory, overrides=NODEJS_OVERRIDES
+        )
         # The role's whole task list: one per-host generator. A plain (non-async)
         # factory, so it is called, not awaited.
         deploy = nodejs(vars_set)
@@ -166,10 +167,10 @@ async def main() -> None:
     except (ValueError, TypeError) as exc:
         # A rejected role variable (pydantic's ValidationError is a ValueError),
         # or the role body's own hard error before the request wave is built: the
-        # npm install user cannot be resolved (no nodejs_install_npm_user and no
-        # connection login name), or an npm_config_* extra key is empty or of the
-        # wrong type. Each raises before any request is applied, so nothing is
-        # half-installed.
+        # npm install user cannot be resolved (no install_npm_user in the role
+        # mapping and no connection login name), or an npm_config_* extra key is
+        # empty or of the wrong type. Each raises before any request is applied,
+        # so nothing is half-installed.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     except (CommandError, HostConnectionError, PrivilegeError) as exc:

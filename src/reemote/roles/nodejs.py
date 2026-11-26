@@ -10,8 +10,8 @@
 # directory owned by the install user, the optional ``/etc/profile.d/npm.sh``
 # environment script, the global npm packages and the optional ``package.json``
 # install. :func:`nodejs` is the whole task list and :class:`NodejsVars` is
-# ``defaults/main.yml``, bound from the inventory's ``nodejs_``-prefixed keys by
-# :func:`~reemote.rolevars.resolve_vars`.
+# ``defaults/main.yml``, bound from the inventory entry's ``nodejs`` role
+# mapping by :func:`~reemote.rolevars.resolve_vars`.
 #
 # Target: hosts in the ``"Ubuntu"`` OS family. A host outside the family returns
 # before its first ``yield`` and emits no requests, no barriers and no log lines
@@ -88,8 +88,8 @@
 #   so the connection login name is the faithful analog. A host with neither
 #   raises before any request is built.
 # * D5: the role's ``npm_config_prefix`` and ``npm_config_unsafe_perm`` carry an
-#   ``npm_`` prefix upstream, not the role's ``nodejs_`` prefix. ``resolve_vars``
-#   binds exactly one prefix (``nodejs_``), so these two knobs are NOT typed
+#   ``npm_`` name upstream, not the ``nodejs`` role's. ``resolve_vars`` binds
+#   exactly the ``nodejs`` role mapping, so these two knobs are NOT typed
 #   fields on :class:`NodejsVars` -- they are read raw from ``host.extra`` by
 #   :func:`resolve_npm_config`, preserving the upstream inventory spelling
 #   byte-for-byte. Renaming them ``nodejs_npm_config_*`` would break every
@@ -158,8 +158,8 @@ NODESOURCE_REPO_BASE = "https://deb.nodesource.com"
 NPM_PROFILE = "/etc/profile.d/npm.sh"
 
 #: ``defaults/main.yml``'s ``npm_config_prefix`` default. Read raw from
-#: ``host.extra`` (not a typed field) because it carries an ``npm_`` prefix
-#: upstream, not the role's ``nodejs_`` prefix (D5).
+#: ``host.extra`` (not a typed field) because it carries an ``npm_`` name
+#: upstream, not a ``nodejs`` role variable (D5).
 DEFAULT_NPM_CONFIG_PREFIX = "/usr/local/lib/npm"
 
 #: ``defaults/main.yml``'s ``npm_config_unsafe_perm`` default (D5).
@@ -202,11 +202,11 @@ class NpmGlobalPackage(BaseModel):
 class NodejsVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``nodejs_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``nodejs_version`` in the
-    inventory to :attr:`version` and ``nodejs_npm_global_packages`` to
-    :attr:`npm_global_packages`. The two ``npm_config_*`` knobs are NOT fields
-    here: they carry an ``npm_`` prefix upstream, so they are read raw from
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``nodejs`` role mapping, so ``version`` sets
+    :attr:`version` and ``npm_global_packages`` :attr:`npm_global_packages`.
+    The two ``npm_config_*`` knobs are NOT fields here: they carry an
+    ``npm_`` name upstream, so they are read raw from
     ``host.extra`` by :func:`resolve_npm_config`, preserving the inventory
     contract (D5, the datadog precedent).
 
@@ -316,7 +316,7 @@ def resolve_npm_user(install_npm_user: str, connection: Mapping[str, Any]) -> st
     user = connection.get("username") or connection.get("user")
     if not user:
         raise ValueError(
-            "cannot resolve the npm install user: nodejs_install_npm_user is "
+            "cannot resolve the npm install user: install_npm_user is "
             "unset and the inventory connection carries no username/user -- "
             "the role's `ansible_user | default(env USER)` has no reemote "
             "analog for a connection with no login name"
@@ -327,10 +327,11 @@ def resolve_npm_user(install_npm_user: str, connection: Mapping[str, Any]) -> st
 def resolve_npm_config(extra: Mapping[str, Any]) -> tuple[str, bool]:
     """The two ``npm_``-prefixed knobs, read raw from ``host.extra`` (D5).
 
-    ``npm_config_prefix`` and ``npm_config_unsafe_perm`` carry an ``npm_`` prefix
-    upstream, so ``resolve_vars`` -- which binds only ``nodejs_`` -- leaves them
-    in the raw ``host.extra`` channel. Reading them here preserves the existing
-    inventory spelling; renaming them into the typed model would break every
+    ``npm_config_prefix`` and ``npm_config_unsafe_perm`` carry an ``npm_`` name
+    upstream, so ``resolve_vars`` -- which binds only the ``nodejs`` role
+    mapping -- leaves them in the raw ``host.extra`` channel. Reading them here
+    preserves the existing inventory spelling; renaming them into the typed
+    model would break every
     inventory that sets ``npm_config_prefix`` (the datadog precedent). Defaults
     match ``defaults/main.yml``. A wrong-typed value raises ``TypeError`` and an
     empty prefix raises ``ValueError`` before any request is built.
@@ -565,7 +566,7 @@ def nodejs(v: VarsSet[NodejsVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`NodejsVars` per host
-            (``resolve_vars(NodejsVars, "nodejs_", inventory)``).
+            (``resolve_vars(NodejsVars, "nodejs", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves`. It publishes no outputs -- no

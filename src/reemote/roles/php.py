@@ -9,8 +9,8 @@
 # stray-extension-config sweep and the role's own ini files, the optional PHP-FPM
 # pools and service, and the role's two chained handlers (``restart webserver`` ->
 # ``restart php-fpm``). :func:`php` is the whole task list and :class:`PhpVars` is
-# ``defaults/main.yml``, bound from the inventory's ``php_``-prefixed keys by
-# :func:`~reemote.rolevars.resolve_vars`.
+# ``defaults/main.yml``, bound from the inventory entry's ``php`` role
+# mapping by :func:`~reemote.rolevars.resolve_vars`.
 # 
 # Target: hosts in the ``"Ubuntu"`` OS family. The role's RHEL/CentOS branch and
 # the opt-in ``php_install_from_source`` path are out of scope, so its
@@ -237,14 +237,14 @@ class PhpFpmPool(BaseModel):
 class PhpVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``php_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``php_memory_limit`` in the
-    inventory to :attr:`memory_limit`, so an inventory written for the role needs
-    no change. Every Ansible default is carried over, including the two inert
-    ones (:attr:`enablerepo`, :attr:`executable`) so such a key still binds.
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``php`` role mapping, so ``memory_limit`` there sets
+    :attr:`memory_limit`. Every Ansible default is carried over, including the
+    two inert ones (:attr:`enablerepo`, :attr:`executable`) so such a key
+    still binds.
 
     The values that reach a template verbatim are ``str``, with
-    ``coerce_numbers_to_str`` so an inventory writing ``php_memory_limit: 512``
+    ``coerce_numbers_to_str`` so an inventory writing ``memory_limit: 512``
     renders ``512`` exactly as Jinja would render the integer. Sequences are
     ``tuple``, never ``list``: the model is frozen, and a value that reaches
     :func:`~reemote.core.op` must hash (design doc section 8.1).
@@ -1292,7 +1292,7 @@ def php(v: VarsSet[PhpVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`PhpVars` per host
-            (``resolve_vars(PhpVars, "php_", inventory)``).
+            (``resolve_vars(PhpVars, "php", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves` that returns :class:`PhpOutputs`

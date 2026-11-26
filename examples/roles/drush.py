@@ -15,10 +15,11 @@ no framework:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``drush_``-prefixed keys (``drush_launcher_version``, ``drush_launcher_path``,
-   ``drush_launcher_phar_url``, ``drush_launcher_install``) are bound and
-   stripped, and a bad value -- or one of the two scoped-out opt-in flags set to
-   true -- raises before any host is contacted.
+   ``drush`` role mapping (``launcher_version``, ``launcher_path``,
+   ``launcher_phar_url``, ``launcher_install`` and the rest of the
+   :class:`~reemote.roles.drush.DrushVars` fields) is bound under the bare
+   field names, and a bad value -- or one of the two scoped-out opt-in flags set
+   to true -- raises before any host is contacted.
 3. Build the deploy -- ``drush(vars_set)`` is the role's whole task list, one
    per-host generator -- and drive it with ``run_waves``, the barrier-aware
    driver a role needs: the role's two ``fact`` barriers (the ``FileLink`` /
@@ -66,7 +67,7 @@ phar is still fetched on every *real* pass, because the sha1 comparison must
 read the body; the no-change claim is about the host, not the fetch count.
 
 Hosts outside the ``"Ubuntu"`` family -- and hosts with
-``drush_launcher_install`` false -- emit nothing at all: both gates are the
+``launcher_install`` false -- emit nothing at all: both gates are the
 body's opening ``if``, so such a host returns before its first ``yield`` and
 appears in no wave.
 """
@@ -96,10 +97,10 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted: the
-        # inventory's drush_-prefixed keys over the model defaults. A rejected
-        # value -- a relative path, an opt-in branch set true -- or a prefixed
-        # key that names no field raises here, not mid-run.
-        vars_set = resolve_vars(DrushVars, "drush_", inventory)
+        # inventory's drush role mapping over the model defaults. A rejected
+        # value -- a relative path, an opt-in branch set true -- or a key in
+        # the mapping that names no field raises here, not mid-run.
+        vars_set = resolve_vars(DrushVars, "drush", inventory)
 
         # The role's whole task list: one per-host generator, barriers and all.
         # A plain (non-async) factory, so it is called, not awaited.
@@ -135,7 +136,8 @@ async def main() -> None:
         raise SystemExit(1) from exc
     except (ValueError, TypeError) as exc:
         # A rejected role variable: pydantic's ValidationError and a
-        # RoleVarsError for an unknown drush_ key are both a ValueError, and
+        # RoleVarsError for an unknown key in the drush mapping are both a
+        # ValueError, and
         # each is raised before any request runs, so nothing is half-applied.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

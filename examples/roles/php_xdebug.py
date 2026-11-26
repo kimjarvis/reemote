@@ -14,11 +14,11 @@ framework:
    materialized or connected.
 2. Resolve **two** roles' variables. ``php_xdebug`` depends on
    :mod:`reemote.roles.php` and takes its dependency's ``VarsSet`` as an argument,
-   so both models are resolved from the same inventory here. The prefixes nest --
-   ``php_`` contains ``php_xdebug_`` -- so the php side passes
-   ``nested_prefixes=("php_xdebug_",)``: without it, ``php_xdebug_version`` carries
-   the ``php_`` prefix, names no ``PhpVars`` field, and ``resolve_vars`` reports
-   another role's variable as this role's typo.
+   so both models are resolved from the same inventory here. Each role reads only
+   its own mapping in the entry's ``roles`` dict -- the ``php`` mapping binds
+   :class:`~reemote.roles.php.PhpVars`, the ``php_xdebug`` mapping binds
+   :class:`~reemote.roles.php_xdebug.PhpXdebugVars` -- so the two variable sets
+   cannot be mistaken for each other's typos.
 3. Build the deploy -- ``php_xdebug(xdebug_v, php_v)`` -- and drive it with
    ``run_waves``. One call is enough: the role's dependency is a ``yield from``
    inside its own body, so php's distribution read, its three checkpoints and its
@@ -94,11 +94,11 @@ async def main() -> None:
         print("== Inventory loaded from inventory.json ==")
         print(", ".join(entry["host"] for entry in inventory))
 
-        # Two roles, one inventory. The dependency's variables are resolved with
-        # the nested prefix declared, so `php_xdebug_*` keys stay the child role's
+        # Two roles, one inventory: each resolves only from its own mapping in
+        # the entry's `roles` dict, so `php_xdebug` keys stay the child role's
         # rather than being reported as the parent's typos.
-        php_v = resolve_vars(PhpVars, "php_", inventory, nested_prefixes=("php_xdebug_",))
-        xdebug_v = resolve_vars(PhpXdebugVars, "php_xdebug_", inventory)
+        php_v = resolve_vars(PhpVars, "php", inventory)
+        xdebug_v = resolve_vars(PhpXdebugVars, "php_xdebug", inventory)
 
         # The role's whole task list -- dependency included. A plain (non-async)
         # factory, so it is called, not awaited.
@@ -132,9 +132,9 @@ async def main() -> None:
         raise SystemExit(1) from exc
     except (ValueError, TypeError) as exc:
         # A rejected role variable (pydantic's ValidationError is a ValueError, and
-        # a prefixed key that names no field is a RoleVarsError), or the role body's
-        # own hard error -- the dependency's PHP version is not dotted digits. Both
-        # are raised before anything of xdebug's is applied.
+        # a key naming no field in the role mapping is a RoleVarsError), or the
+        # role body's own hard error -- the dependency's PHP version is not dotted
+        # digits. Both are raised before anything of xdebug's is applied.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     except (CommandError, HostConnectionError, PrivilegeError) as exc:

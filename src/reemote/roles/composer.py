@@ -53,8 +53,8 @@
 #   consumption.
 # * ``php_executable`` -- the role's only **unprefixed** variable (a ``set_fact``
 #   default) -- is read raw from ``host.extra`` rather than bound by
-#   ``resolve_vars``; giving it a ``composer_`` prefix would break the role's
-#   inventory contract (the datadog probe-config precedent).
+#   ``resolve_vars``; moving it into the ``composer`` role mapping would
+#   break the role's inventory contract (the datadog probe-config precedent).
 # * the two opt-in branches are **rejected** at variable-resolution time, before
 #   any host is contacted: ``composer_keep_updated`` (self-update is stateless and
 #   never converges) and ``composer_add_project_to_path`` (the ``project-bin.yml``
@@ -108,12 +108,12 @@ PHP_EXECUTABLE_DEFAULT = "php"
 class ComposerVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``composer_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``composer_path`` in the
-    inventory to :attr:`path`, so an inventory written for the role needs no
-    change. The role's one *unprefixed* variable, ``php_executable``, is **not** a
-    field here: ``resolve_vars`` skips keys that do not carry the prefix, so it
-    stays in ``host.extra`` and :func:`resolve_settings` reads it raw.
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``composer`` role mapping, so ``path`` there sets
+    :attr:`path`. The role's one *unprefixed* variable, ``php_executable``, is
+    **not** a field here: it stays a top-level inventory key outside any role
+    mapping, so it lands in ``host.extra`` and :func:`resolve_settings` reads
+    it raw.
 
     The model is frozen, so it stays hashable through the deploy body (a
     :class:`~reemote.rolevars.VarsSet` is closed over by the factory). The two
@@ -494,7 +494,7 @@ def composer(v: VarsSet[ComposerVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`ComposerVars` per host
-            (``resolve_vars(ComposerVars, "composer_", inventory)``). The role's
+            (``resolve_vars(ComposerVars, "composer", inventory)``). The role's
             one unprefixed variable, ``php_executable``, is read raw from each
             ``host.extra``.
 

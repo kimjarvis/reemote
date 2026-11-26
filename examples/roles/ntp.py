@@ -15,11 +15,10 @@ no framework:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``ntp_``-prefixed keys (``ntp_timezone``, ``ntp_enabled``,
-   ``ntp_manage_config``, ``ntp_servers`` and the rest of
-   :class:`~reemote.roles.ntp.NtpVars`) are bound and stripped, the call-site
-   ``NTP_OVERRIDES`` below wins over them, and a bad value raises before any host
-   is contacted.
+   ``ntp`` role mapping (``timezone``, ``enabled``, ``manage_config``,
+   ``servers`` and the rest of the :class:`~reemote.roles.ntp.NtpVars` fields)
+   is bound under the bare field names, the call-site ``NTP_OVERRIDES`` below
+   wins over them, and a bad value raises before any host is contacted.
 3. Build the deploy -- ``ntp(vars_set)`` is the role's whole task list, one
    per-host generator -- and drive it with ``run_waves``, the barrier-aware
    driver a role needs: its two ``fact`` barriers (the ``LinuxDistribution``
@@ -43,12 +42,12 @@ The call-site ``overrides`` channel
 -----------------------------------
 
 ``NTP_OVERRIDES`` (``manage_config=True``) is handed to ``resolve_vars`` and wins
-over the inventory's ``ntp_``-prefixed keys for every host, so the demonstration
+over the inventory's ``ntp`` role mapping for every host, so the demonstration
 exercises the config template (rendered control-side) and the ``restart ntp``
-handler rather than only the package install. Overrides use the model's
-UNPREFIXED field names -- the ``ntp_`` prefix is an inventory-key binding,
-stripped before validation. Precedence is model defaults < inventory extra <
-these overrides.
+handler rather than only the package install. Overrides and the inventory
+mapping both use the model's bare field names -- there is no key prefix
+anywhere. Precedence is model defaults < inventory role mapping < these
+overrides.
 
 Installing and running
 ----------------------
@@ -97,9 +96,8 @@ from reemote.roles import NtpVars, ntp
 # Common role variables handed to ``resolve_vars`` as call-site ``overrides``.
 # ``manage_config=True`` turns on the config template and its ``restart ntp``
 # handler so the demonstration covers the full stream, not just the packages.
-# Overrides use the model's UNPREFIXED field names -- the ``ntp_`` prefix only
-# binds inventory keys, and is stripped before validation -- and win over any
-# ``ntp_``-prefixed key in the inventory for every host.
+# Overrides use the model's bare field names -- the same names the inventory's
+# ``ntp`` role mapping uses -- and win over it for every host.
 NTP_OVERRIDES = {"manage_config": True}
 
 
@@ -111,10 +109,10 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted: the
-        # inventory's ntp_-prefixed keys, overlaid with the call-site overrides.
+        # inventory's ntp role mappings, overlaid with the call-site overrides.
         # A rejected value raises here -- a pydantic ValidationError, which is a
         # ValueError -- not mid-run.
-        vars_set = resolve_vars(NtpVars, "ntp_", inventory, overrides=NTP_OVERRIDES)
+        vars_set = resolve_vars(NtpVars, "ntp", inventory, overrides=NTP_OVERRIDES)
         # The role's whole task list: one per-host generator, barriers and all.
         # A plain (non-async) factory, so it is called, not awaited.
         deploy = ntp(vars_set)

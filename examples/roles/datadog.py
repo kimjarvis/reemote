@@ -11,12 +11,12 @@ no framework:
 1. Read the target hosts from ``inventory.json`` in the current working
    directory and validate it up front with ``validate_inventory``.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``datadog_``-prefixed keys (``datadog_api_key``, ``datadog_site``,
-   ``datadog_checks`` and the rest of
-   :class:`~reemote.roles.datadog.DatadogVars`) are bound and stripped. The six
-   unprefixed probe-config variables (``system_probe_config``,
-   ``network_config``, etc.) stay in ``host.extra`` and are read raw by the
-   deploy body.
+   ``datadog`` role mapping (``api_key``, ``site``, ``checks`` and the rest of
+   the :class:`~reemote.roles.datadog.DatadogVars` fields) is bound under the
+   bare field names. The six
+   probe-config variables (``system_probe_config``,
+   ``network_config``, etc.) are not model fields yet: they stay top-level
+   inventory keys in ``host.extra`` and are read raw by the deploy body.
 3. **Await** the factory -- ``datadog(vars_set)`` is ``async def`` because it
    fetches the five signing keys control-side before returning the deploy. That
    IO runs even under ``dry`` (§6.3): this is the one role where ``--dry``
@@ -39,12 +39,16 @@ Or with an explicit extra::
 The control machine needs outbound HTTPS to ``s3.amazonaws.com`` (the signing
 keys) and the target needs egress to ``apt.datadoghq.com`` (the agent repo).
 
-**The shipped ``inventory.json`` has no ``datadog_api_key``.** The role fails on
-a missing key when ``datadog_manage_config`` is true (the default). Add your own
-key to the inventory entry before running::
+**The shipped ``inventory.json`` has no ``datadog`` role mapping.** The role
+fails on a missing key when ``manage_config`` is true (the default). Add your
+own key to the inventory entry before running::
 
-    "datadog_api_key": "YOUR_DATADOG_API_KEY",
-    "datadog_site": "datadoghq.eu"
+    "roles": {
+        "datadog": {
+            "api_key": "YOUR_DATADOG_API_KEY",
+            "site": "datadoghq.eu"
+        }
+    }
 
 ``main`` drives the deploy twice: a ``dry=True`` preview first, then the real
 apply. The dry pass still fetches the five keys (async factory IO is
@@ -78,7 +82,7 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted.
-        vars_set = resolve_vars(DatadogVars, "datadog_", inventory)
+        vars_set = resolve_vars(DatadogVars, "datadog", inventory)
 
         # The factory is async: it fetches the five signing keys control-side
         # before returning the deploy. This IO runs even under dry.

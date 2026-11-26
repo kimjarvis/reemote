@@ -15,11 +15,12 @@ no framework:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``epel_``-prefixed keys (``epel_repo_disable``, ``epel_repofile_path``,
-   ``epel_repo_url``, ``epel_repo_gpg_key_url`` -- the four fields of
-   :class:`~reemote.roles.repo_epel.EpelVars`) are bound and stripped, and a bad
-   value raises before any host is contacted. No call-site ``overrides`` are
-   passed here, so precedence is just model defaults < the inventory's own keys.
+   ``epel`` role mapping (``repo_disable``, ``repofile_path``, ``repo_url``,
+   ``repo_gpg_key_url`` -- the four fields of
+   :class:`~reemote.roles.repo_epel.EpelVars`) is bound under the bare field
+   names, and a bad value raises before any host is contacted. No call-site
+   ``overrides`` are passed here, so precedence is just model defaults < the
+   inventory role mapping.
 3. Build the deploy -- ``repo_epel(vars_set)`` is the role's whole task list, one
    per-host generator -- and drive it with ``run_waves``, the barrier-aware
    driver a role needs: its distribution read, its repo-file ``stat`` and its
@@ -84,10 +85,9 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted: the
-        # inventory's epel_-prefixed keys over the model defaults. A rejected
-        # value -- or a prefixed key that names no field -- raises here, not
-        # mid-run.
-        vars_set = resolve_vars(EpelVars, "epel_", inventory)
+        # inventory's epel role mappings over the model defaults. A rejected
+        # value -- or a key that names no field -- raises here, not mid-run.
+        vars_set = resolve_vars(EpelVars, "epel", inventory)
         # The role's whole task list: one per-host generator, barriers and all.
         # A plain (non-async) factory, so it is called, not awaited.
         deploy = repo_epel(vars_set)
@@ -119,10 +119,11 @@ async def main() -> None:
         raise SystemExit(1) from exc
     except (ValueError, TypeError) as exc:
         # A rejected role variable (pydantic's ValidationError and a RoleVarsError
-        # for an unknown epel_ key are both a ValueError), or the role body's own
-        # hard error: the machine is not RHEL-family, or its major version has no
-        # pinned EPEL key id. Each is raised after the distribution barrier and
-        # before any request runs, so nothing is half-applied.
+        # for an unknown key in the epel mapping are both a ValueError), or the
+        # role body's own hard error: the machine is not RHEL-family, or its
+        # major version has no pinned EPEL key id. Each is raised after the
+        # distribution barrier and before any request runs, so nothing is
+        # half-applied.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     except (CommandError, HostConnectionError, PrivilegeError) as exc:

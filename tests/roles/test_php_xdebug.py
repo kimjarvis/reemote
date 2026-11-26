@@ -15,7 +15,7 @@ Four assertions carry this migration's claims:
 
 * **the return-value channel** (§15's falsifier). The ini destinations and the two
   handler daemons follow the *dependency's* resolution: set
-  ``php_default_version_debian`` and everything xdebug writes moves, because
+  the ``php`` role's ``default_version_debian`` and everything xdebug writes moves,
   :attr:`~reemote.roles.php.PhpOutputs.version` and
   :attr:`~reemote.roles.php.PhpOutputs.extension_conf_paths` are what it reads. The
   module carries no Ubuntu version table and no distribution read of its own, which
@@ -163,14 +163,16 @@ def canned_fetch(monkeypatch):
     return fetched
 
 
-def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
+def make_inventory(**roles: dict[str, Any]) -> list[dict[str, Any]]:
     """A two-host inventory: one Ubuntu target, one CentOS host that must be skipped.
 
-    The role variables ride on the entries as prefixed extra keys, so a test changes
-    a variable exactly the way an operator does -- and the nested prefixes are what
-    :func:`resolve_vars`'s ``nested_prefixes`` exists for. The base entry enables
-    PHP-FPM, so the chained ``restart php-fpm`` handler is exercised; the role default
-    (FPM off) has its own test.
+    The role variables ride on the entry's ``roles`` mapping, one nested dict per
+    role name written with the models' bare field names. Each keyword argument
+    names a role and updates that role's mapping, so a test changes a variable
+    exactly the way an operator does -- and ``php``/``php_xdebug`` resolve
+    independently, the claim the old ``nested_prefixes`` escape stood in for. The
+    base entry enables PHP-FPM, so the chained ``restart php-fpm`` handler is
+    exercised; the role default (FPM off) has its own test.
     """
     entry: dict[str, Any] = {
         "host": "ubuntu",
@@ -182,9 +184,13 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
         },
         "group": "ubuntu",
         "tags": ["ubuntu_host", "apt_package_manager"],
-        "php_enable_php_fpm": True,
+        "roles": {
+            "php": {"enable_php_fpm": True},
+            "php_xdebug": {},
+        },
     }
-    entry.update(overrides)
+    for role, variables in roles.items():
+        entry["roles"].setdefault(role, {}).update(variables)
     return [
         entry,
         {
@@ -196,29 +202,16 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
     ]
 
 
-def strip_prefix(entry: dict[str, Any], prefix: str, nested: str = "") -> dict[str, Any]:
-    """One entry's keys for one role: ``prefix``-prefixed, ``nested``-prefixed not.
-
-    The hand-rolled twin of ``resolve_vars``'s binding, used to build the resolution a
-    seed needs *before* any host exists. ``nested`` is the child prefix, so the parent's
-    keys stay the parent's -- the same rule ``nested_prefixes`` encodes.
-    """
-    return {
-        key[len(prefix) :]: value
-        for key, value in entry.items()
-        if key.startswith(prefix) and not (nested and key.startswith(nested))
-    }
-
-
 def resolution_for(entry: dict[str, Any]) -> Any:
     """The role's own :class:`PhpXdebugResolution` for one inventory entry.
 
     Built the way the body builds it -- php's resolver first, then xdebug's -- so the
     seed keys (the spool path, the build shell) are the values the real run will use
-    rather than a second copy of the path arithmetic.
+    rather than a second copy of the path arithmetic. Each role reads only its own
+    mapping in the entry's ``roles`` dict.
     """
-    pv = PhpVars.model_validate(strip_prefix(entry, "php_", "php_xdebug_"))
-    hv = PhpXdebugVars.model_validate(strip_prefix(entry, "php_xdebug_"))
+    pv = PhpVars.model_validate(entry["roles"]["php"])
+    hv = PhpXdebugVars.model_validate(entry["roles"]["php_xdebug"])
     rv_php = resolve_php(pv, dict(DISTRO))
     php_out = PhpOutputs(
         version=rv_php.version, extension_conf_paths=rv_php.ext_paths
@@ -265,7 +258,7 @@ class BuildHost(SimulatedHost):
     ``make`` writes the file.
 
     ``built_so`` is set per host by :func:`make_hosts` from that host's own resolved
-    vars, so a test that overrides ``php_xdebug_version`` still converges.
+    vars, so a test that overrides the ``version`` variable still converges.
     """
 
     #: Overridden per host; the default is the role default's build product.
@@ -345,13 +338,14 @@ async def run_role(
 ) -> Any:
     """Resolve both roles' variables and run one wave pass against persistent hosts.
 
-    ``nested_prefixes`` is the php side of the nested-prefix pair -- without it the
-    child's keys would be reported as the parent's typos. The same ``Host`` objects come
+    Each role binds only its own mapping in the entry's ``roles`` dict, so the
+    child's variables are never the parent's typos -- the property the old
+    ``nested_prefixes`` parameter existed to emulate. The same ``Host`` objects come
     back for every entry, so state survives from one pass to the next, which is the
     whole point of the second run.
     """
-    php_v = resolve_vars(PhpVars, "php_", inventory, nested_prefixes=("php_xdebug_",))
-    xdebug_v = resolve_vars(PhpXdebugVars, "php_xdebug_", inventory)
+    php_v = resolve_vars(PhpVars, "php", inventory)
+    xdebug_v = resolve_vars(PhpXdebugVars, "php_xdebug", inventory)
 
     def factory(entry: dict[str, Any]) -> BuildHost:
         return hosts[entry["host"]]
@@ -593,14 +587,14 @@ def test_the_role_carries_no_copy_of_php_resolution():
 
 
 async def test_the_php_version_variable_moves_every_xdebug_path(canned_fetch):
-    """``php_default_version_debian`` is the dependency's variable, and xdebug follows.
+    """The ``php`` role's ``default_version_debian`` moves everything; xdebug follows.
 
     The old example carried its own copy of the version table, so an operator setting
     that variable moved php's files and left xdebug's behind. Here nothing has to be
     kept in sync: the ini destinations, the CLI removal and the FPM daemon name all
     come from php's resolution.
     """
-    inventory = make_inventory(php_default_version_debian="8.1")
+    inventory = make_inventory(php={"default_version_debian": "8.1"})
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
     host = hosts["ubuntu"]
@@ -623,9 +617,9 @@ async def test_the_php_version_variable_moves_every_xdebug_path(canned_fetch):
 
 
 async def test_the_extension_conf_paths_override_is_inherited(canned_fetch):
-    """An operator's ``php_extension_conf_paths`` redirect is honoured by xdebug too."""
+    """An operator's ``extension_conf_paths`` redirect is honoured by xdebug too."""
     inventory = make_inventory(
-        php_extension_conf_paths=["/srv/php/ext/fpm", "/srv/php/ext/cli"]
+        php={"extension_conf_paths": ["/srv/php/ext/fpm", "/srv/php/ext/cli"]}
     )
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
@@ -769,12 +763,12 @@ async def test_dry_preview_stops_at_the_dependency_barrier(rig):
 
 
 async def test_disabling_the_role_skips_the_dependency_too():
-    """``php_xdebug_enable: false`` returns before the dependency's first barrier.
+    """``php_xdebug: {enable: false}`` returns before the dependency's first barrier.
 
     The knob is new (the role has no analogue), and its position is the whole claim: a
     disabled host pays for none of php's reads either, so it appears in no wave.
     """
-    inventory = make_inventory(php_xdebug_enable=False)
+    inventory = make_inventory(php_xdebug={"enable": False})
     hosts = make_hosts(inventory)
 
     report = await run_role(inventory, hosts)
@@ -859,7 +853,7 @@ def test_build_command_renders_the_shell_key():
 
 
 async def test_cli_disable_removes_the_cli_ini_and_skips_the_cli_write(canned_fetch):
-    inventory = make_inventory(php_xdebug_cli_disable=True)
+    inventory = make_inventory(php_xdebug={"cli_disable": True})
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
     # The stock CLI conf.d entry is a symlink into mods-available.
@@ -885,8 +879,8 @@ async def test_cli_disable_removes_the_cli_ini_and_skips_the_cli_write(canned_fe
 
 
 async def test_fpm_disabled_skips_the_fpm_handler(canned_fetch):
-    """``php_enable_php_fpm: false`` is the *dependency's* variable, read here."""
-    inventory = make_inventory(php_enable_php_fpm=False)
+    """``enable_php_fpm: false`` on the ``php`` role is the *dependency's*, read here."""
+    inventory = make_inventory(php={"enable_php_fpm": False})
     hosts = make_hosts(inventory)
 
     report = await run_role(inventory, hosts)
@@ -898,7 +892,7 @@ async def test_fpm_disabled_skips_the_fpm_handler(canned_fetch):
 
 async def test_webserver_disabled_skips_only_the_webserver_handler(canned_fetch):
     """A host can reach the FPM handler through the chain without restarting apache."""
-    inventory = make_inventory(php_enable_webserver=False)
+    inventory = make_inventory(php={"enable_webserver": False})
     hosts = make_hosts(inventory)
 
     report = await run_role(inventory, hosts)
@@ -908,15 +902,15 @@ async def test_webserver_disabled_skips_only_the_webserver_handler(canned_fetch)
 
 
 async def test_fpm_handler_state_selects_the_verb(canned_fetch):
-    """``php_fpm_handler_state`` -> the handler's verb, including ``started``->start."""
-    inventory = make_inventory(php_fpm_handler_state="reloaded")
+    """``fpm_handler_state`` -> the handler's verb, including ``started``->start."""
+    inventory = make_inventory(php={"fpm_handler_state": "reloaded"})
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
     assert "Reload php8.3-fpm (handler)" in handler_names(report)
     assert FPM_HANDLER not in handler_names(report)
 
-    inventory = make_inventory(php_fpm_handler_state="started")
+    inventory = make_inventory(php={"fpm_handler_state": "started"})
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -924,7 +918,7 @@ async def test_fpm_handler_state_selects_the_verb(canned_fetch):
 
 
 async def test_fpm_state_stopped_gates_off_the_fpm_handler(canned_fetch):
-    inventory = make_inventory(php_fpm_state="stopped")
+    inventory = make_inventory(php={"fpm_state": "stopped"})
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -932,14 +926,16 @@ async def test_fpm_state_stopped_gates_off_the_fpm_handler(canned_fetch):
     assert FPM_HANDLER not in handler_names(report)
 
 
-# --- variables and the nested prefix ---------------------------------------
+# --- variables and the role-name nesting -----------------------------------
 
 
 async def test_module_path_and_config_filename_overrides(canned_fetch):
     """The two ``vars/Debian.yml`` fallbacks are overridable, and every path moves."""
     inventory = make_inventory(
-        php_xdebug_module_path="/usr/lib/php/20230831",
-        php_xdebug_config_filename="99-xdebug.ini",
+        php_xdebug={
+            "module_path": "/usr/lib/php/20230831",
+            "config_filename": "99-xdebug.ini",
+        }
     )
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
@@ -954,7 +950,7 @@ async def test_module_path_and_config_filename_overrides(canned_fetch):
 
 
 async def test_xdebug_version_moves_the_source_tree_and_the_copy_target(canned_fetch):
-    inventory = make_inventory(php_xdebug_version="3.2.0")
+    inventory = make_inventory(php_xdebug={"version": "3.2.0"})
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
     host = hosts["ubuntu"]
@@ -968,30 +964,30 @@ async def test_xdebug_version_moves_the_source_tree_and_the_copy_target(canned_f
     ]
 
 
-def test_nested_prefix_keys_are_not_the_parents_typos():
-    """The pair ``php_`` / ``php_xdebug_`` nests, so the parent needs the escape.
+def test_role_names_keep_the_two_variable_sets_apart():
+    """The child's variables are the parent's neighbour, not the parent's typo.
 
-    Without ``nested_prefixes`` the child's variable is reported as the parent's
-    misspelling and neither role resolves -- design doc section 8.2, amended at T7.
+    The old example's ``php_`` / ``php_xdebug_`` prefix pair needed the
+    ``nested_prefixes`` escape for this; the entry's ``roles`` mapping gives each
+    role its own dict, so neither role ever reads the other's keys -- design doc
+    section 8.2, superseded by the nested layout.
     """
-    inventory = make_inventory(php_xdebug_version="3.2.0")
+    inventory = make_inventory(php_xdebug={"version": "3.2.0"})
 
-    with pytest.raises(RoleVarsError, match="php_xdebug_version"):
-        resolve_vars(PhpVars, "php_", inventory)
-
-    resolved = resolve_vars(PhpVars, "php_", inventory, nested_prefixes=("php_xdebug_",))
+    resolved = resolve_vars(PhpVars, "php", inventory)
 
     assert resolved["ubuntu"].enable_php_fpm is True
     assert resolved["web1"].enable_php_fpm is False
-    assert resolve_vars(PhpXdebugVars, "php_xdebug_", inventory)["ubuntu"].version == "3.2.0"
+    xv = resolve_vars(PhpXdebugVars, "php_xdebug", inventory)
+    assert xv["ubuntu"].version == "3.2.0"
 
 
 def test_the_parents_own_typo_still_raises():
-    """The escape hatch is narrow: a real misspelling is still an error."""
-    inventory = make_inventory(php_webserver_damon="apache2")
+    """The nesting is not an escape hatch: a real misspelling is still an error."""
+    inventory = make_inventory(php={"webserver_damon": "apache2"})
 
-    with pytest.raises(RoleVarsError, match="php_webserver_damon"):
-        resolve_vars(PhpVars, "php_", inventory, nested_prefixes=("php_xdebug_",))
+    with pytest.raises(RoleVarsError, match="webserver_damon"):
+        resolve_vars(PhpVars, "php", inventory)
 
 
 def test_the_ini_render_is_the_template_verbatim():

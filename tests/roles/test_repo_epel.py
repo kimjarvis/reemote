@@ -196,9 +196,10 @@ def _regular_file(host: SimulatedHost, path: str, data: bytes, mode: int) -> Non
 def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
     """A two-host inventory: one CentOS target, one Ubuntu host to be skipped.
 
-    The role variables ride on the entry as ``epel_``-prefixed extra keys, which
-    is what ``resolve_vars(EpelVars, "epel_", inventory)`` binds, so a test
-    changes a variable exactly the way an operator does. With no overrides the
+    The role variables ride on the entry's ``roles`` mapping under ``"epel"``,
+    written with the model's bare field names, which is what
+    ``resolve_vars(EpelVars, "epel", inventory)`` binds, so a test changes a
+    variable exactly the way an operator does. With no overrides the
     role defaults apply (EPEL enabled, stock repofile path).
     """
     entry: dict[str, Any] = {
@@ -210,8 +211,12 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
             "key_path": "~/.ssh/id_ed25519",
         },
         "group": "centos",
+        "roles": {
+            "epel": {
+            },
+        },
     }
-    entry.update(overrides)
+    entry["roles"]["epel"].update(overrides)
     return [
         entry,
         {
@@ -273,7 +278,7 @@ async def run_role(
     The same ``Host`` objects come back for every entry, so state survives from
     one pass to the next -- which is the whole point of the second run.
     """
-    v = resolve_vars(EpelVars, "epel_", inventory)
+    v = resolve_vars(EpelVars, "epel", inventory)
 
     def factory(entry: dict[str, Any]) -> SimulatedHost:
         return hosts[entry["host"]]
@@ -456,7 +461,7 @@ async def test_keyid_gate_skips_an_already_imported_key(canned_fetch, rpm_payloa
 
 
 async def test_disable_flag_rewrites_only_the_epel_section(canned_fetch, rpm_payload):
-    inventory = make_inventory(epel_repo_disable=True)
+    inventory = make_inventory(repo_disable=True)
     hosts = make_hosts(inventory, repo_present=True, key_imported=True)
     report = await run_role(inventory, hosts)
 
@@ -504,7 +509,7 @@ async def test_mode_drift_converges_via_the_file_task(canned_fetch, rpm_payload)
 async def test_custom_repofile_path_is_used_verbatim(canned_fetch, rpm_payload):
     """``epel_repofile_path`` redirects the guard, the toggle and the chmod."""
     other = "/etc/yum.repos.d/epel-local.repo"
-    inventory = make_inventory(epel_repofile_path=other)
+    inventory = make_inventory(repofile_path=other)
     hosts = make_hosts(inventory, repo_file=other, key_imported=True)
     report = await run_role(inventory, hosts)
 
@@ -595,8 +600,8 @@ def test_resolve_epel_disable_and_overrides():
 
 
 def test_inventory_binds_the_prefixed_variables():
-    inventory = make_inventory(epel_repo_disable="yes")
-    v = resolve_vars(EpelVars, "epel_", inventory)
+    inventory = make_inventory(repo_disable="yes")
+    v = resolve_vars(EpelVars, "epel", inventory)
 
     assert v["web1"].repo_disable is True
     # The other role's host keeps the defaults: no epel_ keys, nothing bound.
@@ -622,12 +627,12 @@ def test_vars_are_frozen_and_reject_unknown_fields():
         EpelVars(enable_epel=True)  # the Ansible name, not the field
 
 
-def test_prefixed_typo_is_reported_not_ignored():
-    inventory = make_inventory(epel_repo_disble=True)
+def test_typoed_role_variable_is_reported_not_ignored():
+    inventory = make_inventory(repo_disble=True)
     hosts = make_hosts(inventory)
 
-    with pytest.raises(RoleVarsError, match="epel_repo_disble"):
-        resolve_vars(EpelVars, "epel_", inventory)
+    with pytest.raises(RoleVarsError, match="repo_disble"):
+        resolve_vars(EpelVars, "epel", inventory)
     assert hosts["web1"].remote_files == {}
 
 

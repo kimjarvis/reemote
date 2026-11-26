@@ -189,9 +189,10 @@ def seed(host: SimulatedHost) -> None:
 def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
     """A two-host inventory: one Ubuntu target, one CentOS host that must be skipped.
 
-    The role variables ride as ``composer_``-prefixed extra keys, bound by
-    ``resolve_vars``; the one *unprefixed* variable, ``php_executable``, stays in
-    ``host.extra`` and is read raw by ``resolve_settings``.
+    The role variables ride in the entry's ``roles`` mapping under
+    ``"composer"``, bound by ``resolve_vars``; the one raw-extra knob,
+    ``php_executable``, stays a top-level entry key read from ``host.extra``
+    by ``resolve_settings``.
     """
     entry: dict[str, Any] = {
         "host": "ubuntu",
@@ -203,8 +204,12 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
         },
         "group": "ubuntu",
         "tags": ["ubuntu_host", "apt_package_manager"],
+        "roles": {
+            "composer": {
+            },
+        },
     }
-    entry.update(overrides)
+    entry["roles"]["composer"].update(overrides)
     return [
         entry,
         {
@@ -234,7 +239,7 @@ async def run_role(
     dry: bool = False,
 ) -> Any:
     """Resolve variables, build the sync factory's deploy, and run one wave pass."""
-    v = resolve_vars(ComposerVars, "composer_", inventory)
+    v = resolve_vars(ComposerVars, "composer", inventory)
 
     def factory(entry: dict[str, Any]) -> ComposerSimulatedHost:
         # The *same* host object every pass, so state survives the barriers.
@@ -263,7 +268,7 @@ def entry_names(report: Any) -> set[str]:
 
 async def test_first_pass_installs_composer(canned_fetch):
     """The full stream: installer download + run, phar move, require, profile."""
-    inventory = make_inventory(composer_global_packages=PACKAGES)
+    inventory = make_inventory(global_packages=PACKAGES)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
     host = hosts["ubuntu"]
@@ -296,7 +301,7 @@ async def test_first_pass_installs_composer(canned_fetch):
 
 
 async def test_non_ubuntu_host_is_never_touched(canned_fetch):
-    inventory = make_inventory(composer_global_packages=PACKAGES)
+    inventory = make_inventory(global_packages=PACKAGES)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -313,7 +318,7 @@ async def test_non_ubuntu_host_is_never_touched(canned_fetch):
 
 
 async def test_second_pass_changes_nothing(canned_fetch):
-    inventory = make_inventory(composer_global_packages=PACKAGES)
+    inventory = make_inventory(global_packages=PACKAGES)
     hosts = make_hosts(inventory)
     first = await run_role(inventory, hosts)
     assert changed_entries(first), "the first pass must actually deploy something"
@@ -335,7 +340,7 @@ async def test_dry_preview_mutates_nothing(canned_fetch):
     control-side -- the wave driver's dry pass never reaches the ``control``
     barrier, so it fetches nothing, runs no action and mutates no store.
     """
-    inventory = make_inventory(composer_global_packages=PACKAGES)
+    inventory = make_inventory(global_packages=PACKAGES)
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
     before_dirs = dict(host.directory_stats)
@@ -352,7 +357,7 @@ async def test_dry_preview_mutates_nothing(canned_fetch):
 
 
 async def test_auth_token_installs_auth_json(canned_fetch):
-    inventory = make_inventory(composer_github_oauth_token="ghp_seedtoken")
+    inventory = make_inventory(github_oauth_token="ghp_seedtoken")
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
     host = hosts["ubuntu"]
@@ -392,7 +397,7 @@ async def test_no_packages_skips_require_and_profile(canned_fetch):
 
 async def test_add_to_path_false_skips_the_profile(canned_fetch):
     inventory = make_inventory(
-        composer_global_packages=PACKAGES, composer_add_to_path=False
+        global_packages=PACKAGES, add_to_path=False
     )
     hosts = make_hosts(inventory)
     await run_role(inventory, hosts)
@@ -410,9 +415,9 @@ async def test_add_to_path_false_skips_the_profile(canned_fetch):
 
 async def test_version_pin_requires_an_empty_branch(canned_fetch):
     inventory = make_inventory(
-        composer_global_packages=PACKAGES,
-        composer_version="2.8.12",
-        composer_version_branch="",
+        global_packages=PACKAGES,
+        version="2.8.12",
+        version_branch="",
     )
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
@@ -428,9 +433,9 @@ async def test_version_pin_requires_an_empty_branch(canned_fetch):
 
 async def test_custom_paths(canned_fetch):
     inventory = make_inventory(
-        composer_global_packages=PACKAGES,
-        composer_path="/opt/bin/composer",
-        composer_home_path="/opt/composer-home",
+        global_packages=PACKAGES,
+        path="/opt/bin/composer",
+        home_path="/opt/composer-home",
     )
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
@@ -461,7 +466,7 @@ async def test_custom_paths(canned_fetch):
 
 async def test_already_installed_skips_the_installer(canned_fetch):
     """A converged binary skips the whole installer half -- the fetch included."""
-    inventory = make_inventory(composer_global_packages=PACKAGES)
+    inventory = make_inventory(global_packages=PACKAGES)
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
     _plant_file(host, DEST, FAKE_PHAR, 755)
@@ -483,8 +488,11 @@ async def test_already_installed_skips_the_installer(canned_fetch):
 # --- the pure helpers, unit-tested directly --------------------------------------
 
 
-def _host(**overrides: Any) -> SimulatedHost:
-    return SimulatedHost.from_inventory(make_inventory(**overrides)[0])
+def _host(**extra: Any) -> SimulatedHost:
+    """A host from one entry; ``extra`` rides the raw top-level extra channel."""
+    entry = make_inventory()[0]
+    entry.update(extra)
+    return SimulatedHost.from_inventory(entry)
 
 
 def test_resolve_settings_defaults():

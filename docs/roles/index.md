@@ -13,7 +13,7 @@ from reemote.roles import NfsVars, nfs
 
 
 async def main(inventory):
-    vars_set = resolve_vars(NfsVars, "nfs_", inventory)  # the inventory's nfs_ keys
+    vars_set = resolve_vars(NfsVars, "nfs", inventory)  # the entry's nfs role mapping
     report, hosts = await run_waves(inventory, nfs(vars_set))
     print(report.tree())
 ```
@@ -155,8 +155,8 @@ from reemote.roles import ApacheVars, PhpVars, apache, php
 
 
 async def main(inventory):
-    apache_vars = resolve_vars(ApacheVars, "apache_", inventory)
-    php_vars = resolve_vars(PhpVars, "php_", inventory)
+    apache_vars = resolve_vars(ApacheVars, "apache", inventory)
+    php_vars = resolve_vars(PhpVars, "php", inventory)
     versions: dict[str, str] = {}
 
     def site(host):
@@ -184,13 +184,13 @@ which composes `apache` and `php` and consumes their outputs to drive the parent
 including the detail above, that a dry pass never publishes outputs because the
 body parks on the first barrier before the capture line runs. The barrier and
 `scoped` contract is [Barriers](../stages.md); the variables channel — model
-defaults, then the inventory's prefixed keys, then call-site `overrides` — is
+defaults, then the entry's role mapping, then call-site `overrides` — is
 [Role variables](../rolevars.md#precedence).
 
 ## What every role guarantees
 
 - **Typed variables, not `host.extra` spelunking.** Each `<Role>Vars` is a frozen
-  pydantic model with unprefixed fields, and a bad value raises in `resolve_vars`
+  pydantic model with bare field names, and a bad value raises in `resolve_vars`
   before any host is contacted.
 - **Stable request names.** The `name=` on every request is the notification
   channel `changed_hosts` matches on, so a rename is a behaviour change; the

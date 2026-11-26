@@ -2,9 +2,10 @@
 
 `reemote.rolevars` turns an inventory into one resolved, typed variable model
 per host. A role's static inputs are a frozen `pydantic` model the role module
-defines — one field per knob, each with a default, and each named **without** a
-prefix. [`resolve_vars`][reemote.rolevars.resolve_vars] binds an inventory to
-that model and returns a [`VarsSet`][reemote.rolevars.VarsSet]; a role factory
+defines — one field per knob, each with a default, all under the model's **bare**
+field names. [`resolve_vars`][reemote.rolevars.resolve_vars] binds an inventory
+entry's role mapping to that model and returns a
+[`VarsSet`][reemote.rolevars.VarsSet]; a role factory
 closes over the set and reads its own host's model with
 [`VarsSet.for_host`][reemote.rolevars.VarsSet.for_host]. The models themselves
 belong to each role, not to this module — it is only the framework that resolves
@@ -19,7 +20,7 @@ class ApacheVars(BaseModel):
     server_name: str = "localhost"
     modules: tuple[str, ...] = ()
 
-vars = resolve_vars(ApacheVars, "apache_", inventory)
+vars = resolve_vars(ApacheVars, "apache", inventory)
 
 def apache(v: VarsSet[ApacheVars]):
     def deploy(host):
@@ -34,51 +35,34 @@ For every inventory entry, [`resolve_vars`][reemote.rolevars.resolve_vars]
 layers three sources, lowest to highest:
 
 ```text
-model field defaults  <  the entry's prefixed extra keys  <  overrides
+model field defaults  <  the entry's roles[role] mapping  <  overrides
 ```
 
 Each entry is validated through
-[`InventoryEntry`][reemote.hosts.InventoryEntry] first, so the *extra* channel
-is exactly the keys the inventory schema did not claim
-(`InventoryEntry.model_extra`). The prefix is what binds an extra key to a field:
-`apache_listen_port: 8080` in the inventory sets `ApacheVars.listen_port`. Keys
-that do **not** start with the prefix are ignored — they belong to another role,
-or stay available as the raw `host.extra` — so one inventory can carry several
-roles' variables side by side without collision.
+[`InventoryEntry`][reemote.hosts.InventoryEntry] first, which claims the
+`roles` key — a mapping of role name to that role's variables — so the binding
+channel is exactly `entry["roles"][role]`. The keys there are bare field names:
+`listen_port: 8080` under the inventory entry's `apache` role mapping sets
+`ApacheVars.listen_port`. Another role's variables live under its own role name
+in the same dict, so one inventory can carry several roles' variables side by
+side without collision — each mapping is its own namespace, and there is no
+key-prefix discipline anywhere.
 
 `overrides` are bare field names merged last, and apply to **every host
 uniformly**: a role factory closes over one `VarsSet` and sees no single host, so
-a value that must vary per host belongs in the inventory's extra channel, not in
+a value that must vary per host belongs in the entry's role mapping, not in
 `overrides`.
-
-## Nested prefixes
-
-Two roles whose prefixes nest — `php_` and `php_xdebug_`, a dependency and the role
-that runs it — share one key namespace: `php_xdebug_version` starts with `php_`
-without being a `PhpVars` field. Under the typo rule alone, the parent role would
-report the child role's variable as a spelling mistake. `nested_prefixes` names
-the *more specific* prefixes resolved from the same inventory, and a key matching
-one of them is skipped before the field check, so it neither binds nor raises:
-
-```python
-php_v = resolve_vars(PhpVars, "php_", inventory, nested_prefixes=("php_xdebug_",))
-xdebug_v = resolve_vars(PhpXdebugVars, "php_xdebug_", inventory)
-```
-
-Only the parent side needs the argument — the child's own prefix matches its keys
-directly, and the parent's unrelated `php_` keys stay bound.
 
 ## Errors
 
-- A key that *does* carry the prefix but names no field is a spelling mistake,
-  not something to ignore, so binding raises
+- A key inside the entry's role mapping that names no field of the model is a
+  spelling mistake, not something to ignore, so binding raises
   [`RoleVarsError`][reemote.rolevars.RoleVarsError] naming the offending key and
-  every valid prefixed field name. It subclasses `ValueError`, like the other
-  inventory-validation failures. A `nested_prefixes` match is exempt: that key
-  belongs to a more specific role, not to this one's typo list.
-- A bad *value* — `apache_listen_port: "eighty"` — raises pydantic's
-  `ValidationError` naming the field, since the merged mapping is validated into
-  the model.
+  every valid field name of the role. It subclasses `ValueError`, like the other
+  inventory-validation failures.
+- A bad *value* — `listen_port: "eighty"` in the `apache` role mapping — raises
+  pydantic's `ValidationError` naming the field, since the merged mapping is
+  validated into the model.
 
 ## Hashability
 

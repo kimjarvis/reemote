@@ -7,7 +7,7 @@
 # ``systemd-timesyncd`` unit when it survives the install, brings the daemon up (or
 # down) per ``enabled`` and optionally templates its configuration file.
 # :func:`ntp` is the whole task list and :class:`NtpVars` is ``defaults/main.yml``,
-# bound from the inventory's ``ntp_``-prefixed keys by
+# bound from the inventory entry's ``ntp`` role mapping by
 # :func:`~reemote.rolevars.resolve_vars`.
 #
 # Target: hosts in the ``"Ubuntu"`` OS family. A host outside the family returns
@@ -287,10 +287,10 @@ maxdistance {{ ntp_chrony_maxdistance }}
 class NtpVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``ntp_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``ntp_timezone`` in the inventory to
-    :attr:`timezone`, so an inventory written for the role needs no change. The four
-    ``set_fact`` overrides (:attr:`daemon`, :attr:`package`, :attr:`config_file`,
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``ntp`` role mapping, so ``timezone`` there sets
+    :attr:`timezone`. The four ``set_fact`` overrides (:attr:`daemon`,
+    :attr:`package`, :attr:`config_file`,
     :attr:`driftfile`) default to ``None`` -- "derive from the gathered vars table",
     exactly as the role's ``when: ... is not defined`` guards.
 
@@ -703,7 +703,7 @@ def ntp(v: VarsSet[NtpVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`NtpVars` per host
-            (``resolve_vars(NtpVars, "ntp_", inventory)``).
+            (``resolve_vars(NtpVars, "ntp", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves`. It publishes no outputs -- no other

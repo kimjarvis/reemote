@@ -16,11 +16,11 @@ passes, because the role is two factories:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables once with ``resolve_vars``: the inventory
-   entry's ``postgresql_``-prefixed keys (``postgresql_user``,
-   ``postgresql_databases``, ``postgresql_hba_entries`` and the rest of
-   :class:`~reemote.roles.postgresql.PostgresqlVars`) are bound and stripped, and
-   a bad value raises before any host is contacted. Both passes share this one
-   ``VarsSet``.
+   entry's ``postgresql`` role mapping (``user``, ``databases``,
+   ``hba_entries`` and the rest of the
+   :class:`~reemote.roles.postgresql.PostgresqlVars` fields) is bound under the
+   bare field names, and a bad value raises before any host is contacted. Both
+   passes share this one ``VarsSet``.
 3. **Pass A** -- ``postgresql(vars_set)`` on the ordinary inventory view, running
    as root (``sudo=True``): the distribution and FIPS barriers, install,
    initialize, the ``stat`` gate and ``initdb``, configure, the service and the
@@ -45,7 +45,7 @@ The second inventory is a copy of the first with one added key per entry::
 
     {**entry, "privilege": {**entry.get("privilege", {}), "sudo_user": <user>}}
 
-where ``<user>`` is that host's resolved ``postgresql_user`` (``postgres`` by
+where ``<user>`` is that host's resolved ``user`` (``postgres`` by
 default). Everything else -- connection, family, tags -- is carried through
 unchanged, so pass B talks to exactly the same machines as pass A.
 
@@ -84,10 +84,10 @@ users, databases and privileges already exist.
 
 The shipped ``inventory.json``'s ``web1`` and ``web2`` entries are in the
 ``"RedHat"`` family, so they are the ones this role acts on; their
-``postgresql_`` keys decide the databases, users and ``pg_hba.conf`` rows. Hosts
-outside the ``"RedHat"`` family emit nothing at all -- the role's family guard is
-its body's opening ``if``, so such a host returns before its first ``yield`` and
-appears in no wave of either pass.
+``postgresql`` role mappings decide the databases, users and ``pg_hba.conf``
+rows. Hosts outside the ``"RedHat"`` family emit nothing at all -- the role's
+family guard is its body's opening ``if``, so such a host returns before its
+first ``yield`` and appears in no wave of either pass.
 """
 
 import asyncio
@@ -115,10 +115,10 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted: the
-        # inventory's postgresql_-prefixed keys over the model defaults. A
+        # inventory's postgresql role mappings over the model defaults. A
         # rejected value raises here -- a pydantic ValidationError, which is a
         # ValueError -- not mid-run. Both passes share this one VarsSet.
-        vars_set = resolve_vars(PostgresqlVars, "postgresql_", inventory)
+        vars_set = resolve_vars(PostgresqlVars, "postgresql", inventory)
 
         # --- Pass A: the system half, on the ordinary (root) inventory view. ---
         # A plain (non-async) factory, so it is called, not awaited. run_waves
@@ -142,7 +142,7 @@ async def main() -> None:
 
         # --- Pass B: the data half, on a postgres-privilege inventory view. ---
         # A copy of the inventory with one added key per entry: privilege.sudo_user
-        # names the resolved postgresql_user, so the catalog read and the
+        # names the resolved user, so the catalog read and the
         # users/databases/privileges operations run as that OS user. Run-as users
         # come from the inventory, never from a request, which is exactly why this
         # is a second pass and not a mid-run switch.

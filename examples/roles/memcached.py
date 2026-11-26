@@ -15,10 +15,10 @@ no framework:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``memcached_``-prefixed keys (``memcached_port``, ``memcached_listen_ip`` --
-   the role variables of :class:`~reemote.roles.memcached.MemcachedVars`) are
-   bound and stripped, the call-site ``MEMCACHED_OVERRIDES`` below wins over
-   them, and a bad value raises before any host is contacted.
+   ``memcached`` role mapping (``port``, ``listen_ip`` --
+   the variables of :class:`~reemote.roles.memcached.MemcachedVars`) is
+   bound under the bare field names, the call-site ``MEMCACHED_OVERRIDES`` below
+   wins over them, and a bad value raises before any host is contacted.
 3. Build the deploy -- ``memcached(vars_set)`` is the role's whole task list and
    its handler, one per-host generator -- and drive it with ``run_waves``, the
    barrier-aware driver a role needs: the ``checkpoint("configure done")`` that
@@ -47,10 +47,10 @@ The call-site ``overrides`` channel
 
 ``MEMCACHED_OVERRIDES`` raises ``memory_limit`` to ``128``, so the demonstration
 writes a config that visibly differs from the packaged default and the
-``restart memcached`` handler has something to fire on. Overrides use the
-model's UNPREFIXED field names -- the ``memcached_`` prefix only binds
-inventory keys, and is stripped before validation -- and win over any
-``memcached_``-prefixed key in the inventory for every host. Everything else
+``restart memcached`` handler has something to fire on. Overrides and the
+inventory mapping both use the model's bare field names -- there is no key
+prefix anywhere -- and the overrides win over the inventory's ``memcached``
+role mapping for every host. Everything else
 stays default: the ``memcache`` user comes from the role's ``vars/Debian.yml``
 default, and the loopback ``listen_ip`` keeps the daemon off the network.
 
@@ -94,9 +94,8 @@ from reemote.roles import MemcachedVars, memcached
 # ``memory_limit`` makes the rendered config differ from the packaged default,
 # so the first apply demonstrably writes the file and demonstrably restarts the
 # service through the checkpoint -> handler wave. Overrides use the model's
-# UNPREFIXED field names -- the ``memcached_`` prefix only binds inventory
-# keys, and is stripped before validation -- and win over any
-# ``memcached_``-prefixed key in the inventory for every host.
+# bare field names -- the same names the inventory's ``memcached`` role mapping
+# uses -- and win over it for every host.
 MEMCACHED_OVERRIDES = {
     "memory_limit": 128,
 }
@@ -110,11 +109,11 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted: the
-        # inventory's memcached_-prefixed keys, overlaid with the call-site
+        # inventory's memcached role mapping, overlaid with the call-site
         # overrides. A rejected value raises here -- a pydantic ValidationError,
         # which is a ValueError -- not mid-run.
         vars_set = resolve_vars(
-            MemcachedVars, "memcached_", inventory, overrides=MEMCACHED_OVERRIDES
+            MemcachedVars, "memcached", inventory, overrides=MEMCACHED_OVERRIDES
         )
         # The role's whole task list and handler: one per-host generator,
         # barrier and all. A plain (non-async) factory, so it is called, not

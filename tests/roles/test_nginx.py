@@ -110,8 +110,9 @@ RELOAD_HANDLER = "Reload nginx (handler)"
 def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
     """A two-host inventory: one Ubuntu target, one CentOS host to be skipped.
 
-    The role variables ride on the entry as ``nginx_``-prefixed extra keys, which
-    is what ``resolve_vars(NginxVars, "nginx_", inventory)`` binds, so a test
+    The role variables ride on the entry's ``roles`` mapping under ``"nginx"``,
+    written with the model's bare field names, which is what
+    ``resolve_vars(NginxVars, "nginx", inventory)`` binds, so a test
     changes a variable exactly the way an operator does. The base entry exercises
     the non-default branches: the PPA (and its reinstall split), the
     default-vhost removal (the restart handler), a present vhost with the
@@ -127,30 +128,34 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
             "key_path": "~/.ssh/id_ed25519",
         },
         "group": "ubuntu",
-        "nginx_ppa_use": True,
-        "nginx_remove_default_vhost": True,
-        "nginx_extra_conf_options": "worker_rlimit_nofile 8192;",
-        "nginx_extra_http_options": "proxy_buffering off;",
-        "nginx_vhosts": [
-            {
-                "server_name": "example.com",
-                "server_name_redirect": "www.example.com",
-                "root": "/var/www/example",
-                "index": "index.php index.html index.htm",
-                "extra_parameters": "location / {\n    try_files $uri $uri/ =404;\n}",
+        "roles": {
+            "nginx": {
+                "ppa_use": True,
+                "remove_default_vhost": True,
+                "extra_conf_options": "worker_rlimit_nofile 8192;",
+                "extra_http_options": "proxy_buffering off;",
+                "vhosts": [
+                        {
+                            "server_name": "example.com",
+                            "server_name_redirect": "www.example.com",
+                            "root": "/var/www/example",
+                            "index": "index.php index.html index.htm",
+                            "extra_parameters": "location / {\n    try_files $uri $uri/ =404;\n}",
+                        },
+                        {"server_name": "retired.example.com", "state": "absent"},
+                    ],
+                "upstreams": [
+                        {
+                            "name": "myapp",
+                            "strategy": "ip_hash",
+                            "servers": ["srv1.example.com", "srv2.example.com weight=3"],
+                            "keepalive": 16,
+                        }
+                    ],
             },
-            {"server_name": "retired.example.com", "state": "absent"},
-        ],
-        "nginx_upstreams": [
-            {
-                "name": "myapp",
-                "strategy": "ip_hash",
-                "servers": ["srv1.example.com", "srv2.example.com weight=3"],
-                "keepalive": 16,
-            }
-        ],
+        },
     }
-    entry.update(overrides)
+    entry["roles"]["nginx"].update(overrides)
     return [
         entry,
         {
@@ -233,7 +238,7 @@ async def run_role(
     The same ``Host`` objects come back for every entry, so state survives from
     one pass to the next -- which is the whole point of the second run.
     """
-    v = resolve_vars(NginxVars, "nginx_", inventory)
+    v = resolve_vars(NginxVars, "nginx", inventory)
 
     def factory(entry: dict[str, Any]) -> SimulatedHost:
         return hosts[entry["host"]]
@@ -316,7 +321,7 @@ async def test_first_pass_installs_and_configures_nginx():
 
     # The rendered nginx.conf landed, with the fact-fed worker_processes (quoted,
     # as the role's folded scalar spells it), the upstream and the option blocks.
-    v = resolve_vars(NginxVars, "nginx_", inventory)["ubuntu"]
+    v = resolve_vars(NginxVars, "nginx", inventory)["ubuntu"]
     plan = configure_plan(v, 4)
     conf = conf_text(host)
     assert conf == plan.conf_content
@@ -513,12 +518,12 @@ async def test_default_path_skips_the_ppa_and_the_restart_handler():
     handler -- notified only by the default-vhost removal -- does not.
     """
     inventory = make_inventory(
-        nginx_ppa_use=False,
-        nginx_remove_default_vhost=False,
-        nginx_vhosts=[],
-        nginx_upstreams=[],
-        nginx_extra_conf_options="",
-        nginx_extra_http_options="",
+        ppa_use=False,
+        remove_default_vhost=False,
+        vhosts=[],
+        upstreams=[],
+        extra_conf_options="",
+        extra_http_options="",
     )
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
@@ -557,7 +562,7 @@ async def test_stopped_service_suppresses_the_reload_handler():
     by the default-vhost removal) still fires and -- exactly like Ansible's
     ``service: state=restarted`` -- starts the stopped unit.
     """
-    inventory = make_inventory(nginx_service_state="stopped")
+    inventory = make_inventory(service_state="stopped")
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
     host = hosts["ubuntu"]
@@ -757,10 +762,10 @@ def test_vars_are_frozen_and_reject_unknown_fields():
 def test_vhost_sequence_binds_from_lists():
     v = resolve_vars(
         NginxVars,
-        "nginx_",
+        "nginx",
         make_inventory(
-            nginx_vhosts=[{"server_name": "a.example.com"}],
-            nginx_upstreams=[{"name": "myapp", "servers": ["srv1.example.com"]}],
+            vhosts=[{"server_name": "a.example.com"}],
+            upstreams=[{"name": "myapp", "servers": ["srv1.example.com"]}],
         ),
     )["ubuntu"]
 
@@ -770,7 +775,7 @@ def test_vhost_sequence_binds_from_lists():
 
 def test_inventory_binds_the_prefixed_variables():
     v = resolve_vars(
-        NginxVars, "nginx_", make_inventory(nginx_worker_connections="2048")
+        NginxVars, "nginx", make_inventory(worker_connections="2048")
     )
 
     assert v["ubuntu"].worker_connections == "2048"
@@ -778,12 +783,12 @@ def test_inventory_binds_the_prefixed_variables():
     assert v["web1"] == NginxVars()
 
 
-def test_prefixed_typo_is_reported_not_ignored():
-    inventory = make_inventory(nginx_worker_conections="2048")
+def test_typoed_role_variable_is_reported_not_ignored():
+    inventory = make_inventory(worker_conections="2048")
     hosts = make_hosts(inventory)
 
-    with pytest.raises(RoleVarsError, match="nginx_worker_conections"):
-        resolve_vars(NginxVars, "nginx_", inventory)
+    with pytest.raises(RoleVarsError, match="worker_conections"):
+        resolve_vars(NginxVars, "nginx", inventory)
     assert hosts["ubuntu"].apt_packages == {}
 
 

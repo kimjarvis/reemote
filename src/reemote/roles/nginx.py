@@ -10,8 +10,8 @@
 # removal, the legacy ``vhosts.conf`` cleanup, the rendered ``nginx.conf``
 # installed behind ``nginx -t`` validation, the service's running/enabled state,
 # and the role's ``restart nginx`` / ``reload nginx`` handlers. :func:`nginx` is
-# the whole task list, and :class:`NginxVars` is ``defaults/main.yml``, bound from
-# the inventory's ``nginx_``-prefixed keys by
+# the whole task list, and :class:`NginxVars` is ``defaults/main.yml``, bound
+# from the inventory entry's ``nginx`` role mapping by
 # :func:`~reemote.rolevars.resolve_vars`.
 # 
 # Target: hosts in the ``"Ubuntu"`` OS family. The role's RedHat, Suse, Archlinux,
@@ -339,12 +339,11 @@ class Upstream(BaseModel):
 class NginxVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``nginx_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``nginx_worker_connections`` in
-    the inventory to :attr:`worker_connections`, so an inventory written for the
-    role needs no change. Every Ansible default is carried over, including the
-    two inert ones (:attr:`yum_repo_enabled`, :attr:`zypper_repo_enabled`) so
-    such a key still binds.
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``nginx`` role mapping, so ``worker_connections`` there
+    sets :attr:`worker_connections`. Every Ansible default is carried over,
+    including the two inert ones (:attr:`yum_repo_enabled`,
+    :attr:`zypper_repo_enabled`) so such a key still binds.
 
     Two sentinels: :attr:`user` ``None`` reproduces the
     ``set_fact: nginx_user={{ __nginx_user }}`` fallback, and
@@ -355,8 +354,8 @@ class NginxVars(BaseModel):
     every run).
 
     The values that reach a template verbatim are ``str``, with
-    ``coerce_numbers_to_str`` so an inventory writing ``nginx_keepalive_timeout:
-    75`` renders ``75`` exactly as Jinja would render the integer. Sequences are
+    ``coerce_numbers_to_str`` so an inventory writing ``keepalive_timeout: 75``
+    renders ``75`` exactly as Jinja would render the integer. Sequences are
     ``tuple``, never ``list``: the model is frozen, and a value that reaches
     :func:`~reemote.core.op` must hash (design doc section 8.1).
     """
@@ -818,7 +817,7 @@ def nginx(v: VarsSet[NginxVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`NginxVars` per host
-            (``resolve_vars(NginxVars, "nginx_", inventory)``).
+            (``resolve_vars(NginxVars, "nginx", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves` that returns ``None`` for every

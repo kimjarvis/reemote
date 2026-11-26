@@ -15,11 +15,12 @@ no framework:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``php_``-prefixed keys (``php_memory_limit``, ``php_enable_php_fpm``,
-   ``php_webserver_daemon`` and the rest of
-   :class:`~reemote.roles.php.PhpVars`) are bound and stripped, and a bad value
-   raises before any host is contacted. No call-site ``overrides`` are passed
-   here, so precedence is just model defaults < the inventory's own keys.
+   ``php`` role mapping (``memory_limit``, ``enable_php_fpm``,
+   ``webserver_daemon`` and the rest of the
+   :class:`~reemote.roles.php.PhpVars` fields) is bound under the bare field
+   names, and a bad value raises before any host is contacted. No call-site
+   ``overrides`` are passed here, so precedence is just model defaults < the
+   inventory role mapping.
 3. Build the deploy -- ``php(vars_set)`` is the role's whole task list, one
    per-host generator -- and drive it with ``run_waves``, the barrier-aware
    driver a role needs: its distribution read, its stray-config sweeps, its
@@ -55,12 +56,12 @@ and queues no handler, because the packages are installed, the cache stamp is
 fresh, the packaged inis are already gone, every rendered file is byte-identical,
 the pool is where it belongs and the unit is running and enabled.
 
-The ``ubuntu`` entry of the shipped ``inventory.json`` carries no ``php_`` keys,
-so the role's defaults apply: FPM **off**, ``memory_limit = 256M``, the three
-version-derived conf paths, and ``apache2`` as the webserver the handler
-restarts. Hosts outside the ``"Ubuntu"`` family emit nothing at all -- the role's
-family guard is its body's opening ``if``, so such a host returns before its
-first ``yield`` and appears in no wave.
+The ``ubuntu`` entry of the shipped ``inventory.json`` carries no ``php`` role
+mapping, so the role's defaults apply: FPM **off**, ``memory_limit = 256M``,
+the three version-derived conf paths, and ``apache2`` as the webserver the
+handler restarts. Hosts outside the ``"Ubuntu"`` family emit nothing at all --
+the role's family guard is its body's opening ``if``, so such a host returns
+before its first ``yield`` and appears in no wave.
 """
 
 import asyncio
@@ -88,10 +89,10 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted: the
-        # inventory's php_-prefixed keys over the model defaults. A rejected
+        # inventory's php role mappings over the model defaults. A rejected
         # value raises here -- a pydantic ValidationError, which is a ValueError
         # -- not mid-run.
-        vars_set = resolve_vars(PhpVars, "php_", inventory)
+        vars_set = resolve_vars(PhpVars, "php", inventory)
         # The role's whole task list: one per-host generator, barriers and all.
         # A plain (non-async) factory, so it is called, not awaited.
         deploy = php(vars_set)

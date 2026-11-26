@@ -111,9 +111,9 @@ def key_fetch(monkeypatch):
 def make_inventory(**overrides) -> list[dict]:
     """A two-host inventory: one Ubuntu target, one CentOS host that must be skipped.
 
-    The role variables ride as ``docker_``-prefixed extra keys, bound by
-    ``resolve_vars``. The base entry sets ``docker_users`` and
-    ``docker_daemon_options`` so the default path exercises the getent gate,
+    The role variables ride in the entry's ``roles`` mapping under ``"docker"``,
+    bound by ``resolve_vars``. The base entry sets ``users`` and
+    ``daemon_options`` so the default path exercises the getent gate,
     the memberships, and the ``restart docker`` handler the daemon.json write
     notifies; the overrides drive the non-default branches.
     """
@@ -127,10 +127,14 @@ def make_inventory(**overrides) -> list[dict]:
         },
         "group": "ubuntu",
         "tags": ["ubuntu_host", "apt_package_manager"],
-        "docker_users": ["alice"],
-        "docker_daemon_options": DAEMON_OPTIONS,
+        "roles": {
+            "docker": {
+                "users": ["alice"],
+                "daemon_options": DAEMON_OPTIONS,
+            },
+        },
     }
-    entry.update(overrides)
+    entry["roles"]["docker"].update(overrides)
     return [
         entry,
         {
@@ -187,7 +191,7 @@ async def run_role(
     inventory: list[dict], hosts: dict[str, SimulatedHost], *, dry: bool = False
 ):
     """Resolve variables, build the sync factory's deploy, and run one wave pass."""
-    v = resolve_vars(DockerVars, "docker_", inventory)
+    v = resolve_vars(DockerVars, "docker", inventory)
 
     def factory(entry: dict) -> SimulatedHost:
         # The *same* host object every pass, so state survives the barriers.
@@ -281,7 +285,7 @@ async def test_stream_is_two_checkpoints_and_a_groups_gate(key_fetch):
 async def test_no_users_skips_the_groups_gate(key_fetch):
     # Without docker_users there is no getent task in the role, so the body
     # ends at the handler: the gate barrier and the membership wave vanish.
-    inventory = make_inventory(docker_users=[])
+    inventory = make_inventory(users=[])
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -435,7 +439,7 @@ async def test_handler_reads_the_packages_checkpoint_too(key_fetch):
 async def test_restart_handler_state_selects_the_verb(key_fetch, state, entry):
     # restart_handler_state maps through HANDLER_ACTIONS to the service_handler
     # verb, and each host reads its own -- the old by_action partition is gone.
-    inventory = make_inventory(docker_restart_handler_state=state)
+    inventory = make_inventory(restart_handler_state=state)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
     log = ubuntu_log(report)
@@ -448,7 +452,7 @@ async def test_restart_handler_state_selects_the_verb(key_fetch, state, entry):
 async def test_service_manage_false_suppresses_service_and_handler(key_fetch):
     # The role gates BOTH the service task and the handler on
     # docker_service_manage; the install and daemon.json still apply.
-    inventory = make_inventory(docker_service_manage=False)
+    inventory = make_inventory(service_manage=False)
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
     report = await run_role(inventory, hosts)
@@ -472,10 +476,11 @@ async def test_add_repo_false_removes_the_repo(key_fetch):
     assert SOURCES_PATH in host.existing_files
     assert len(key_fetch) == 1
 
-    # Flipping docker_add_repo removes the sources file and the managed
-    # keyring, and the removal fetches nothing -- a key is only needed to sign.
+    # Flipping the ``add_repo`` role variable removes the sources file and the
+    # managed keyring, and the removal fetches nothing -- a key is only
+    # needed to sign.
     host.apt_update_stamp = None  # so the chained refresh below is observable
-    inventory[0]["docker_add_repo"] = False
+    inventory[0]["roles"]["docker"]["add_repo"] = False
     await run_role(inventory, hosts)
     assert SOURCES_PATH not in host.existing_files
     assert KEYRING_PATH not in host.remote_files
@@ -495,7 +500,7 @@ async def test_add_repo_false_removes_the_repo(key_fetch):
 async def test_start_command_lands_as_a_dropin(key_fetch):
     # D2: the override is a drop-in with the empty ExecStart= line first, not
     # an in-place patch of the packaged unit.
-    inventory = make_inventory(docker_service_start_command=START_COMMAND)
+    inventory = make_inventory(service_start_command=START_COMMAND)
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
     report = await run_role(inventory, hosts)

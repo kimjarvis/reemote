@@ -6,7 +6,7 @@
 | Module | [`reemote.roles.nfs`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/nfs.py) |
 | Runner | [`examples/roles/nfs.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/nfs.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Variables | `nfs_`-prefixed inventory keys → `NfsVars` |
+| Variables | the entry's `nfs` role mapping → `NfsVars` |
 
 <!---
 | Waves | `2` on a changing pass (requests, then the handler command), `1` once converged — one checkpoint, one `act`, no facts |
@@ -101,7 +101,7 @@ spool-and-install (`files.install`), so the transfer itself never elevates.
 
 ### Role variables (`defaults/main.yml`)
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `exports` | `tuple[str, …]` | `()` — one line per export, each beginning with the directory to export, e.g. `"/srv/nfs 192.0.2.0/24(rw,sync,no_subtree_check)"`. The directories are created (mode untouched), the lines are rendered into `/etc/exports`, and a non-empty list starts and enables `nfs-kernel-server` | `nfs_exports` |
 | `rpcbind_state` | `str` | `started` — **inert**: read only by `setup-RedHat.yml`, which is scoped out (§9); carried so an inventory that sets it still binds | `nfs_rpcbind_state` |
@@ -110,22 +110,22 @@ spool-and-install (`files.install`), so the transfer itself never elevates.
 <!---
 ### Precedence and validation
 
-Precedence is `model defaults < inventory extra < overrides`. Validation is
+Precedence is `model defaults < inventory role mapping < overrides`. Validation is
 fail-fast at `resolve_vars`, before any host is contacted: an entry that is not
 a string, or one whose first whitespace-delimited token is empty, is rejected —
 Ansible's `map('first')` turns the same value into `Undefined` and fails the
-`file` task instead (D6). `nfs_exports` written as a JSON list binds to a
-`tuple`, because every value that reaches `op()` has to hash (§8.1). An
-unprefixed misspelling such as `nfs_exportss` raises `RoleVarsError` naming the
-valid keys.
+`file` task instead (D6). An `exports` list written as JSON binds to a
+`tuple`, because every value that reaches `op()` has to hash (§8.1). A key
+naming no field in the role mapping, such as `exportss`, raises `RoleVarsError`
+naming the valid keys.
 
 ## 5. Run it
 
 The role is library code; `examples/roles/nfs.py` is the runnable artifact — a
 standalone program with its own `main()`, no shared runner. It loads and
 validates `inventory.json` from the current working directory, resolves the
-role's variables (the model defaults overlaid with the entry's `nfs_`-prefixed
-keys), builds the deploy from the `nfs` factory and drives it with `run_waves` —
+role's variables (the model defaults overlaid with the entry's `nfs` role
+mapping), builds the deploy from the `nfs` factory and drives it with `run_waves` —
 a `dry=True` preview, then the real apply — printing the wave tree each time:
 
 ```python
@@ -135,7 +135,7 @@ from reemote.roles import NfsVars, nfs
 async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
-    vars_set = resolve_vars(NfsVars, "nfs_", inventory)          # no overrides
+    vars_set = resolve_vars(NfsVars, "nfs", inventory)          # no overrides
     deploy = nfs(vars_set)                                       # plain factory
     report, _hosts = await run_waves(inventory, deploy, dry=True)   # parks at the checkpoint
     print(report.tree())
@@ -149,11 +149,11 @@ From the repository root:
 uv run python examples/roles/nfs.py
 ```
 
-The runner passes no call-site `overrides`, so the role's own default applies:
-`nfs_exports: []` writes `/etc/exports` with nothing but the template's comment
+The runner passes no call-site `overrides`, so the role's own default applies: an
+empty `exports` writes `/etc/exports` with nothing but the template's comment
 header and leaves the service task skipped, exactly as the role does with no
-variables. To demonstrate the export path, add the key to the inventory entry —
-reemote's `host_vars` mechanism:
+variables. To demonstrate the export path, add the key to the inventory entry's
+`nfs` role mapping — reemote's `host_vars` mechanism:
 
 ```json
 {
@@ -162,7 +162,7 @@ reemote's `host_vars` mechanism:
   "connection": {"address": "192.168.0.181", "username": "supervisor",
                  "key_path": "~/.ssh/id_ed25519"},
   "group": "ubuntu",
-  "nfs_exports": ["/srv/nfs 192.0.2.0/24(rw,sync,no_subtree_check)"]
+  "roles": {"nfs": {"exports": ["/srv/nfs 192.0.2.0/24(rw,sync,no_subtree_check)"]}}
 }
 ```
 
@@ -195,7 +195,7 @@ Five rules are load-bearing:
   `service_handler(action="reloaded")` would be *unfaithful*:
   `systemd.service(reloaded=True)` acts only on an already-running unit, and a
   stopped one is *started* instead (the default `running=True`) with the reload
-  verb skipped. On the default path (`nfs_exports: []`) the role's service task
+  verb skipped. On the default path (empty `exports`) the role's service task
   is skipped, so a service handler would start `nfs-kernel-server` that the play
   deliberately left stopped and still never run `exportfs`. The command runs
   regardless of the unit's state, exactly as the role wrote it.
@@ -229,7 +229,7 @@ inventory are never contacted.
 From `tests/roles/test_nfs.py`, against the simulated Ubuntu host plus a RedHat
 host the role never touches. No between-pass bridge is needed — the simulation's
 own mutators maintain every seam the second pass reads. Default path
-(`nfs_exports: []`), dry preview first:
+(`exports` at its empty model default), dry preview first:
 
 ```text
 (root)
@@ -271,7 +271,7 @@ once across both passes):
     barrier: exports done → 0 hosts notified
 ```
 
-With `nfs_exports` configured, the same single wave additionally carries the
+With `exports` configured, the same single wave additionally carries the
 deduplicated directory loop (`/srv/nfs` appears twice in the exports, once in
 the loop) and the gated service request — and the handler still fires once:
 

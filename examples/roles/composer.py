@@ -15,13 +15,15 @@ no framework:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``composer_``-prefixed keys (``composer_path``, ``composer_version``,
-   ``composer_home_owner``, ``composer_global_packages`` and the rest of
-   :class:`~reemote.roles.composer.ComposerVars`) are bound and stripped, and a
-   bad value raises before any host is contacted. The role's one *unprefixed*
-   variable, ``php_executable``, is left in ``host.extra`` and read raw by the
-   deploy body -- giving it a ``composer_`` prefix would break the role's
-   inventory contract. This script passes one call-site ``override`` so the
+   ``composer`` role mapping (``path``, ``version``, ``home_owner``,
+   ``global_packages`` and the rest of the
+   :class:`~reemote.roles.composer.ComposerVars` fields) is bound under the
+   bare field names, and a
+   bad value raises before any host is contacted. The one knob that is not a
+   ``ComposerVars`` field, ``php_executable``, stays a top-level inventory key
+   in ``host.extra`` and is read raw by the
+   deploy body -- it is the image-wide PHP contract, not the composer role's.
+   This script passes one call-site ``override`` so the
    global-require and ``$PATH`` halves are demonstrated; the library default for
    ``global_packages`` is the role's own empty list.
 3. Build the deploy -- ``composer(vars_set)`` is the role's whole task list, one
@@ -100,14 +102,14 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted: the
-        # inventory's composer_-prefixed keys over the model defaults. A rejected
-        # value -- a relative composer_path, a scoped-out branch, a malformed
-        # package list -- or a prefixed key that names no field raises here, not
+        # inventory's composer role mapping over the model defaults. A rejected
+        # value -- a relative path, a scoped-out branch, a malformed
+        # package list -- or a key that names no field raises here, not
         # mid-run. The one override demonstrates the global-require and $PATH
         # halves; the library default for global_packages is the role's own [].
         vars_set = resolve_vars(
             ComposerVars,
-            "composer_",
+            "composer",
             inventory,
             overrides={"global_packages": (("phpunit/phpunit", "@stable"),)},
         )
@@ -143,9 +145,10 @@ async def main() -> None:
         raise SystemExit(1) from exc
     except (ValueError, TypeError) as exc:
         # A rejected role variable (pydantic's ValidationError and a RoleVarsError
-        # for an unknown composer_ key are both a ValueError), or the role body's
+        # for an unknown key in the composer mapping are both a ValueError), or
+        # the role body's
         # own hard error: an empty php_executable in host.extra, or a
-        # composer_home_owner whose home directory cannot be resolved on the
+        # home_owner whose home directory cannot be resolved on the
         # target. Each is raised before any request runs, so nothing is
         # half-applied.
         print(f"\nERROR: {exc}", file=sys.stderr)

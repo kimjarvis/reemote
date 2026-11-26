@@ -8,7 +8,7 @@
 # then set ``enabled=`` in the ``[epel]`` section of ``/etc/yum.repos.d/epel.repo``.
 # The Ansible role's whole task list is one deploy here --
 # :func:`repo_epel` -- and its four role defaults are :class:`EpelVars`, bound
-# from the inventory's ``epel_``-prefixed keys by
+# from the inventory entry's ``epel`` role mapping by
 # :func:`~reemote.rolevars.resolve_vars`.
 # 
 # The stream carries three or four waves -- one per barrier, then one holding the
@@ -87,9 +87,9 @@ EPEL_KEY_IDS: dict[int, str] = {
 class EpelVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``epel_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``epel_repo_disable`` in the
-    inventory to :attr:`repo_disable`. ``repo_url`` and ``repo_gpg_key_url``
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``epel`` role mapping, so ``repo_disable`` there sets
+    :attr:`repo_disable`. ``repo_url`` and ``repo_gpg_key_url``
     stay ``None`` by default so the version-derived templates apply, which is
     how the role interpolates them from the distribution major version.
 
@@ -255,7 +255,7 @@ def repo_epel(v: VarsSet[EpelVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`EpelVars` per host
-            (``resolve_vars(EpelVars, "epel_", inventory)``).
+            (``resolve_vars(EpelVars, "epel", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves`. Publishes nothing, so the

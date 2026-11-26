@@ -80,9 +80,9 @@ def canned_fetch(monkeypatch):
 def make_inventory(**overrides) -> list[dict]:
     """A two-host inventory: one Ubuntu target, one CentOS host that must be skipped.
 
-    The role variables ride as ``drush_``-prefixed extra keys, bound by
-    ``resolve_vars``. With no overrides the role defaults apply (launcher install
-    enabled, version 0.10.1, ``/usr/local/bin/drush``).
+    The role variables ride in the entry's ``roles`` mapping under ``"drush"``,
+    bound by ``resolve_vars``. With no overrides the role defaults apply
+    (launcher install enabled, version 0.10.1, ``/usr/local/bin/drush``).
     """
     entry = {
         "host": "ubuntu",
@@ -94,8 +94,12 @@ def make_inventory(**overrides) -> list[dict]:
         },
         "group": "ubuntu",
         "tags": ["ubuntu_host", "apt_package_manager"],
+        "roles": {
+            "drush": {
+            },
+        },
     }
-    entry.update(overrides)
+    entry["roles"]["drush"].update(overrides)
     return [
         entry,
         {
@@ -171,7 +175,7 @@ async def run_role(
     inventory: list[dict], hosts: dict[str, SimulatedHost], *, dry: bool = False
 ):
     """Resolve variables, build the sync factory's deploy, and run one wave pass."""
-    v = resolve_vars(DrushVars, "drush_", inventory)
+    v = resolve_vars(DrushVars, "drush", inventory)
 
     def factory(entry: dict) -> SimulatedHost:
         # The *same* host object every pass, so state survives the barriers.
@@ -427,7 +431,7 @@ async def test_missing_directory_is_created_0755(canned_fetch):
 
 
 async def test_launcher_install_false_deploys_nothing(canned_fetch):
-    inventory = make_inventory(drush_launcher_install=False)
+    inventory = make_inventory(launcher_install=False)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -441,7 +445,7 @@ async def test_launcher_install_false_deploys_nothing(canned_fetch):
 
 async def test_custom_path_and_version(canned_fetch):
     inventory = make_inventory(
-        drush_launcher_version="0.10.0", drush_launcher_path="/opt/bin/drush"
+        launcher_version="0.10.0", launcher_path="/opt/bin/drush"
     )
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]

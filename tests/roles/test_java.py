@@ -60,10 +60,10 @@ UBUNTU_2404 = {
 def make_inventory(**overrides) -> list[dict]:
     """A two-host inventory: one Ubuntu target, one CentOS host that must be skipped.
 
-    The role variables ride as ``java_``-prefixed extra keys, bound by
-    ``resolve_vars``. The base entry sets ``java_home`` so the default path
+    The role variables ride in the entry's ``roles`` mapping under ``"java"``,
+    bound by ``resolve_vars``. The base entry sets ``home`` so the default path
     exercises the profile template branch; the overrides drive the
-    non-default branches (``java_packages``, the empty-home skip).
+    non-default branches (``packages``, the empty-home skip).
     """
     entry = {
         "host": "ubuntu",
@@ -75,9 +75,13 @@ def make_inventory(**overrides) -> list[dict]:
         },
         "group": "ubuntu",
         "tags": ["ubuntu_host", "apt_package_manager"],
-        "java_home": JAVA_HOME,
+        "roles": {
+            "java": {
+                "home": JAVA_HOME,
+            },
+        },
     }
-    entry.update(overrides)
+    entry["roles"]["java"].update(overrides)
     return [
         entry,
         {
@@ -126,7 +130,7 @@ async def run_role(
     inventory: list[dict], hosts: dict[str, SimulatedHost], *, dry: bool = False
 ):
     """Resolve variables, build the sync factory's deploy, and run one wave pass."""
-    v = resolve_vars(JavaVars, "java_", inventory)
+    v = resolve_vars(JavaVars, "java", inventory)
 
     def factory(entry: dict) -> SimulatedHost:
         # The *same* host object every pass, so state survives the barrier.
@@ -323,7 +327,7 @@ async def test_dry_preview_stops_at_the_distribution_barrier():
 
 async def test_packages_override_wins_and_empty_home_skips_profile():
     """An explicit java_packages list beats the vars table; java_home='' skips."""
-    inventory = make_inventory(java_packages=["openjdk-17-jdk"], java_home="")
+    inventory = make_inventory(packages=["openjdk-17-jdk"], home="")
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
 
@@ -344,7 +348,7 @@ async def test_packages_override_wins_and_empty_home_skips_profile():
 
 async def test_empty_packages_still_refreshes_the_cache():
     """java_packages=[] is a valid Ansible override: apt installs nothing."""
-    inventory = make_inventory(java_packages=[], java_home="")
+    inventory = make_inventory(packages=[], home="")
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
 
@@ -360,7 +364,7 @@ async def test_empty_packages_still_refreshes_the_cache():
 
 async def test_ubuntu_16_skips_the_man_directory():
     """The man1 workaround is gated on Ubuntu >= 18; 16 gets openjdk-8-jdk."""
-    inventory = make_inventory(java_home="")
+    inventory = make_inventory(home="")
     hosts = make_hosts(inventory, major="16")
     host = hosts["ubuntu"]
 
@@ -391,7 +395,7 @@ async def test_non_ubuntu_distribution_raises_at_the_barrier():
 
 async def test_unsupported_major_raises_even_with_override():
     """D4: include_vars runs unconditionally, so the override cannot rescue 25."""
-    inventory = make_inventory(java_packages=["openjdk-21-jdk"])
+    inventory = make_inventory(packages=["openjdk-21-jdk"])
     hosts = make_hosts(inventory, major="25")
     host = hosts["ubuntu"]
 
@@ -464,17 +468,17 @@ def test_invalid_role_values_fail_fast(overrides, error, match):
         JavaVars.model_validate(overrides)
 
 
-def test_prefixed_inventory_keys_bind_and_typo_raises():
-    """resolve_vars strips ``java_`` and reports a prefixed misspelling."""
-    inventory = make_inventory(java_packages=["openjdk-17-jdk"])
-    v = resolve_vars(JavaVars, "java_", inventory)
+def test_inventory_role_variables_bind_and_typos_raise():
+    """The nested mapping binds bare names; a misspelling raises RoleVarsError."""
+    inventory = make_inventory(packages=["openjdk-17-jdk"])
+    v = resolve_vars(JavaVars, "java", inventory)
     hv = v.for_host(SimulatedHost.from_inventory(inventory[0]))
     assert hv.packages == ("openjdk-17-jdk",)  # a list normalized to a tuple
     assert hv.home == JAVA_HOME
 
-    typo = make_inventory(java_packagez=["openjdk-17-jdk"])
-    with pytest.raises(RoleVarsError, match="java_packagez"):
-        resolve_vars(JavaVars, "java_", typo)
+    typo = make_inventory(packagez=["openjdk-17-jdk"])
+    with pytest.raises(RoleVarsError, match="packagez"):
+        resolve_vars(JavaVars, "java", typo)
 
 
 def test_model_is_frozen_and_hashable():

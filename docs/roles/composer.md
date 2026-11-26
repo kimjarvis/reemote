@@ -6,7 +6,7 @@
 | Module | [`reemote.roles.composer`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/composer.py) |
 | Runner | [`examples/roles/composer.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/composer.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Variables | `composer_`-prefixed inventory keys → `ComposerVars` |
+| Variables | the entry's `composer` role mapping → `ComposerVars` |
 
 <!---
 | Waves | `5 + 2P` for a fresh host with `P` global packages (7 with one package); `3 + P` once converged |
@@ -74,8 +74,8 @@ reemote has no play-level `become`.
 
 ## 3. Variables
 
-`ComposerVars` is a frozen pydantic model with unprefixed field names; the prefix
-passed to `resolve_vars` binds the inventory keys.
+`ComposerVars` is a frozen pydantic model whose fields carry bare names; the role
+name passed to `resolve_vars` binds the entry's `composer` role mapping.
 
 --->
 
@@ -88,37 +88,38 @@ passed to `resolve_vars` binds the inventory keys.
 
 **Variables:**
 
-| Field | Type | Default | Inventory key | Ansible name |
-| --- | --- | --- | --- | --- |
-| `path` | `str` | `/usr/local/bin/composer` | `composer_path` | `composer_path` |
-| `keep_updated` | `bool` | `false` | `composer_keep_updated` | `composer_keep_updated` |
-| `version` | `str` | `""` | `composer_version` | `composer_version` |
-| `version_branch` | `str` | `--2` | `composer_version_branch` | `composer_version_branch` |
-| `home_path` | `str` | `~/.composer` | `composer_home_path` | `composer_home_path` |
-| `home_owner` | `str` | `root` | `composer_home_owner` | `composer_home_owner` |
-| `home_group` | `str` | `root` | `composer_home_group` | `composer_home_group` |
-| `global_packages` | `tuple[tuple[str, str], ...]` | `()` | `composer_global_packages` | `composer_global_packages` |
-| `add_to_path` | `bool` | `true` | `composer_add_to_path` | `composer_add_to_path` |
-| `add_project_to_path` | `bool` | `false` | `composer_add_project_to_path` | `composer_add_project_to_path` |
-| `github_oauth_token` | `str` | `""` | `composer_github_oauth_token` | `composer_github_oauth_token` |
+| Field | Type | Default | Ansible name |
+| --- | --- | --- | --- |
+| `path` | `str` | `/usr/local/bin/composer` | `composer_path` |
+| `keep_updated` | `bool` | `false` | `composer_keep_updated` |
+| `version` | `str` | `""` | `composer_version` |
+| `version_branch` | `str` | `--2` | `composer_version_branch` |
+| `home_path` | `str` | `~/.composer` | `composer_home_path` |
+| `home_owner` | `str` | `root` | `composer_home_owner` |
+| `home_group` | `str` | `root` | `composer_home_group` |
+| `global_packages` | `tuple[tuple[str, str], ...]` | `()` | `composer_global_packages` |
+| `add_to_path` | `bool` | `true` | `composer_add_to_path` |
+| `add_project_to_path` | `bool` | `false` | `composer_add_project_to_path` |
+| `github_oauth_token` | `str` | `""` | `composer_github_oauth_token` |
 
 <!---
 
-One further variable carries **no** `composer_` prefix upstream and is read raw
-from `host.extra`, preserving the existing inventory contract:
+One further variable is an unprefixed top-level inventory key upstream, not a
+`composer` role variable, and is read raw from `host.extra`, preserving the
+existing inventory contract:
 
 | Inventory key | Type | Default |
 | --- | --- | --- |
 | `php_executable` | `str` | `php` |
 
-Precedence is `model defaults < inventory extra < overrides`. `global_packages`
+Precedence is `model defaults < inventory role mapping < overrides`. `global_packages`
 accepts the role's list-of-`{name, release}` JSON shape or `(name, release)`
 pairs; a `before` validator flattens either to frozen pairs and defaults
 `release` to `@stable` (the role's `item.release | default('@stable')`).
 Validation is fail-fast: `path` must be absolute, `home_path` must be absolute or
 start with `~`, the owner/group must be non-empty, and `extra="forbid"` plus
-`resolve_vars`' binding report a prefixed key that names no field
-(`composer_pathh` raises `RoleVarsError` rather than silently defaulting). The
+`resolve_vars`' binding report a key that names no field (`pathh` raises
+`RoleVarsError` rather than silently defaulting). The
 two opt-in branches are rejected here too, before any host is contacted:
 `keep_updated` (D8) and `add_project_to_path`, with the role's own `fail:` xor
 message reproduced when a version pin and `keep_updated` are both set.
@@ -140,7 +141,7 @@ async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
     vars_set = resolve_vars(
-        ComposerVars, "composer_", inventory,
+        ComposerVars, "composer", inventory,
         overrides={"global_packages": (("phpunit/phpunit", "@stable"),)},
     )
     deploy = composer(vars_set)                                    # plain factory
@@ -262,7 +263,7 @@ The CentOS host appears in neither tree: no barrier record, no request line.
 | D4 | Every elevated request carries `sudo=True` explicitly | the role's `become_user: {{ composer_home_owner }}` maps to the inventory `privilege` section (a non-root owner needs `privilege.sudo_user`), never to an operation argument |
 | D5 | `mv /tmp/composer.phar {{ composer_path }}` becomes `files.copy` (rename form, mode 0755) plus a paired `files.file(present=False)` cleanup | copy is sha1-idempotent but keeps its source, so the cleanup reproduces `mv`'s source consumption and keeps the second pass a no-op |
 | D6 | The installer download and run stay **unprivileged** | the role's `get_url`/`command` tasks carry no `become` and write only to `/tmp`, which is login-writable |
-| D7 | `php_executable` — the role's only **unprefixed** variable — is read raw from `host.extra` | giving it a `composer_` prefix would break the role's inventory contract (the datadog probe-config precedent) |
+| D7 | `php_executable` — unprefixed top-level inventory key upstream — is read raw from `host.extra`, not modeled as a `ComposerVars` field | moving it into the `composer` role mapping would break the role's inventory contract (the datadog probe-config precedent) |
 | D8 | `composer_keep_updated` is **rejected** at resolution time | the self-update branch is opt-in and stateless, so it never converges; the role's `fail:` xor message is reproduced when a version pin and `keep_updated` are both set |
 | D9 | Both templates render control-side with `json.dumps` / an f-string | reemote ships no Jinja2 and neither template needs it, so there is no `templates` extra; the `$PATH` entry uses the *resolved absolute* home where the Jinja2 template interpolates the raw `~/.composer` |
 | D10 | `composer_global_packages` defaults to the role's own `[]` | the old example's `phpunit/phpunit` demo default was an example artifact; a program that wants the global-require path demonstrated passes the packages in the inventory or as an override |

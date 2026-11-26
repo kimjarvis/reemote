@@ -9,8 +9,8 @@
 # ``sites-available/vhosts.conf`` and its ``sites-enabled`` symlink, the optional
 # default-vhost removal, the service's running/enabled state, and the role's
 # single ``restart apache`` handler. :func:`apache` is the whole task list, and
-# :class:`ApacheVars` is ``defaults/main.yml``, bound from the inventory's
-# ``apache_``-prefixed keys by :func:`~reemote.rolevars.resolve_vars`.
+# :class:`ApacheVars` is ``defaults/main.yml``, bound from the inventory
+# entry's ``apache`` role mapping by :func:`~reemote.rolevars.resolve_vars`.
 #
 # Target: hosts in the ``"Ubuntu"`` OS family. The role's RHEL, SLES, Solaris and
 # Amazon Linux branches are out of scope, so its ``include_vars`` OS dispatch
@@ -273,11 +273,11 @@ class SslVHost(VHost):
 class ApacheVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``apache_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``apache_listen_port`` in the
-    inventory to :attr:`listen_port`, so an inventory written for the role needs
-    no change. Every Ansible default is carried over, including the two inert
-    ones (:attr:`enablerepo`, :attr:`ssl_no_log`) so such a key still binds.
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``apache`` role mapping, so ``listen_port`` there sets
+    :attr:`listen_port`. Every Ansible default is carried over, including the
+    two inert ones (:attr:`enablerepo`, :attr:`ssl_no_log`) so such a key
+    still binds.
 
     Sequences are ``tuple``, never ``list``: the model is frozen and hashable,
     and a value that reaches :func:`~reemote.core.op` must hash (design doc
@@ -721,7 +721,7 @@ def apache(v: VarsSet[ApacheVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`ApacheVars` per host
-            (``resolve_vars(ApacheVars, "apache_", inventory)``).
+            (``resolve_vars(ApacheVars, "apache", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves` that returns

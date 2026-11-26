@@ -4,8 +4,8 @@ Hosts and their SSH information are specified as a simple *inventory*: a list
 of dictionaries, each describing one host. Every entry must carry at least a
 `host` (its name), a `family` (its OS family, one of `RedHat`, `Ubuntu` or
 `Alpine`) and a `connection` (the SSH connection data); `privilege`,
-`group` and `tags` are optional and any extra keys are preserved. The inventory
-is the parameter the library functions accept;
+`group`, `tags` and `roles` are optional and any extra keys are preserved. The
+inventory is the parameter the library functions accept;
 [`Host.from_inventory`][reemote.hosts.Host.from_inventory]
 materializes each entry into a [`Host`][reemote.hosts.Host] whose
 `connection` data reaches both operations
@@ -13,8 +13,8 @@ materializes each entry into a [`Host`][reemote.hosts.Host] whose
 
 The inventory is validated with pydantic before any host is materialized.
 Each entry is checked against the [`InventoryEntry`][reemote.hosts.InventoryEntry]
-schema — `host`, `family` and `connection` are required, `privilege`, `group`
-and `tags` optional, and unrecognised keys are allowed (they land in
+schema — `host`, `family` and `connection` are required, `privilege`, `group`,
+`tags` and `roles` optional, and unrecognised keys are allowed (they land in
 `Host.extra`).
 [`validate_inventory`][reemote.hosts.validate_inventory] checks a whole
 inventory up front (it must be a list of dictionaries), and
@@ -174,6 +174,26 @@ def deploy(host):
     if "ubuntu_host" in host.tags:
         yield from role_apt_install_nginx(host)
 ```
+
+## Role variables: `roles`
+
+An entry may carry an optional `roles` mapping, keyed by role name, holding that
+role's variables under the bare field names of its model — the channel
+[`resolve_vars`][reemote.rolevars.resolve_vars] binds. The schema claims the key,
+so role variables never land in `Host.extra` and no key prefix is needed:
+
+```python
+{
+    "host": "web1",
+    "family": "Ubuntu",
+    "connection": {"address": "192.168.0.240", "username": "kjarvis"},
+    "roles": {"apache": {"listen_port": 8080}, "docker": {"edition": "ce"}},
+}
+```
+
+Each nested mapping is its own namespace, so several roles' variables sit side by
+side in one entry without collision, and a role name the program never resolves
+is simply unused. See [Role variables](rolevars.md) for how resolution works.
 
 ## Privilege: sudo, su and doas
 

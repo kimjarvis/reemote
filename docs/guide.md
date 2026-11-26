@@ -490,7 +490,7 @@ def deploy(host):
     return ApacheOutputs(version=version)
 ```
 
-The runnable program around it is [`examples/roles/apache.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/apache.py): it loads and validates `inventory.json`, resolves the role's variables (the defaults overlaid with the entry's `apache_`-prefixed keys, then the call-site `overrides`), builds the deploy from the `apache` factory and drives it with `run_waves` — a `dry=True` one-wave preview, then the real apply:
+The runnable program around it is [`examples/roles/apache.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/apache.py): it loads and validates `inventory.json`, resolves the role's variables (the defaults overlaid with the entry's `apache` role mapping, then the call-site `overrides`), builds the deploy from the `apache` factory and drives it with `run_waves` — a `dry=True` one-wave preview, then the real apply:
 
 ```python
 from reemote import resolve_vars, run_waves, validate_inventory
@@ -504,7 +504,7 @@ APACHE_OVERRIDES = {
 async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
-    vars_set = resolve_vars(ApacheVars, "apache_", inventory, overrides=APACHE_OVERRIDES)
+    vars_set = resolve_vars(ApacheVars, "apache", inventory, overrides=APACHE_OVERRIDES)
     deploy = apache(vars_set)
     report, _hosts = await run_waves(inventory, deploy, dry=True)   # one-wave preview
     print(report.tree())

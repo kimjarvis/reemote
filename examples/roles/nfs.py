@@ -15,8 +15,9 @@ no framework:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``nfs_``-prefixed keys (``nfs_exports`` -- the role variable of
-   :class:`~reemote.roles.nfs.NfsVars`) are bound and stripped, and a bad value
+   ``nfs`` role mapping (``exports`` -- the variable of
+   :class:`~reemote.roles.nfs.NfsVars`) is bound under the bare field name,
+   and a bad value
    raises before any host is contacted.
 3. Build the deploy -- ``nfs(vars_set)`` is the role's whole task list and its
    handler, one per-host generator -- and drive it with ``run_waves``, the
@@ -37,7 +38,7 @@ Installing and running
 ----------------------
 
 No extra dependency: the role writes ``/etc/exports`` from a plain Python join
-over ``nfs_exports`` (the template is a static comment header plus one line per
+over ``exports`` (the template is a static comment header plus one line per
 export), so neither Jinja2 nor PyYAML is needed -- unlike the memcached and
 apache roles. Run it with::
 
@@ -46,8 +47,8 @@ apache roles. Run it with::
 The role variable channel
 -------------------------
 
-``nfs_exports`` is the role's only meaningful variable, and it belongs in the
-inventory entry, riding beside ``host``/``connection`` as an extra key --
+``exports`` is the role's only meaningful variable, and it belongs in the
+inventory entry's ``roles`` mapping, beside ``host``/``connection`` --
 reemote's ``host_vars`` mechanism::
 
     [
@@ -58,17 +59,21 @@ reemote's ``host_vars`` mechanism::
                        "username": "supervisor",
                        "key_path": "~/.ssh/id_ed25519"},
         "group": "ubuntu",
-        "nfs_exports": ["/srv/nfs 192.0.2.0/24(rw,sync,no_subtree_check)"]
+        "roles": {
+          "nfs": {
+            "exports": ["/srv/nfs 192.0.2.0/24(rw,sync,no_subtree_check)"]
+          }
+        }
       }
     ]
 
 Each line begins with the directory to export, so a non-empty list also creates
 those directories and starts and enables ``nfs-kernel-server``. This script
 passes no call-site ``overrides``, so the role's own default applies
-(``nfs_exports: []``): ``/etc/exports`` is written with nothing but the
+(``exports: []``): ``/etc/exports`` is written with nothing but the
 template's comment header and the service task stays skipped -- exactly what
-running the role with no variables does. Add the key above to see the export
-directories, the gated service start and the same handler.
+running the role with no variables does. Add the mapping above to see the
+export directories, the gated service start and the same handler.
 
 ``run_waves`` is a coroutine, so ``main`` is async and driven by ``asyncio.run``.
 The factory itself is a plain (non-``async``) function -- the role reads no
@@ -115,10 +120,10 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted: the
-        # inventory's nfs_-prefixed keys over the model defaults. A rejected
+        # inventory's nfs role mapping over the model defaults. A rejected
         # value raises here -- a pydantic ValidationError, which is a ValueError
         # -- not mid-play, where Ansible's directory loop would have failed.
-        vars_set = resolve_vars(NfsVars, "nfs_", inventory)
+        vars_set = resolve_vars(NfsVars, "nfs", inventory)
         # The role's whole task list and handler: one per-host generator,
         # barriers and all. A plain (non-async) factory, so it is called, not
         # awaited.

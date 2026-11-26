@@ -15,9 +15,10 @@ no framework:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``apache_``-prefixed keys (``apache_listen_port``, ``apache_vhosts``,
-   ``apache_mods_enabled``, ``apache_state`` and the rest of
-   :class:`~reemote.roles.apache.ApacheVars`) are bound and stripped, the
+   ``apache`` role mapping (``listen_port``, ``vhosts``, ``mods_enabled``,
+   ``state`` and the rest of the
+   :class:`~reemote.roles.apache.ApacheVars` fields) is bound under the bare
+   field names, the
    call-site ``APACHE_OVERRIDES`` below wins over them, and a bad value raises
    before any host is contacted.
 3. Build the deploy -- ``apache(vars_set)`` is the role's whole task list, one
@@ -39,13 +40,14 @@ The call-site ``overrides`` channel
 -----------------------------------
 
 ``APACHE_OVERRIDES`` (``listen_port=8080`` and one ``example.com`` vhost) is
-handed to ``resolve_vars`` and wins over the inventory's ``apache_``-prefixed
-keys for every host. Overrides use the model's UNPREFIXED field names -- the
-``apache_`` prefix is an inventory-key binding, stripped before validation -- so
-``apache_listen_port`` in the inventory and ``listen_port`` here set the same
-field. Precedence is model defaults < inventory extra < these overrides. The
-shipped ``inventory.json``'s ``ubuntu`` entry carries no ``apache_`` keys, so
-these overrides decide the listen port and the vhosts: Apache listens on ``8080``
+handed to ``resolve_vars`` and wins over the inventory's ``apache`` role
+mapping for every host. Overrides and the inventory mapping both use the
+model's bare field names -- there is no key prefix anywhere -- so
+``roles.apache.listen_port`` in the inventory and ``listen_port`` here set the
+same field. Precedence is model defaults < inventory role mapping < these
+overrides. The shipped ``inventory.json`` carries no ``apache`` role mapping,
+so these overrides decide the listen port and the vhosts: Apache listens on
+``8080``
 and serves one ``example.com`` vhost out of ``/var/www/vhosts/example_com``.
 
 Installing and running
@@ -92,12 +94,11 @@ from reemote import (
 from reemote.roles import ApacheVars, apache
 
 # Common role variables handed to ``resolve_vars`` as call-site ``overrides``.
-# They use the model's UNPREFIXED field names (``listen_port``, ``vhosts``) --
-# the ``apache_`` prefix only binds inventory keys, and is stripped before
-# validation -- and win over any ``apache_``-prefixed key in the inventory for
-# every host. A vhost is the same mapping the inventory's ``apache_vhosts``
-# carries; ``resolve_vars`` validates it into a frozen ``VHost``, so the tuple
-# stays hashable.
+# They use the model's bare field names (``listen_port``, ``vhosts``) -- the
+# same names the inventory's ``apache`` role mapping uses -- and win over it
+# for every host. A vhost is the same mapping the inventory's
+# ``roles.apache.vhosts`` carries; ``resolve_vars`` validates it into a frozen
+# ``VHost``, so the tuple stays hashable.
 APACHE_OVERRIDES = {
     "listen_port": 8080,
     "vhosts": (
@@ -114,11 +115,11 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted: the
-        # inventory's apache_-prefixed keys, overlaid with the call-site
+        # inventory's apache role mappings, overlaid with the call-site
         # overrides. A rejected value raises here -- a pydantic ValidationError,
         # which is a ValueError -- not mid-run.
         vars_set = resolve_vars(
-            ApacheVars, "apache_", inventory, overrides=APACHE_OVERRIDES
+            ApacheVars, "apache", inventory, overrides=APACHE_OVERRIDES
         )
         # The role's whole task list: one per-host generator, barriers and all.
         # A plain (non-async) factory, so it is called, not awaited.

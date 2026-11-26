@@ -7,8 +7,8 @@
 # command-line shell's version-delegating phar, on Ubuntu hosts: the old-symlink
 # cleanup, the ``/usr/local/bin`` directory, the launcher phar download and the
 # 0755 executable bit. :func:`drush` is the whole task list and
-# :class:`DrushVars` is ``defaults/main.yml``, bound from the inventory's
-# ``drush_``-prefixed keys by :func:`~reemote.rolevars.resolve_vars`.
+# :class:`DrushVars` is ``defaults/main.yml``, bound from the inventory
+# entry's ``drush`` role mapping by :func:`~reemote.rolevars.resolve_vars`.
 #
 # Target: hosts in the ``"Ubuntu"`` OS family. A host outside the target family,
 # or one with ``launcher_install`` false, returns before its first ``yield`` and
@@ -107,10 +107,9 @@ PHAR_URL_TEMPLATE = (
 class DrushVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``drush_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``drush_launcher_path`` in the
-    inventory to :attr:`launcher_path`, so an inventory written for the role
-    needs no change. The model is frozen, so it stays hashable through the
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``drush`` role mapping, so ``launcher_path`` there sets
+    :attr:`launcher_path`. The model is frozen, so it stays hashable through the
     deploy body, and the two scoped-out opt-in branches are rejected here, at
     resolution time, before any host is contacted.
     """
@@ -270,7 +269,7 @@ def drush(v: VarsSet[DrushVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`DrushVars` per host
-            (``resolve_vars(DrushVars, "drush_", inventory)``).
+            (``resolve_vars(DrushVars, "drush", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves`. Publishes nothing, so the

@@ -9,8 +9,9 @@
 # directory, the rendered ``xdebug.ini`` written into every extension conf path,
 # the optional CLI disable, and the role's two chained handlers (``restart
 # webserver`` -> ``restart php-fpm``). :func:`php_xdebug` is the whole task list and
-# :class:`PhpXdebugVars` is ``defaults/main.yml``, bound from the inventory's
-# ``php_xdebug_``-prefixed keys by :func:`~reemote.rolevars.resolve_vars`.
+# :class:`PhpXdebugVars` is ``defaults/main.yml``, bound from the inventory
+# entry's ``php_xdebug`` role mapping by
+# :func:`~reemote.rolevars.resolve_vars`.
 # 
 # **The dependency is a `yield from` plus a return value** (design doc section
 # 10.4). This role does not re-implement any part of :mod:`reemote.roles.php` and
@@ -152,10 +153,10 @@ FPM_NOTIFY_NAMES = frozenset(
 class PhpXdebugVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``php_xdebug_`` prefix, so
-    ``resolve_vars(PhpXdebugVars, "php_xdebug_", inventory)`` binds
-    ``php_xdebug_version`` to :attr:`version` and an inventory written for the
-    role needs no change. The dependency's variables -- the PHP version, the
+    Field names are bare, so
+    ``resolve_vars(PhpXdebugVars, "php_xdebug", inventory)`` binds the entry's
+    ``php_xdebug`` role mapping: ``version`` there sets :attr:`version`.
+    The dependency's variables -- the PHP version, the
     conf paths, the two daemon names and the two FPM handler gates -- are
     **not** fields here: they are read from :mod:`reemote.roles.php` through its
     :class:`~reemote.roles.php.PhpOutputs` and its own ``VarsSet``, so this model
@@ -474,14 +475,14 @@ def php_xdebug(v: VarsSet[PhpXdebugVars], php_v: VarsSet[PhpVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`PhpXdebugVars` per host
-            (``resolve_vars(PhpXdebugVars, "php_xdebug_", inventory)``).
+            (``resolve_vars(PhpXdebugVars, "php_xdebug", inventory)``).
         php_v: The *dependency's* resolved variables, one
             :class:`~reemote.roles.php.PhpVars` per host. This is the channel
             section 10.4 is about: an ordinary argument, not a lookup, and the
             reason a caller that also runs php on its own passes the same
-            ``VarsSet`` to both. Because ``php_`` contains ``php_xdebug_``,
-            resolving it needs
-            ``nested_prefixes=("php_xdebug_",)`` (design doc section 8.2).
+            ``VarsSet`` to both. Each role reads only its own mapping in the
+            entry's ``roles`` dict, so ``php`` and ``php_xdebug`` never see
+            each other's keys.
 
     Returns:
         A deploy for :func:`~reemote.run_waves` that returns ``None``. What the

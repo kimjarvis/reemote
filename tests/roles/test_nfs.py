@@ -22,7 +22,7 @@ The second load-bearing claim is the command-handler mapping. The role's
 the first-class action seam (#16): ``seed()`` plants the canned
 ``sudo exportfs -ra`` record in ``host.shell_results`` (the exact ``sudo``
 rendering is the key) and ``ran_shells`` proves it ran exactly once, on the
-notified host only. On the default path (``nfs_exports: []``) the service is
+notified host only. On the default path (``exports: []``) the service is
 never started, yet the handler still runs -- the case a ``reload_handler`` would
 get wrong: ``systemd.service`` acts only on a running unit, so it would
 *start* the stopped unit and never run ``exportfs``.
@@ -96,9 +96,9 @@ CONFIGURE_NAMES = {
 def make_inventory(**overrides) -> list[dict]:
     """A two-host inventory: one Ubuntu target, one CentOS host that must be skipped.
 
-    The role variables ride as ``nfs_``-prefixed extra keys, bound by
-    ``resolve_vars``. With no overrides the role default applies
-    (``nfs_exports: []``): the exports file is still written, header-only, and
+    The role variables ride in the entry's ``roles`` mapping under ``"nfs"``,
+    bound by ``resolve_vars``. With no overrides the role default applies
+    (``exports: []``): the exports file is still written, header-only, and
     the service task stays skipped.
     """
     entry = {
@@ -111,8 +111,12 @@ def make_inventory(**overrides) -> list[dict]:
         },
         "group": "ubuntu",
         "tags": ["ubuntu_host", "apt_package_manager"],
+        "roles": {
+            "nfs": {
+            },
+        },
     }
-    entry.update(overrides)
+    entry["roles"]["nfs"].update(overrides)
     return [
         entry,
         {
@@ -175,7 +179,7 @@ async def run_role(
     inventory: list[dict], hosts: dict[str, SimulatedHost], *, dry: bool = False
 ):
     """Resolve variables, build the sync factory's deploy, and run one wave pass."""
-    v = resolve_vars(NfsVars, "nfs_", inventory)
+    v = resolve_vars(NfsVars, "nfs", inventory)
 
     def factory(entry: dict) -> SimulatedHost:
         # The *same* host object every pass, so state survives the barriers.
@@ -316,7 +320,7 @@ async def test_first_pass_default_path_installs_and_writes_exports():
     assert "nfs-kernel-server" in host.apt_packages
     assert host.apt_update_stamp is not None
 
-    # The exports file: header only (nfs_exports defaults to []), root:root
+    # The exports file: header only (exports defaults to []), root:root
     # 0644 -- the template task's owner/group/mode.
     assert host.remote_files[EXPORTS_PATH] == EXPECTED_HEADER.encode()
     assert host.file_stats[EXPORTS_PATH] == {
@@ -490,8 +494,8 @@ async def test_content_drift_reinstalls_and_notifies():
 
 
 async def test_exports_create_directories_start_service_and_notify():
-    """Non-empty ``nfs_exports``: the directory loop, the render, the service gate."""
-    inventory = make_inventory(nfs_exports=list(EXPORTS))
+    """Non-empty ``exports``: the directory loop, the render, the service gate."""
+    inventory = make_inventory(exports=list(EXPORTS))
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
     # An existing export directory with a non-default mode: the role's mode-less
@@ -625,10 +629,10 @@ def test_model_is_frozen_and_hashable():
 @pytest.mark.parametrize(
     ("overrides", "match"),
     [
-        ({"nfs_exports": "/srv/nfs x"}, "exports"),
-        ({"nfs_exports": [42]}, "exports"),
-        ({"nfs_exports": [""]}, "exports"),
-        ({"nfs_exports": ["   "]}, "exports"),
+        ({"exports": "/srv/nfs x"}, "exports"),
+        ({"exports": [42]}, "exports"),
+        ({"exports": [""]}, "exports"),
+        ({"exports": ["   "]}, "exports"),
     ],
 )
 def test_invalid_role_values_fail_fast(overrides, match):
@@ -639,19 +643,19 @@ def test_invalid_role_values_fail_fast(overrides, match):
     """
     inventory = make_inventory(**overrides)
     with pytest.raises(ValidationError, match=match):
-        resolve_vars(NfsVars, "nfs_", inventory)
+        resolve_vars(NfsVars, "nfs", inventory)
 
 
-def test_prefixed_inventory_keys_bind_and_typo_raises():
-    """``nfs_`` keys strip onto fields; a prefixed misspelling raises RoleVarsError."""
-    inventory = make_inventory(nfs_exports=list(EXPORTS))
-    v = resolve_vars(NfsVars, "nfs_", inventory)
+def test_inventory_role_variables_bind_and_typos_raise():
+    """The nested mapping binds bare names; a misspelling raises RoleVarsError."""
+    inventory = make_inventory(exports=list(EXPORTS))
+    v = resolve_vars(NfsVars, "nfs", inventory)
 
     # A JSON list arrives normalized to a hashable tuple (§8.1).
     assert v["ubuntu"].exports == EXPORTS
 
-    with pytest.raises(RoleVarsError, match="nfs_exportss"):
-        resolve_vars(NfsVars, "nfs_", make_inventory(nfs_exportss=["/srv/nfs x"]))
+    with pytest.raises(RoleVarsError, match="exportss"):
+        resolve_vars(NfsVars, "nfs", make_inventory(exportss=["/srv/nfs x"]))
 
 
 async def test_rpcbind_keys_bind_but_change_no_request():
@@ -661,9 +665,9 @@ async def test_rpcbind_keys_bind_but_change_no_request():
     must not alter the Ubuntu stream -- while leaving them *unmodellable* would
     have made an existing inventory raise on an unknown key.
     """
-    inventory = make_inventory(nfs_rpcbind_state="stopped", nfs_rpcbind_enabled=False)
+    inventory = make_inventory(rpcbind_state="stopped", rpcbind_enabled=False)
     hosts = make_hosts(inventory)
-    v = resolve_vars(NfsVars, "nfs_", inventory)
+    v = resolve_vars(NfsVars, "nfs", inventory)
     assert v["ubuntu"].rpcbind_state == "stopped"
     assert v["ubuntu"].rpcbind_enabled is False
 

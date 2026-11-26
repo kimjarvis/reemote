@@ -115,9 +115,10 @@ logfile /var/log/memcached.log
 def make_inventory(**overrides) -> list[dict]:
     """A two-host inventory: one Ubuntu target, one CentOS host that must be skipped.
 
-    The role variables ride as ``memcached_``-prefixed extra keys, bound by
-    ``resolve_vars``. With no overrides every ``defaults/main.yml`` value
-    applies, so the render is :data:`DEFAULT_CONFIG`.
+    The role variables ride in the entry's ``roles`` mapping under
+    ``"memcached"``, bound by ``resolve_vars``. With no overrides every
+    ``defaults/main.yml`` value applies, so the render is
+    :data:`DEFAULT_CONFIG`.
     """
     entry = {
         "host": "ubuntu",
@@ -129,8 +130,12 @@ def make_inventory(**overrides) -> list[dict]:
         },
         "group": "ubuntu",
         "tags": ["ubuntu_host", "apt_package_manager"],
+        "roles": {
+            "memcached": {
+            },
+        },
     }
-    entry.update(overrides)
+    entry["roles"]["memcached"].update(overrides)
     return [
         entry,
         {
@@ -176,7 +181,7 @@ async def run_role(
     inventory: list[dict], hosts: dict[str, SimulatedHost], *, dry: bool = False
 ):
     """Resolve variables, build the sync factory's deploy, and run one wave pass."""
-    v = resolve_vars(MemcachedVars, "memcached_", inventory)
+    v = resolve_vars(MemcachedVars, "memcached", inventory)
 
     def factory(entry: dict) -> SimulatedHost:
         # The *same* host object every pass, so state survives the barriers.
@@ -430,7 +435,7 @@ async def test_content_drift_reinstalls_and_notifies():
 
 async def test_listen_ip_list_renders_one_line_per_address():
     """The template's else-branch: a list renders one ``-l`` line per item."""
-    inventory = make_inventory(memcached_listen_ip=["127.0.0.1", "192.0.2.10"])
+    inventory = make_inventory(listen_ip=["127.0.0.1", "192.0.2.10"])
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
 
@@ -447,7 +452,7 @@ async def test_listen_ip_list_renders_one_line_per_address():
 
 async def test_empty_listen_ip_renders_no_binding_line():
     """An empty list is a valid Ansible override: no ``-l`` line at all."""
-    inventory = make_inventory(memcached_listen_ip=[])
+    inventory = make_inventory(listen_ip=[])
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
 
@@ -461,7 +466,7 @@ async def test_empty_listen_ip_renders_no_binding_line():
 
 async def test_user_and_verbosity_overrides_ride_the_inventory():
     """``memcached_user`` beats the vars-table default; ``-v`` fills the blank line."""
-    inventory = make_inventory(memcached_user="daemon", memcached_log_verbosity="-v")
+    inventory = make_inventory(user="daemon", log_verbosity="-v")
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
 
@@ -545,21 +550,21 @@ def test_model_is_frozen_and_hashable():
 @pytest.mark.parametrize(
     ("overrides", "match"),
     [
-        ({"memcached_user": 42}, "user"),
-        ({"memcached_log_file": None}, "log_file"),
-        ({"memcached_log_verbosity": 1}, "log_verbosity"),
-        ({"memcached_max_item_size": 1}, "max_item_size"),
-        ({"memcached_listen_ip": 42}, "listen_ip"),
-        ({"memcached_listen_ip": [42]}, "listen_ip"),
-        ({"memcached_user": ""}, "user"),
-        ({"memcached_max_item_size": ""}, "max_item_size"),
+        ({"user": 42}, "user"),
+        ({"log_file": None}, "log_file"),
+        ({"log_verbosity": 1}, "log_verbosity"),
+        ({"max_item_size": 1}, "max_item_size"),
+        ({"listen_ip": 42}, "listen_ip"),
+        ({"listen_ip": [42]}, "listen_ip"),
+        ({"user": ""}, "user"),
+        ({"max_item_size": ""}, "max_item_size"),
     ],
 )
 def test_invalid_role_values_fail_fast(overrides, match):
     """The old example's ``TypeError`` gates are pydantic rejections now (D5)."""
     inventory = make_inventory(**overrides)
     with pytest.raises(ValidationError, match=match):
-        resolve_vars(MemcachedVars, "memcached_", inventory)
+        resolve_vars(MemcachedVars, "memcached", inventory)
 
 
 def test_numeric_strings_coerce_into_the_integer_fields():
@@ -569,20 +574,20 @@ def test_numeric_strings_coerce_into_the_integer_fields():
     ``ApacheVars.listen_port``) and renders identically, so the fail-fast claim
     covers *unreadable* values, not merely differently-typed ones.
     """
-    v = resolve_vars(MemcachedVars, "memcached_", make_inventory(memcached_port="11212"))
+    v = resolve_vars(MemcachedVars, "memcached", make_inventory(port="11212"))
     assert v["ubuntu"].port == 11212
     assert "-p 11212\n" in render_memcached_conf(v["ubuntu"])
 
 
-def test_prefixed_inventory_keys_bind_and_typo_raises():
-    """``memcached_`` keys strip onto fields; a prefixed typo raises RoleVarsError."""
+def test_inventory_role_variables_bind_and_typos_raise():
+    """The nested mapping binds bare names; a typo raises RoleVarsError."""
     inventory = make_inventory(
-        memcached_threads=8, memcached_listen_ip=["127.0.0.1", "192.0.2.10"]
+        threads=8, listen_ip=["127.0.0.1", "192.0.2.10"]
     )
-    v = resolve_vars(MemcachedVars, "memcached_", inventory)
+    v = resolve_vars(MemcachedVars, "memcached", inventory)
     assert v["ubuntu"].threads == 8
     # A JSON list arrives normalized to a hashable tuple (§8.1).
     assert v["ubuntu"].listen_ip == ("127.0.0.1", "192.0.2.10")
 
-    with pytest.raises(RoleVarsError, match="memcached_packagez"):
-        resolve_vars(MemcachedVars, "memcached_", make_inventory(memcached_packagez="x"))
+    with pytest.raises(RoleVarsError, match="packagez"):
+        resolve_vars(MemcachedVars, "memcached", make_inventory(packagez="x"))

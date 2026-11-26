@@ -15,9 +15,10 @@ no framework:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``nginx_``-prefixed keys (``nginx_ppa_use``, ``nginx_vhosts``,
-   ``nginx_remove_default_vhost``, ``nginx_service_state`` and the rest of
-   :class:`~reemote.roles.nginx.NginxVars`) are bound and stripped, the call-site
+   ``nginx`` role mapping (``ppa_use``, ``vhosts``,
+   ``remove_default_vhost``, ``service_state`` and the rest of the
+   :class:`~reemote.roles.nginx.NginxVars` fields) is bound under the bare
+   field names, the call-site
    ``NGINX_OVERRIDES`` below wins over them, and a bad value raises before any
    host is contacted.
 3. Build the deploy -- ``nginx(vars_set)`` is the role's whole task list, one
@@ -39,13 +40,14 @@ The call-site ``overrides`` channel
 -----------------------------------
 
 ``NGINX_OVERRIDES`` (``remove_default_vhost=True`` and one ``example.com`` vhost)
-is handed to ``resolve_vars`` and wins over the inventory's ``nginx_``-prefixed
-keys for every host. Overrides use the model's UNPREFIXED field names -- the
-``nginx_`` prefix is an inventory-key binding, stripped before validation -- so
-``nginx_remove_default_vhost`` in the inventory and ``remove_default_vhost`` here
-set the same field. Precedence is model defaults < inventory extra < these
-overrides. The shipped ``inventory.json``'s ``ubuntu`` entry carries no
-``nginx_`` keys, so these overrides decide the site: nginx drops the packaged
+is handed to ``resolve_vars`` and wins over the inventory's ``nginx`` role
+mapping for every host. Overrides and the inventory mapping both use the
+model's bare field names -- there is no key prefix anywhere -- so
+``roles.nginx.remove_default_vhost`` in the inventory and
+``remove_default_vhost`` here set the same field. Precedence is model defaults
+< inventory role mapping < these overrides. The shipped ``inventory.json``
+carries no ``nginx`` role mapping, so these overrides decide the site: nginx
+drops the packaged
 ``default`` vhost and serves one ``example.com`` vhost out of ``/var/www/example``
 on port ``80``.
 
@@ -64,7 +66,7 @@ Run it with::
 ``main`` drives the deploy twice, exactly like an operation example: a
 ``dry=True`` preview first, then the real apply. The dry pass is one wave deep --
 ``run_waves`` plans the setup requests (``dirmngr``, plus the PPA when
-``nginx_ppa_use`` is set), parks on the ``checkpoint("setup done")`` barrier and
+``ppa_use`` is set), parks on the ``checkpoint("setup done")`` barrier and
 stops (``barrier: setup done -> unknown until run``), gathering nothing and
 applying nothing. A converged rerun is the honest preview: run the whole program
 a second time and it reports no change and queues no handler, because the
@@ -104,12 +106,11 @@ from reemote import (
 from reemote.roles import NginxVars, nginx
 
 # Common role variables handed to ``resolve_vars`` as call-site ``overrides``.
-# They use the model's UNPREFIXED field names (``remove_default_vhost``,
-# ``vhosts``) -- the ``nginx_`` prefix only binds inventory keys, and is stripped
-# before validation -- and win over any ``nginx_``-prefixed key in the inventory
-# for every host. A vhost is the same mapping the inventory's ``nginx_vhosts``
-# carries; ``resolve_vars`` validates it into a frozen ``VHost``, so the tuple
-# stays hashable.
+# They use the model's bare field names (``remove_default_vhost``,
+# ``vhosts``) -- the same names the inventory's ``nginx`` role mapping uses --
+# and win over it for every host. A vhost is the same mapping the inventory's
+# ``roles.nginx.vhosts`` carries; ``resolve_vars`` validates it into a frozen
+# ``VHost``, so the tuple stays hashable.
 NGINX_OVERRIDES = {
     "remove_default_vhost": True,
     "vhosts": (
@@ -130,11 +131,11 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted: the
-        # inventory's nginx_-prefixed keys, overlaid with the call-site
+        # inventory's nginx role mapping, overlaid with the call-site
         # overrides. A rejected value raises here -- a pydantic ValidationError,
         # which is a ValueError -- not mid-run.
         vars_set = resolve_vars(
-            NginxVars, "nginx_", inventory, overrides=NGINX_OVERRIDES
+            NginxVars, "nginx", inventory, overrides=NGINX_OVERRIDES
         )
         # The role's whole task list: one per-host generator, barriers and all.
         # A plain (non-async) factory, so it is called, not awaited.

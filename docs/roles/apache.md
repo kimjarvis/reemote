@@ -6,7 +6,7 @@
 | Module | [`reemote.roles.apache`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/apache.py) |
 | Example | [`examples/roles/apache.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/apache.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Variables | `apache_`-prefixed inventory keys → `ApacheVars` |
+| Variables | the entry's `apache` role mapping → `ApacheVars` |
 
 <!---
 | Waves | 3 **+ one per SSL vhost** (4 with a single certificate) |
@@ -87,9 +87,9 @@ probe runs on the host too — it is an action barrier, not a controller-side ca
 
 ## 3. Variables
 
-`ApacheVars` is a frozen pydantic model (`extra="forbid"`) with unprefixed field
-names; the prefix passed to `resolve_vars` binds the inventory keys, so an
-inventory written for the role needs no change.
+`ApacheVars` is a frozen pydantic model (`extra="forbid"`) whose fields carry bare
+names; the role name passed to `resolve_vars` binds the entry's `apache` role
+mapping, so an inventory written for the role needs no key gymnastics.
 
 --->
 
@@ -102,7 +102,7 @@ inventory written for the role needs no change.
 
 **Variables:**
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `listen_ip` | `str` | `*` | `apache_listen_ip` |
 | `listen_port` | `int` | `80` | `apache_listen_port` |
@@ -133,7 +133,7 @@ inventory written for the role needs no change.
 
 <!---
 
-Precedence is `model defaults < inventory extra < overrides`. Sequences are
+Precedence is `model defaults < inventory role mapping < overrides>. Sequences are
 `tuple`, never `list`: the model is frozen and hashable, and a value that reaches
 `op()` must hash. The two inert knobs are carried rather than dropped so an
 existing inventory still binds — a test pins that setting them changes no
@@ -146,7 +146,7 @@ the body, not a `control` barrier, so a custom template costs no extra wave.
 
 ### 3.1 Vhost mapping fields
 
-`apache_vhosts` items are `VHost`; `apache_vhosts_ssl` items are `SslVHost` (the
+`vhosts` items are `VHost`; `vhosts_ssl` items are `SslVHost` (the
 same fields plus the certificate paths).
 
 | Field | `VHost` | `SslVHost` |
@@ -161,8 +161,8 @@ The optional fields default to `null` and are dumped with
 `model_dump(exclude_none=True)`, which is what keeps the template's
 `{% if vhost.documentroot is defined %}` faithful: a vhost with no documentroot
 renders no `DocumentRoot ""` and no `<Directory>` block. `allow_override` and
-`options` are the per-vhost overrides of `apache_allow_override` /
-`apache_options`, applied by the template's `default()`.
+`options` are the per-vhost overrides of the role's own `allow_override` /
+`options` defaults, applied by the template's `default()`.
 
 
 ## 5. Run it
@@ -170,7 +170,7 @@ renders no `DocumentRoot ""` and no `<Directory>` block. `allow_override` and
 The role is library code; `examples/roles/apache.py` is the runnable artifact — a
 standalone program with its own `main()`, no shared runner. It loads and validates
 `inventory.json` from the current working directory, resolves the role's variables
-(the defaults overlaid with the entry's `apache_`-prefixed keys, then the call-site
+(the defaults overlaid with the entry's `apache` role mapping, then the call-site
 `overrides`), builds the deploy from the `apache` factory and drives it with
 `run_waves` — a `dry=True` one-wave preview, then the real apply — printing the
 wave tree each time:
@@ -187,7 +187,7 @@ APACHE_OVERRIDES = {
 async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
-    vars_set = resolve_vars(ApacheVars, "apache_", inventory, overrides=APACHE_OVERRIDES)
+    vars_set = resolve_vars(ApacheVars, "apache", inventory, overrides=APACHE_OVERRIDES)
     deploy = apache(vars_set)
     report, _hosts = await run_waves(inventory, deploy, dry=True)   # one-wave preview
     print(report.tree())
@@ -201,14 +201,14 @@ From the repository root:
 uv run python examples/roles/apache.py
 ```
 
-The `ubuntu` entry of the shipped `inventory.json` carries no `apache_` keys, so
-the program's call-site `overrides` decide the listen port and the vhosts: Apache
-listens on `8080` and serves one `example.com` vhost out of
-`/var/www/vhosts/example_com`. Overrides use the model's **unprefixed** field
-names — the `apache_` prefix only binds inventory keys — and win over both the
-defaults and any `apache_`-prefixed inventory key (precedence: model defaults <
-inventory extra < overrides). The `dry=True` pass is a one-wave preview: it plans
-the install requests, parks on the `apache -v` barrier and stops (`barrier:
+The `ubuntu` entry of the shipped `inventory.json` carries no `apache` role
+mapping, so the program's call-site `overrides` decide the listen port and the
+vhosts: Apache listens on `8080` and serves one `example.com` vhost out of
+`/var/www/vhosts/example_com`. Overrides use the model's bare field names and win
+over both the defaults and any key in the entry's `apache` role mapping
+(precedence: model defaults < inventory role mapping < overrides). The `dry=True`
+pass is a one-wave preview: it plans the install requests, parks on the
+`apache -v` barrier and stops (`barrier:
 apache -v → unknown until run`), gathering facts over SSH but applying nothing. A
 converged rerun is the real preview.
 
@@ -226,9 +226,9 @@ suite asserts it.
 > **Shared demo host.** The `ubuntu` demo host also runs the nginx example. This
 > example's `overrides` move Apache to port `8080`, so it no longer collides with
 > nginx's `80`/`443`; an inventory that restores the role's default
-> `apache_listen_port: 80` recreates the conflict, because this role leaves
-> `apache2` enabled and active. See [the nginx page](nginx.md) for the
-> stop/disable command to run afterwards.
+> `listen_port: 80` in the `apache` mapping recreates the conflict, because this
+> role leaves `apache2` enabled and active. See [the nginx page](nginx.md) for
+> the stop/disable command to run afterwards.
 
 ### 5.1 Composing this role
 
@@ -267,7 +267,7 @@ without any extra machinery:
   own.)
 * **The checkpoint immediately follows `configure`.** A checkpoint placed after the
   handler wave would read the handler's entries instead and notify nobody.
-* **The handler's verb comes from the same plan.** `apache_restart_state` maps onto
+* **The handler's verb comes from the same plan.** `restart_state` maps onto
   `service_handler`'s `restarted`/`reloaded`/`running` verbs, and
   `restarted`/`reloaded` always report changed — faithful to Ansible's service
   module, and why a converged host that *did* change something still shows a
@@ -280,8 +280,8 @@ emits no requests, no barriers and no report lines at all.
 
 From `tests/roles/test_apache.py::test_tree_snapshot`, against the simulated Ubuntu
 host plus a RedHat host the role never touches. The inventory sets
-`apache_listen_port: 8080`, `apache_remove_default_vhost: true`,
-`apache_mods_disabled: [autoindex]`, `apache_conf_enabled: [security]` and one vhost
+`listen_port: 8080`, `remove_default_vhost: true`, `mods_disabled: [autoindex]`,
+`conf_enabled: [security]` in the `apache` role mapping and one vhost
 with an alias, a documentroot and `extra_parameters`. Fresh host, first pass:
 
 ```text

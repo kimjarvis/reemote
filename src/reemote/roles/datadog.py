@@ -8,8 +8,8 @@
 # check configs under ``conf.d``, custom Python checks under ``checks.d``, the
 # ``install_info`` stamp, the systemd units, and the role's two restart handlers.
 # :func:`datadog` is the whole task list and :class:`DatadogVars` is
-# ``defaults/main.yml``, bound from the inventory's ``datadog_``-prefixed keys by
-# :func:`~reemote.rolevars.resolve_vars`.
+# ``defaults/main.yml``, bound from the inventory entry's ``datadog`` role
+# mapping by :func:`~reemote.rolevars.resolve_vars`.
 # 
 # Target: hosts in the ``"Ubuntu"`` OS family. The role's RHEL/CentOS/SUSE paths
 # are out of scope; a host outside the target family returns before its first
@@ -212,12 +212,12 @@ NOTIFY_STATIC = (
 class DatadogVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``datadog_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``datadog_api_key`` in the
-    inventory to :attr:`api_key`. The six probe-config variables
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``datadog`` role mapping, so ``api_key`` there sets
+    :attr:`api_key`. The six probe-config variables
     (``system_probe_config``, ``network_config``, etc.) are **not** fields here:
-    they carry no ``datadog_`` prefix upstream and are read raw from
-    ``host.extra`` in the deploy body.
+    they are unprefixed top-level inventory keys upstream, not ``datadog``
+    role variables, and are read raw from ``host.extra`` in the deploy body.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -981,7 +981,7 @@ async def datadog(v: VarsSet[DatadogVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`DatadogVars` per host
-            (``resolve_vars(DatadogVars, "datadog_", inventory)``).
+            (``resolve_vars(DatadogVars, "datadog", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves`. Publishes nothing, so the

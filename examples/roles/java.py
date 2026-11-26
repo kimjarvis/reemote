@@ -15,8 +15,9 @@ no framework:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``java_``-prefixed keys (``java_packages``, ``java_home`` -- the two role
-   variables of :class:`~reemote.roles.java.JavaVars`) are bound and stripped,
+   ``java`` role mapping (``packages``, ``home`` -- the two
+   variables of :class:`~reemote.roles.java.JavaVars`) is bound under the bare
+   field names,
    the call-site ``JAVA_OVERRIDES`` below wins over them, and a bad value raises
    before any host is contacted.
 3. Build the deploy -- ``java(vars_set)`` is the role's whole task list, one
@@ -42,12 +43,12 @@ awaited.
 The call-site ``overrides`` channel
 -----------------------------------
 
-``JAVA_OVERRIDES`` sets ``home`` (``java_home`` in the inventory's spelling) to
-a concrete JDK path, so the demonstration exercises the
+``JAVA_OVERRIDES`` sets ``home`` (the role mapping's own key for the JDK
+path) to a concrete JDK path, so the demonstration exercises the
 ``/etc/profile.d/java_home.sh`` write and not just the package install.
-Overrides use the model's UNPREFIXED field names -- the ``java_`` prefix is an
-inventory-key binding, stripped before validation. Precedence is model
-defaults < inventory extra < these overrides. The package list deliberately
+Overrides and the inventory mapping both use the model's bare field names --
+there is no key prefix anywhere. Precedence is model
+defaults < inventory role mapping < these overrides. The package list deliberately
 stays unset so the vars table derives it from each host's Ubuntu major version.
 
 Installing and running
@@ -94,13 +95,12 @@ from reemote.roles import JavaVars, java
 
 # Common role variables handed to ``resolve_vars`` as call-site ``overrides``.
 # ``home`` turns on the JAVA_HOME profile write (the template task the role
-# skips when ``java_home`` is empty), so the demonstration covers the full
+# skips when ``home`` is empty), so the demonstration covers the full
 # stream, not just the packages. ``packages`` stays unset on purpose: the
 # ``vars/Ubuntu-<major>.yml`` table then selects the OpenJDK version from each
-# host's gathered release. Overrides use the model's UNPREFIXED field names --
-# the ``java_`` prefix only binds inventory keys, and is stripped before
-# validation -- and win over any ``java_``-prefixed key in the inventory for
-# every host.
+# host's gathered release. Overrides use the model's bare field names --
+# the same names the inventory's ``java`` role mapping uses -- and win over it
+# for every host.
 JAVA_OVERRIDES = {
     "home": "/usr/lib/jvm/java-21-openjdk-amd64",
 }
@@ -114,10 +114,10 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted: the
-        # inventory's java_-prefixed keys, overlaid with the call-site
+        # inventory's java role mapping, overlaid with the call-site
         # overrides. A rejected value raises here -- a pydantic ValidationError,
         # which is a ValueError -- not mid-run.
-        vars_set = resolve_vars(JavaVars, "java_", inventory, overrides=JAVA_OVERRIDES)
+        vars_set = resolve_vars(JavaVars, "java", inventory, overrides=JAVA_OVERRIDES)
         # The role's whole task list: one per-host generator, barrier and all.
         # A plain (non-async) factory, so it is called, not awaited.
         deploy = java(vars_set)

@@ -9,7 +9,8 @@
 # workaround (Debian bug 863199 / role issue #64), the ``apt`` install, and the
 # optional ``java_home.sh`` profile template. :func:`java` is the whole task
 # list and :class:`JavaVars` is ``defaults/main.yml``, bound from the
-# inventory's ``java_``-prefixed keys by :func:`~reemote.rolevars.resolve_vars`.
+# inventory entry's ``java`` role mapping by
+# :func:`~reemote.rolevars.resolve_vars`.
 #
 # Target: hosts in the ``"Ubuntu"`` OS family. A host outside the family
 # returns before its first ``yield`` and emits no requests, no barriers and no
@@ -126,10 +127,9 @@ UBUNTU_JAVA_PACKAGES: dict[int, tuple[str, ...]] = {
 class JavaVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``java_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``java_packages`` in the
-    inventory to :attr:`packages` and ``java_home`` to :attr:`home`, so an
-    inventory written for the role needs no change.
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``java`` role mapping, so ``packages`` and ``home``
+    there set :attr:`packages` and :attr:`home`.
 
     The model is frozen, so it stays hashable through the deploy body
     (:class:`~reemote.rolevars.VarsSet` is closed over by the factory), and
@@ -326,7 +326,7 @@ def java(v: VarsSet[JavaVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`JavaVars` per host
-            (``resolve_vars(JavaVars, "java_", inventory)``).
+            (``resolve_vars(JavaVars, "java", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves`. It publishes no outputs -- no

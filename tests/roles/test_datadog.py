@@ -107,13 +107,17 @@ def make_inventory(custom_check_source: Path) -> list[dict[str, Any]]:
             },
             "group": "ubuntu",
             "tags": ["ubuntu_host", "apt_package_manager"],
-            "datadog_api_key": API_KEY,
-            "datadog_site": "datadoghq.eu",
-            "datadog_checks": {"disk": {"instances": [{"use_mount": True}]}},
-            "datadog_custom_checks": {CUSTOM_CHECK: str(custom_check_source)},
-            "datadog_disable_untracked_checks": True,
-            "datadog_disable_default_checks": True,
-            "datadog_disable_example_checks": True,
+            "roles": {
+                "datadog": {
+                    "api_key": API_KEY,
+                    "site": "datadoghq.eu",
+                    "checks": {"disk": {"instances": [{"use_mount": True}]}},
+                    "custom_checks": {CUSTOM_CHECK: str(custom_check_source)},
+                    "disable_untracked_checks": True,
+                    "disable_default_checks": True,
+                    "disable_example_checks": True,
+                },
+            },
         },
         {
             "host": "web1",
@@ -267,7 +271,7 @@ async def run_role(
     dry: bool = False,
 ) -> Any:
     """Resolve variables, await the async factory, and run one wave pass."""
-    v = resolve_vars(DatadogVars, "datadog_", inventory)
+    v = resolve_vars(DatadogVars, "datadog", inventory)
 
     def factory(entry: dict[str, Any]) -> SimulatedHost:
         return hosts[entry["host"]]

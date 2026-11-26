@@ -15,11 +15,10 @@ no framework:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``pip_``-prefixed keys (``pip_package``, ``pip_executable``,
-   ``pip_install_packages`` -- the three fields of
-   :class:`~reemote.roles.pip.PipVars`) are bound and stripped, the call-site
-   ``PIP_OVERRIDES`` below wins over them, and a bad value raises before any host
-   is contacted.
+   ``pip`` role mapping (``package``, ``executable``, ``install_packages`` --
+   the three fields of :class:`~reemote.roles.pip.PipVars`) is bound under the
+   bare field names, the call-site ``PIP_OVERRIDES`` below wins over them, and
+   a bad value raises before any host is contacted.
 3. Build the deploy -- ``pip(vars_set)`` is the role's whole task list, one
    per-host generator -- and drive it with ``run_waves``, the barrier-aware
    driver a role needs: the interpreter-version read is a ``fact`` barrier
@@ -40,12 +39,12 @@ The factory itself is a plain (non-``async``) function, so ``pip(vars_set)`` is
 The call-site ``overrides`` channel
 -----------------------------------
 
-``PIP_OVERRIDES`` turns on the ``pip_install_packages`` loop with a version pin,
+``PIP_OVERRIDES`` turns on the ``install_packages`` loop with a version pin,
 a bare name and a virtualenv entry, so the demonstration exercises the whole
 stream -- the apt pip package, the ``EXTERNALLY-MANAGED`` removal and the pip
-loop -- and not just the package install. Overrides use the model's UNPREFIXED
-field names -- the ``pip_`` prefix is an inventory-key binding, stripped before
-validation. Precedence is model defaults < inventory extra < these overrides.
+loop -- and not just the package install. Overrides and the inventory mapping
+both use the model's bare field names -- there is no key prefix anywhere.
+Precedence is model defaults < inventory role mapping < these overrides.
 
 Installing and running
 ----------------------
@@ -91,9 +90,9 @@ from reemote.roles import PipVars, pip
 # Common role variables handed to ``resolve_vars`` as call-site ``overrides``.
 # ``install_packages`` turns on the pip loop so the demonstration covers the full
 # stream, not just the package install: a version pin, a bare name and a
-# virtualenv entry. Overrides use the model's UNPREFIXED field names -- the
-# ``pip_`` prefix only binds inventory keys, and is stripped before validation --
-# and win over any ``pip_``-prefixed key in the inventory for every host.
+# virtualenv entry. Overrides use the model's bare field names -- the same
+# names the inventory's ``pip`` role mapping uses -- and win over it for every
+# host.
 PIP_OVERRIDES = {
     "install_packages": [
         {"name": "ipaddress", "version": "1.0.18"},
@@ -111,10 +110,10 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted: the
-        # inventory's pip_-prefixed keys, overlaid with the call-site overrides.
+        # inventory's pip role mappings, overlaid with the call-site overrides.
         # A rejected value raises here -- a pydantic ValidationError, which is a
         # ValueError -- not mid-run.
-        vars_set = resolve_vars(PipVars, "pip_", inventory, overrides=PIP_OVERRIDES)
+        vars_set = resolve_vars(PipVars, "pip", inventory, overrides=PIP_OVERRIDES)
         # The role's whole task list: one per-host generator. A plain (non-async)
         # factory, so it is called, not awaited.
         deploy = pip(vars_set)
@@ -148,9 +147,10 @@ async def main() -> None:
         raise SystemExit(1) from exc
     except (ValueError, TypeError) as exc:
         # A rejected role variable (pydantic's ValidationError and a RoleVarsError
-        # for an unknown pip_ key are both a ValueError), or the role body's own
-        # hard error after the barrier and before any request runs -- the
-        # interpreter version cannot be read. Nothing is half-applied.
+        # for an unknown key in the pip mapping are both a ValueError), or the
+        # role body's own hard error after the barrier and before any request
+        # runs -- the interpreter version cannot be read. Nothing is
+        # half-applied.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     except (CommandError, HostConnectionError, PrivilegeError) as exc:

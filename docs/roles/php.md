@@ -6,7 +6,7 @@
 | Module | [`reemote.roles.php`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/php.py) |
 | Runner | [`examples/roles/php.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/php.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Variables | `php_`-prefixed inventory keys → `PhpVars` |
+| Variables | the entry's `php` role mapping → `PhpVars` |
 
 <!---
 | Waves | 12 fresh, 11 converged — eleven barriers plus the handler wave |
@@ -105,13 +105,13 @@ Debian fallback 8.2).
 
 ## 3. Variables
 
-`PhpVars` is a frozen pydantic model (`extra="forbid"`) with unprefixed field
-names; the prefix passed to `resolve_vars` binds the inventory keys, so an
-inventory written for the role needs no change. Precedence is
-`model defaults < inventory extra < overrides`.
+`PhpVars` is a frozen pydantic model (`extra="forbid"`) whose fields carry bare
+names; the role name passed to `resolve_vars` binds the entry's `php` role
+mapping, so an inventory written for the role needs no key gymnastics.
+Precedence is `model defaults < inventory role mapping < overrides`.
 
 Values that reach a template verbatim are `str`, with `coerce_numbers_to_str`, so
-an inventory writing `php_memory_limit: 512` renders `512` exactly as Jinja would
+an inventory writing `memory_limit: 512` renders `512` exactly as Jinja would
 render the integer. Sequences are `tuple`, never `list`: the model is frozen, and
 a value that reaches `op()` must hash.
 
@@ -128,7 +128,7 @@ a value that reaches `op()` must hash.
 
 ### Packages and webserver
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `default_version_debian` | `str \| None` | `null` → per-Ubuntu table, else `8.2` | `php_default_version_debian` |
 | `packages` | `tuple[str, …] \| None` | `null` → the 13 version-specific packages (+ `php{v}-json` below 8.0) | `php_packages` |
@@ -142,7 +142,7 @@ a value that reaches `op()` must hash.
 
 ### PHP-FPM
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `enable_php_fpm` | `bool` | `false` | `php_enable_php_fpm` |
 | `fpm_state` | `Literal["started","stopped","restarted","reloaded"]` | `started` | `php_fpm_state` |
@@ -163,7 +163,7 @@ a value that reaches `op()` must hash.
 
 ### Paths
 
-| Field | Default | Inventory key |
+| Field | Default | Upstream var |
 | --- | --- | --- |
 | `conf_paths` | `null` → `/etc/php/{v}/{fpm,apache2,cli}` | `php_conf_paths` |
 | `extension_conf_paths` | `null` → `/etc/php/{v}/{fpm,apache2,cli}/conf.d` | `php_extension_conf_paths` |
@@ -172,7 +172,7 @@ a value that reaches `op()` must hash.
 | `use_managed_ini` | `true` — when false, no `php.ini` is written at all | `php_use_managed_ini` |
 
 The extension paths default from the *distribution* layout, exactly as
-`vars/Debian.yml`'s `__php_extension_conf_paths` does — overriding `php_conf_paths`
+`vars/Debian.yml`'s `__php_extension_conf_paths` does — overriding `conf_paths`
 moves where `php.ini` goes but not where the extension inis go, which is the
 role's behaviour, not an oversight.
 
@@ -208,7 +208,7 @@ derives its own boolean through `opcache_enabled` / `_ansible_bool`.
 
 ### 3.1 Pool items
 
-`php_fpm_pools` items are `PhpFpmPool` — the keys `www.conf.j2` reads.
+`fpm_pools` items are `PhpFpmPool` — the keys `www.conf.j2` reads.
 
 | Field | Meaning |
 | --- | --- |
@@ -222,15 +222,15 @@ template uses the falsy form `default(x, true)`: a pool that explicitly sets
 `pool_pm_max_requests: 0` renders `500`, faithfully.
 
 Invalid values — a bad enum, a non-boolean flag, a pool missing `pool_name`, a
-custom `pool_template`, a typoed `php_` key — raise while the inventory is
-resolved, before any host is contacted.
+custom `pool_template`, a key naming no field in the `php` mapping — raise while
+the inventory is resolved, before any host is contacted.
 
 ## 5. Run it
 
 The role is library code; `examples/roles/php.py` is the runnable artifact — a
 standalone program with its own `main()`, no shared runner. It loads and validates
 `inventory.json` from the current working directory, resolves the role's variables
-(the defaults overlaid with the entry's `php_`-prefixed keys), builds the deploy
+(the defaults overlaid with the entry's `php` role mapping), builds the deploy
 from the `php` factory and drives it with `run_waves` — a `dry=True` one-wave
 preview, then the real apply — printing the wave tree each time:
 
@@ -241,7 +241,7 @@ from reemote.roles import PhpVars, php
 async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
-    vars_set = resolve_vars(PhpVars, "php_", inventory)
+    vars_set = resolve_vars(PhpVars, "php", inventory)
     deploy = php(vars_set)
     report, _hosts = await run_waves(inventory, deploy, dry=True)   # one-wave preview
     print(report.tree())
@@ -255,10 +255,11 @@ From the repository root:
 uv run python examples/roles/php.py
 ```
 
-The `ubuntu` entry of the shipped `inventory.json` carries no `php_` keys, so the
-role's defaults apply: FPM **off**, `memory_limit = 256M`, the three version-derived
-conf paths, and `apache2` as the webserver the handler restarts. The `dry=True`
-pass is a one-wave preview: the role's first item is the `LinuxDistribution`
+The `ubuntu` entry of the shipped `inventory.json` carries no `php` role mapping,
+so the role's defaults apply: FPM **off**, `memory_limit = 256M`, the three
+version-derived conf paths, and `apache2` as the webserver the handler restarts.
+The `dry=True` pass is a one-wave preview: the role's first item is the
+`LinuxDistribution`
 barrier, so the run parks there (`barrier: LinuxDistribution → unknown until run`),
 reads no state and applies nothing. A converged rerun is the real preview.
 
@@ -274,9 +275,10 @@ is running and enabled. That is the migration's idempotence claim, and the offli
 suite asserts it — including that the three checkpoints then notify nobody.
 
 > **Shared demo host.** The `ubuntu` demo host also runs the apache and nginx
-> examples. With its default `php_webserver_daemon` this role's handler wave
-> restarts `apache2.service`; set `php_webserver_daemon: "nginx"` (or
-> `php_enable_webserver: false`) to leave the other role's unit alone. Enabling
+> examples. With its default `webserver_daemon` this role's handler wave
+> restarts `apache2.service`; set `webserver_daemon: "nginx"` (or
+> `enable_webserver: false`) in the entry's `php` role mapping to leave the other
+> role's unit alone. Enabling
 > FPM additionally starts `php{v}-fpm.service`.
 
 ## 6. What it does
@@ -330,9 +332,9 @@ composing program passes.
 ## 7. Transcript
 
 From `tests/roles/test_php.py::test_tree_snapshot`, against the simulated Ubuntu
-24.04 host plus a RedHat host the role never touches. The inventory sets
-`php_enable_php_fpm: true`, `php_memory_limit: "512M"`,
-`php_fpm_pm_status_path: "/status"` and `php_opcache_blacklist_filename`, so both
+24.04 host plus a RedHat host the role never touches. The inventory's `php` role
+mapping sets `enable_php_fpm: true`, `memory_limit: "512M"`,
+`fpm_pm_status_path: "/status"` and `opcache_blacklist_filename`, so both
 conditional template lines and the FPM branch are exercised. Fresh host, first
 pass:
 
@@ -486,7 +488,8 @@ carries no requests**, and the handler wave is gone entirely:
     barrier: configure done → 0 hosts notified
 ```
 
-With `php_enable_php_fpm: false` the tree keeps **all eleven barriers** — the
+With `enable_php_fpm: false` in the role mapping the tree keeps **all eleven
+barriers** — the
 pool-directory `stat` is unguarded in the role, and its answer is what gates the
 directory task — and loses only requests: no `Create fpm pools`, no FPM service
 task, and one handler request instead of two. The `web1` RedHat host appears in no

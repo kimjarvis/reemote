@@ -9,8 +9,8 @@
 # ``restart memcached``. :func:`memcached` is the whole task list and the
 # handler, :class:`MemcachedVars` is ``defaults/main.yml`` (plus the
 # ``memcached_user`` default the ``set_fact`` task derives from
-# ``vars/Debian.yml``), bound from the inventory's ``memcached_``-prefixed keys
-# by :func:`~reemote.rolevars.resolve_vars`.
+# ``vars/Debian.yml``), bound from the inventory entry's ``memcached`` role
+# mapping by :func:`~reemote.rolevars.resolve_vars`.
 #
 # Target: hosts in the ``"Ubuntu"`` OS family. A host outside the family
 # returns before its first ``yield`` and emits no requests, no barriers and no
@@ -181,11 +181,10 @@ NOTIFY_RESTART: frozenset[str] = frozenset(
 class MemcachedVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``memcached_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``memcached_port`` in the
-    inventory to :attr:`port`, so an inventory written for the role needs no
-    change. :attr:`user` has no ``defaults/main.yml`` entry at all: the role
-    defines it through ``set_fact: memcached_user={{ __memcached_user }}
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``memcached`` role mapping, so ``port`` there sets
+    :attr:`port`. :attr:`user` has no ``defaults/main.yml`` entry at all; the
+    role defines it through ``set_fact: memcached_user={{ __memcached_user }}
     when: memcached_user is not defined``, so :data:`DEFAULT_USER` is its
     model default and an explicit key wins over it exactly as the extra key
     won over the ``set_fact``.
@@ -395,7 +394,7 @@ def memcached(v: VarsSet[MemcachedVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`MemcachedVars` per host
-            (``resolve_vars(MemcachedVars, "memcached_", inventory)``).
+            (``resolve_vars(MemcachedVars, "memcached", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves`. It publishes no outputs -- no

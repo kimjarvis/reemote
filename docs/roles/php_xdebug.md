@@ -6,7 +6,7 @@
 | Module | [`reemote.roles.php_xdebug`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/php_xdebug.py) |
 | Runner | [`examples/roles/php_xdebug.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/php_xdebug.py) |
 | Target | **Ubuntu** — inherited from [`php`](php.md)'s family guard, not restated |
-| Variables | `php_xdebug_`-prefixed inventory keys → `PhpXdebugVars` |
+| Variables | the entry's `php_xdebug` role mapping → `PhpXdebugVars` |
 
 <!---
 | Depends on | [`reemote.roles.php`](php.md) — run inside this role's own body |
@@ -79,10 +79,10 @@ being re-derived beside it.
 No library gap blocked this migration, so none was filed: the build command that
 the old example ran through `gather_action` is an ordinary `act(Shell)` barrier,
 and `files.unarchive` already carries the `creates` gate. What the migration
-contributed back is one line of `resolve_vars`: the prefixes `php_` and
-`php_xdebug_` nest, so resolving the parent needs
-`nested_prefixes=("php_xdebug_",)` — see [Role Variables](../rolevars.md) and
-design doc section 8.2.
+contributed back is the `roles` binding channel itself: each entry carries a
+per-role mapping, so the dependency and the child role resolve as sibling role
+names under one `roles` dict instead of nesting key prefixes — see
+[Role Variables](../rolevars.md) and design doc `role_vars.md` (D4).
 
 ## 2. Install
 
@@ -111,10 +111,10 @@ play-level `become`.
 
 ## 3. Variables
 
-`PhpXdebugVars` is a frozen pydantic model (`extra="forbid"`) with unprefixed
-field names, so `resolve_vars(PhpXdebugVars, "php_xdebug_", inventory)` binds
-`php_xdebug_version` to `version` and an inventory written for the role needs no
-change. Precedence is `model defaults < inventory extra < overrides`.
+`PhpXdebugVars` is a frozen pydantic model (`extra="forbid"`) whose fields carry
+bare names, so `resolve_vars(PhpXdebugVars, "php_xdebug", inventory)` binds the
+entry's `php_xdebug` role mapping: `version` there sets `version`. Precedence is
+`model defaults < inventory role mapping < overrides`.
 
 The **dependency's** variables are deliberately absent from this model.
 `php_default_version_debian`, `php_extension_conf_paths`, `php_webserver_daemon`,
@@ -136,7 +136,7 @@ this model cannot drift out of step with the role it extends.
 
 ### Build and module install
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `enable` | `bool` | `true` — **new knob**, skips the role *and* the dependency (D1) | `php_xdebug_enable` |
 | `version` | `str` | `"3.3.2"` — dotted digits; fixes the URL, the source dir and the `.so` name | `php_xdebug_version` |
@@ -165,22 +165,22 @@ role's own quirk, kept verbatim (D7).
 
 ### Resolving both roles
 
-The two prefixes nest, so the parent's resolution declares the child's:
+The two roles resolve as sibling names under one entry's `roles` dict:
 
 ```python
-php_v = resolve_vars(PhpVars, "php_", inventory, nested_prefixes=("php_xdebug_",))
-xdebug_v = resolve_vars(PhpXdebugVars, "php_xdebug_", inventory)
+php_v = resolve_vars(PhpVars, "php", inventory)
+xdebug_v = resolve_vars(PhpXdebugVars, "php_xdebug", inventory)
 deploy = php_xdebug(xdebug_v, php_v)
 ```
 
-Without `nested_prefixes`, `php_xdebug_version` carries the `php_` prefix, names
-no `PhpVars` field, and is reported as the parent role's typo — neither role
-resolves. A caller that runs php on its own passes the *same* `VarsSet` to both,
+Each role reads only its own mapping, so `php` and `php_xdebug` never see each
+other's keys — a `version` in the `php_xdebug` mapping is not the parent's typo.
+A caller that runs php on its own passes the *same* `VarsSet` to both,
 which is the whole de-duplication story: there is no registry to collide with.
 
 Invalid values — a version that is not dotted digits, an empty workspace, a
-boolified render value, a typoed `php_xdebug_` key — raise while the inventory is
-resolved, before any host is contacted.
+boolified render value, a key naming no field in the role mapping — raise while
+the inventory is resolved, before any host is contacted.
 
 ## 5. Run it
 
@@ -197,8 +197,8 @@ from reemote.roles import PhpVars, PhpXdebugVars, php_xdebug
 async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
-    php_v = resolve_vars(PhpVars, "php_", inventory, nested_prefixes=("php_xdebug_",))
-    xdebug_v = resolve_vars(PhpXdebugVars, "php_xdebug_", inventory)
+    php_v = resolve_vars(PhpVars, "php", inventory)
+    xdebug_v = resolve_vars(PhpXdebugVars, "php_xdebug", inventory)
     deploy = php_xdebug(xdebug_v, php_v)
     report, _hosts = await run_waves(inventory, deploy, dry=True)   # one-wave preview
     print(report.tree())
@@ -231,9 +231,10 @@ two roles' separate handler sets, and the driver has no de-duplication — see D
 > **Shared demo host.** The `ubuntu` demo host also runs the php, apache and
 > nginx examples. This role's handler wave restarts `php_webserver_daemon`
 > (default `apache2`) and, when `php_enable_php_fpm` is set, `php{v}-fpm`. The
-> dependency's variables are the knobs: `php_webserver_daemon: "nginx"` or
-> `php_enable_webserver: false` leaves another role's unit alone, and
-> `php_xdebug_enable: false` skips both roles for that host.
+> dependency's variables are the knobs: `webserver_daemon: "nginx"` or
+> `enable_webserver: false` in the entry's `php` role mapping leaves another
+> role's unit alone, and `enable: false` in the `php_xdebug` mapping skips both
+> roles for that host.
 
 `main()` maps the failure modes (bad inventory, `ValueError` from a rejected
 variable, `CommandError` from a failed build, `HostConnectionError`,

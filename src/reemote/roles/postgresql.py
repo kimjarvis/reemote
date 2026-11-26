@@ -8,8 +8,8 @@
 # databases, users and object privileges. :func:`postgresql` is the whole
 # system-level task list and :func:`postgresql_data` the data plane;
 # :class:`PostgresqlVars` is ``defaults/main.yml`` overlaid with the frozen
-# ``vars/RedHat-<major>.yml`` dispatch, bound from the inventory's
-# ``postgresql_``-prefixed keys by :func:`~reemote.rolevars.resolve_vars`.
+# ``vars/RedHat-<major>.yml`` dispatch, bound from the inventory entry's
+# ``postgresql`` role mapping by :func:`~reemote.rolevars.resolve_vars`.
 # 
 # Target: hosts in the ``"RedHat"`` OS family (CentOS Stream 9 or 10). The role's
 # ``include_vars`` dispatch (``vars/RedHat-<major>.yml``, skipped for
@@ -287,10 +287,9 @@ class PgPriv(BaseModel):
 class PostgresqlVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``postgresql_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``postgresql_user`` in the
-    inventory to :attr:`user`, so an inventory written for the role needs no
-    change. The keys the RedHat vars file overrides (:attr:`version`,
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``postgresql`` role mapping, so ``user`` there sets
+    :attr:`user`. The keys the RedHat vars file overrides (:attr:`version`,
     :attr:`packages`, :attr:`python_library`, :attr:`daemon`, :attr:`data_dir`,
     :attr:`bin_path`, :attr:`config_path`, :attr:`unix_socket_directories_mode`)
     are ``None`` by default and fall back to :data:`REDHAT_VARS` unless pinned.
@@ -1144,7 +1143,7 @@ def postgresql(v: VarsSet[PostgresqlVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`PostgresqlVars` per host
-            (``resolve_vars(PostgresqlVars, "postgresql_", inventory)``).
+            (``resolve_vars(PostgresqlVars, "postgresql", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves` that publishes no outputs -- a
@@ -1238,7 +1237,7 @@ def postgresql_data(v: VarsSet[PostgresqlVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`PostgresqlVars` per host
-            (``resolve_vars(PostgresqlVars, "postgresql_", inventory)``).
+            (``resolve_vars(PostgresqlVars, "postgresql", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves` that publishes no outputs.

@@ -6,7 +6,7 @@
 | Module | [`reemote.roles.drush`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/drush.py) |
 | Runner | [`examples/roles/drush.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/drush.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Variables | `drush_`-prefixed inventory keys → `DrushVars` |
+| Variables | the entry's `drush` role mapping → `DrushVars` |
 
 <!---
 | Waves | exactly `3` on every host and every pass (`fact(FileLink)`, `fact(File)`, the requests) |
@@ -71,8 +71,8 @@ sudo (or a `privilege` section in the inventory): every elevated request carries
 
 ## 3. Variables
 
-`DrushVars` is a frozen pydantic model with unprefixed field names; the prefix
-passed to `resolve_vars` binds the inventory keys.
+`DrushVars` is a frozen pydantic model whose fields carry bare names; the role
+name passed to `resolve_vars` binds the entry's `drush` role mapping.
 
 --->
 
@@ -85,24 +85,24 @@ passed to `resolve_vars` binds the inventory keys.
 
 **Variables:**
 
-| Field | Type | Default | Inventory key | Ansible name |
-| --- | --- | --- | --- | --- |
-| `launcher_install` | `bool` | `true` | `drush_launcher_install` | `drush_launcher_install` |
-| `launcher_version` | `str` | `0.10.1` | `drush_launcher_version` | `drush_launcher_version` |
-| `launcher_phar_url` | `str \| None` | `none` | `drush_launcher_phar_url` | `drush_launcher_phar_url` |
-| `launcher_path` | `str` | `/usr/local/bin/drush` | `drush_launcher_path` | `drush_launcher_path` |
-| `composer_global_install` | `bool` | `false` | `drush_composer_global_install` | `drush_composer_global_install` |
-| `install_from_source` | `bool` | `false` | `drush_install_from_source` | `drush_install_from_source` |
+| Field | Type | Default | Ansible name |
+| --- | --- | --- | --- |
+| `launcher_install` | `bool` | `true` | `drush_launcher_install` |
+| `launcher_version` | `str` | `0.10.1` | `drush_launcher_version` |
+| `launcher_phar_url` | `str \| None` | `none` | `drush_launcher_phar_url` |
+| `launcher_path` | `str` | `/usr/local/bin/drush` | `drush_launcher_path` |
+| `composer_global_install` | `bool` | `false` | `drush_composer_global_install` |
+| `install_from_source` | `bool` | `false` | `drush_install_from_source` |
 
 <!---
 
-Precedence is `model defaults < inventory extra < overrides`. An explicit
+Precedence is `model defaults < inventory role mapping < overrides`. An explicit
 `launcher_phar_url` wins over `launcher_version` (Ansible's variable precedence);
 when it is `null` the release URL is rebuilt from the version, exactly as
 `defaults/main.yml`'s Jinja2 does. Validation is fail-fast: `launcher_path` must be
 absolute and non-empty, `launcher_version` must be a non-empty string, an explicit
 `launcher_phar_url` must be non-empty, and `extra="forbid"` plus `resolve_vars`'
-binding report a prefixed key that names no field (`drush_launcher_pathh` raises
+binding report a key that names no field (`launcher_pathh` raises
 `RoleVarsError` rather than silently defaulting). The two opt-in branches are
 rejected here too, before any host is contacted: `composer_global_install` and
 `install_from_source` (D8).
@@ -122,7 +122,7 @@ from reemote.roles import DrushVars, drush
 async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
-    vars_set = resolve_vars(DrushVars, "drush_", inventory)
+    vars_set = resolve_vars(DrushVars, "drush", inventory)
     deploy = drush(vars_set)                                       # plain factory
     report, _hosts = await run_waves(inventory, deploy, dry=True)   # one-wave preview
     print(report.tree())

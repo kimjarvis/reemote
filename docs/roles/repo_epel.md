@@ -6,7 +6,7 @@
 | Module | [`reemote.roles.repo_epel`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/repo_epel.py) |
 | Runner | [`examples/roles/repo_epel.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/repo_epel.py) |
 | Target | **RedHat** — hosts in the `"RedHat"` OS family |
-| Variables | `epel_`-prefixed inventory keys → `EpelVars` |
+| Variables | the entry's `epel` role mapping → `EpelVars` |
 
 <!---
 | Waves | 3–4 (wave 2, the control fetch, only when the repo file is absent) |
@@ -65,8 +65,8 @@ carries `sudo=True`, because reemote has no play-level `become`.
 
 ## 3. Variables
 
-`EpelVars` is a frozen pydantic model with unprefixed field names; the prefix
-passed to `resolve_vars` binds the inventory keys.
+`EpelVars` is a frozen pydantic model whose fields carry bare names; the role
+name passed to `resolve_vars` binds the entry's `epel` role mapping.
 
 --->
 
@@ -79,22 +79,22 @@ passed to `resolve_vars` binds the inventory keys.
 
 **Variables:**
 
-| Field | Type | Default | Inventory key | Ansible name |
-| --- | --- | --- | --- | --- |
-| `repofile_path` | `str` | `/etc/yum.repos.d/epel.repo` | `epel_repofile_path` | `epel_repofile_path` |
-| `repo_disable` | `bool` | `false` | `epel_repo_disable` | `epel_repo_disable` |
-| `repo_url` | `str \| None` | `null` → templated | `epel_repo_url` | `epel_repo_url` |
-| `repo_gpg_key_url` | `str \| None` | `null` → templated | `epel_repo_gpg_key_url` | `epel_repo_gpg_key_url` |
+| Field | Type | Default | Ansible name |
+| --- | --- | --- | --- |
+| `repofile_path` | `str` | `/etc/yum.repos.d/epel.repo` | `epel_repofile_path` |
+| `repo_disable` | `bool` | `false` | `epel_repo_disable` |
+| `repo_url` | `str \| None` | `null` → templated | `epel_repo_url` |
+| `repo_gpg_key_url` | `str \| None` | `null` → templated | `epel_repo_gpg_key_url` |
 
 <!---
 
-Precedence is `model defaults < inventory extra < overrides`. A `null` URL keeps
+Precedence is `model defaults < inventory role mapping < overrides`. A `null` URL keeps
 the version-derived template (`…/epel-release-latest-{major}.noarch.rpm`,
 `…/RPM-GPG-KEY-EPEL-{major}`), which is how the role interpolates
 `distribution_major_version`; an explicit URL wins. Validation is fail-fast:
 `repofile_path` must be absolute, a URL override must be non-empty, and
-`extra="forbid"` plus `resolve_vars`' binding report a prefixed key that names no
-field (`epel_repo_disble` raises `RoleVarsError` rather than silently defaulting).
+`extra="forbid"` plus `resolve_vars`' binding report a key that names no
+field (`repo_disble` raises `RoleVarsError` rather than silently defaulting).
 
 The signing keys' rpm short ids are pinned per EPEL major (`EPEL_KEY_IDS`) so the
 key import can be gated: 7 → `352c64e5`, 8 → `2f86d6a1`, 9 → `3228467c`,
@@ -105,7 +105,7 @@ key import can be gated: 7 → `352c64e5`, 8 → `2f86d6a1`, 9 → `3228467c`,
 The role is library code; `examples/roles/repo_epel.py` is the runnable artifact —
 a standalone program with its own `main()`, no shared runner. It loads and validates
 `inventory.json` from the current working directory, resolves the role's variables
-(the defaults overlaid with the entry's `epel_`-prefixed keys), builds the deploy
+(the defaults overlaid with the entry's `epel` role mapping), builds the deploy
 from the `repo_epel` factory and drives it with `run_waves` — a `dry=True` one-wave
 preview, then the real apply — printing the wave tree each time:
 
@@ -116,7 +116,7 @@ from reemote.roles import EpelVars, repo_epel
 async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
-    vars_set = resolve_vars(EpelVars, "epel_", inventory)
+    vars_set = resolve_vars(EpelVars, "epel", inventory)
     deploy = repo_epel(vars_set)
     report, _hosts = await run_waves(inventory, deploy, dry=True)   # one-wave preview
     print(report.tree())

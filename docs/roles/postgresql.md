@@ -6,7 +6,7 @@
 | Module | [`reemote.roles.postgresql`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/postgresql.py) |
 | Example | [`examples/roles/postgresql.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/postgresql.py) |
 | Target | **RedHat** — hosts in the `"RedHat"` OS family (CentOS Stream 9 or 10) |
-| Variables | `postgresql_`-prefixed inventory keys → `PostgresqlVars` |
+| Variables | the entry's `postgresql` role mapping → `PostgresqlVars` |
 
 <!---
 | Passes | **2** — `postgresql` on the root view, `postgresql_data` on the `postgres` view |
@@ -112,9 +112,10 @@ example builds it by copying the inventory and adding that one key per entry.
 
 ## 3. Variables
 
-`PostgresqlVars` is a frozen pydantic model (`extra="forbid"`) with unprefixed field
-names; the `postgresql_` prefix passed to `resolve_vars` binds the inventory keys, so
-an inventory written for the role needs no change. Both passes share one `VarsSet`.
+`PostgresqlVars` is a frozen pydantic model (`extra="forbid"`) whose fields carry
+bare names; the role name passed to `resolve_vars` binds the entry's `postgresql`
+role mapping, so an inventory written for the role needs no key gymnastics.
+Both passes share one `VarsSet`.
 
 --->
 
@@ -128,7 +129,7 @@ an inventory written for the role needs no change. Both passes share one `VarsSe
 
 **Variables:**
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `enablerepo` | `str` | `""` → no `--enablerepo` | `postgresql_enablerepo` |
 | `restarted_state` | `Literal["restarted","reloaded","started"]` | `restarted` | `postgresql_restarted_state` |
@@ -154,7 +155,7 @@ an inventory written for the role needs no change. Both passes share one `VarsSe
 
 <!---
 
-Precedence is `model defaults < inventory extra < overrides`. Sequences are `tuple`,
+Precedence is `model defaults < inventory role mapping < overrides>. Sequences are `tuple`,
 never `list`: the model is frozen and hashable, and a value that reaches `op()` must
 hash. The RedHat-overridable knobs are `None` by default and fall back to the frozen
 `REDHAT_VARS[major]` table, which is the role's `vars/RedHat-<major>.yml` dispatch —
@@ -203,7 +204,7 @@ from reemote.roles import PostgresqlVars, postgresql, postgresql_data
 async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
-    vars_set = resolve_vars(PostgresqlVars, "postgresql_", inventory)
+    vars_set = resolve_vars(PostgresqlVars, "postgresql", inventory)
 
     deploy_a = postgresql(vars_set)                        # Pass A — root view
     report, _hosts = await run_waves(inventory, deploy_a, dry=True)
@@ -226,7 +227,7 @@ uv run python examples/roles/postgresql.py
 ```
 
 The second inventory is a copy of the first with one added key per entry —
-`privilege.sudo_user` naming that host's resolved `postgresql_user` (`postgres` by
+`privilege.sudo_user` naming that host's resolved `user` (`postgres` by
 default) — so pass B talks to exactly the same machines as pass A but runs the
 catalog read and the users/databases/privileges operations as the OS `postgres` user.
 Pass B must come *after* pass A has the service listening: peer authentication over
@@ -307,8 +308,9 @@ A host whose `host.family` is not `"RedHat"` returns before its first `yield` in
 ## 7. Transcript
 
 From `tests/roles/test_postgresql.py::test_tree_snapshot`, against a simulated CentOS
-Stream 9 host (`web1`) plus an Ubuntu host the role never touches. The inventory sets
-one database (`exampledb`), one user (`jdoe` with `role_attr_flags: CREATEDB`) and one
+Stream 9 host (`web1`) plus an Ubuntu host the role never touches. The inventory's
+`postgresql` role mapping sets one database (`exampledb`), one user (`jdoe` with
+`role_attr_flags: CREATEDB`) and one
 table grant (`SELECT`, `INSERT` on `public.accounts` to `jdoe`). Fresh host, **pass A
 first run** — seven waves, `initdb` in wave 4 and the handler in wave 6:
 
@@ -365,7 +367,7 @@ first run** — seven waves, `initdb` in wave 4 and the handler in wave 6:
 ```
 
 The two `Configure global settings.` lines are the two default
-`postgresql_global_config_options` (`unix_socket_directories`, `log_directory`), each
+`global_config_options` (`unix_socket_directories`, `log_directory`), each
 one `files.transform` on `postgresql.conf` — the role's lineinfile loop, faithfully.
 The handler renders stop / `sleep 5` / start rather than one `systemctl restart`,
 because `systemd.service(sleep=5)` reproduces the role's own `sleep:` value (#44).

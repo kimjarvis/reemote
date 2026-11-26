@@ -98,9 +98,10 @@ def key_fetch(monkeypatch):
 def make_inventory(**overrides) -> list[dict]:
     """A two-host inventory: one Ubuntu target, one CentOS host that must be skipped.
 
-    The role variables ride as ``nodejs_``-prefixed extra keys, bound by
-    ``resolve_vars``. The base entry sets ``nodejs_npm_global_packages`` so the
-    default path exercises the global-package loop; the overrides drive the
+    The role variables ride in the entry's ``roles`` mapping under
+    ``"nodejs"``, bound by ``resolve_vars``. The base entry sets
+    ``npm_global_packages`` so the default path exercises the global-package
+    loop; the overrides drive the
     non-default branches (``npm_config_prefix`` on the raw extra channel, the
     profile skip, the state partition, ``package.json``).
     """
@@ -114,9 +115,13 @@ def make_inventory(**overrides) -> list[dict]:
         },
         "group": "ubuntu",
         "tags": ["ubuntu_host", "apt_package_manager"],
-        "nodejs_npm_global_packages": ["npm-check-updates"],
+        "roles": {
+            "nodejs": {
+                "npm_global_packages": ["npm-check-updates"],
+            },
+        },
     }
-    entry.update(overrides)
+    entry["roles"]["nodejs"].update(overrides)
     return [
         entry,
         {
@@ -164,7 +169,7 @@ async def run_role(
     inventory: list[dict], hosts: dict[str, SimulatedHost], *, dry: bool = False
 ):
     """Resolve variables, build the sync factory's deploy, and run one wave pass."""
-    v = resolve_vars(NodejsVars, "nodejs_", inventory)
+    v = resolve_vars(NodejsVars, "nodejs", inventory)
 
     def factory(entry: dict) -> SimulatedHost:
         # The *same* host object every pass, so state survives the run.
@@ -397,12 +402,13 @@ async def test_dry_preview_plans_the_whole_wave(key_fetch):
 async def test_npm_config_prefix_rides_the_raw_extra_channel(key_fetch):
     """D5: ``npm_config_prefix`` is read from ``host.extra``, not a typed field.
 
-    The knob carries an ``npm_`` prefix upstream, so ``resolve_vars`` (binding
-    only ``nodejs_``) leaves it in the raw extra channel; the role reads it
-    there, preserving the inventory spelling. The directory, the profile script
+    The knob is not a ``NodejsVars`` field, so ``resolve_vars`` never sees it;
+    the role reads it from the raw top-level extra channel, preserving the
+    inventory spelling. The directory, the profile script
     and the npm scope all follow the relocated prefix.
     """
-    inventory = make_inventory(npm_config_prefix="/opt/npm")
+    inventory = make_inventory()
+    inventory[0]["npm_config_prefix"] = "/opt/npm"  # raw extra channel
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
 
@@ -419,7 +425,7 @@ async def test_npm_config_prefix_rides_the_raw_extra_channel(key_fetch):
 
 async def test_generate_etc_profile_false_skips_the_profile(key_fetch):
     """``nodejs_generate_etc_profile=false`` skips the template task entirely."""
-    inventory = make_inventory(nodejs_generate_etc_profile=False)
+    inventory = make_inventory(generate_etc_profile=False)
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
 
@@ -434,7 +440,7 @@ async def test_generate_etc_profile_false_skips_the_profile(key_fetch):
 async def test_global_packages_partition_by_state(key_fetch):
     """D7: the per-item ``state`` splits into present / latest / absent requests."""
     inventory = make_inventory(
-        nodejs_npm_global_packages=[
+        npm_global_packages=[
             {"name": "present-pkg"},
             {"name": "pinned-pkg", "version": "1.2.3"},
             {"name": "latest-pkg", "state": "latest"},
@@ -462,7 +468,7 @@ async def test_global_packages_partition_by_state(key_fetch):
 async def test_package_json_path_installs_the_manifest(key_fetch):
     """The opt-in ``package.json`` install (the role's ``when: ... != ""``)."""
     manifest = {"dependencies": {"left-pad": "^1.3.0"}}
-    inventory = make_inventory(nodejs_package_json_path="/srv/app/package.json")
+    inventory = make_inventory(package_json_path="/srv/app/package.json")
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
     host.remote_files["/srv/app/package.json"] = json.dumps(manifest).encode()
@@ -479,9 +485,12 @@ async def test_package_json_path_installs_the_manifest(key_fetch):
 
 async def test_missing_npm_user_raises_before_any_request(key_fetch):
     """D4: no ``nodejs_install_npm_user`` and no connection login name raises."""
-    inventory = make_inventory(
-        connection={"address": "192.0.2.10", "key_path": "~/.ssh/id_ed25519"}
-    )
+    inventory = make_inventory()
+    # ``connection`` is a top-level entry key, not a role variable.
+    inventory[0]["connection"] = {
+        "address": "192.0.2.10",
+        "key_path": "~/.ssh/id_ed25519",
+    }
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
 
@@ -495,7 +504,7 @@ async def test_missing_npm_user_raises_before_any_request(key_fetch):
 
 async def test_explicit_install_npm_user_wins(key_fetch):
     """D4: ``nodejs_install_npm_user`` overrides the connection login name."""
-    inventory = make_inventory(nodejs_install_npm_user="deploy")
+    inventory = make_inventory(install_npm_user="deploy")
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
 
@@ -514,7 +523,8 @@ async def test_explicit_install_npm_user_wins(key_fetch):
 )
 async def test_bad_npm_config_extra_raises(key_fetch, extra, error, match):
     """D5: a wrong-typed or empty ``npm_config_*`` extra key fails before the wave."""
-    inventory = make_inventory(**extra)
+    inventory = make_inventory()
+    inventory[0].update(extra)  # raw extra channel, top-level
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
 
@@ -635,17 +645,17 @@ def test_bare_string_package_coerces_to_a_model():
     )
 
 
-def test_prefixed_inventory_keys_bind_and_typo_raises():
-    """resolve_vars strips ``nodejs_`` and reports a prefixed misspelling."""
-    inventory = make_inventory(nodejs_version="18.x")
-    v = resolve_vars(NodejsVars, "nodejs_", inventory)
+def test_inventory_role_variables_bind_and_typos_raise():
+    """The nested mapping binds bare names; a misspelling raises RoleVarsError."""
+    inventory = make_inventory(version="18.x")
+    v = resolve_vars(NodejsVars, "nodejs", inventory)
     hv = v.for_host(SimulatedHost.from_inventory(inventory[0]))
     assert hv.version == "18.x"
     assert hv.npm_global_packages == (NpmGlobalPackage(name="npm-check-updates"),)
 
-    typo = make_inventory(nodejs_verson="18.x")
-    with pytest.raises(RoleVarsError, match="nodejs_verson"):
-        resolve_vars(NodejsVars, "nodejs_", typo)
+    typo = make_inventory(verson="18.x")
+    with pytest.raises(RoleVarsError, match="verson"):
+        resolve_vars(NodejsVars, "nodejs", typo)
 
 
 def test_model_is_frozen_and_hashable():

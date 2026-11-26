@@ -153,8 +153,9 @@ BASE_BARRIERS = [
 def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
     """A two-host inventory: one Ubuntu target, one CentOS host that must be skipped.
 
-    The role variables ride on the entry as ``php_``-prefixed extra keys, which
-    is what ``resolve_vars(PhpVars, "php_", inventory)`` binds, so a test changes
+    The role variables ride on the entry's ``roles`` mapping under ``"php"``,
+    written with the model's bare field names, which is what
+    ``resolve_vars(PhpVars, "php", inventory)`` binds, so a test changes
     a variable exactly the way an operator does. The base entry exercises the
     non-default branches: FPM enabled (pools, service, the chained handler), a
     tuned memory limit, and both conditional template lines (the FPM status path
@@ -170,12 +171,16 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
         },
         "group": "ubuntu",
         "tags": ["ubuntu_host", "apt_package_manager"],
-        "php_enable_php_fpm": True,
-        "php_memory_limit": "512M",
-        "php_fpm_pm_status_path": "/status",
-        "php_opcache_blacklist_filename": "/etc/php/opcache-blacklist",
+        "roles": {
+            "php": {
+                "enable_php_fpm": True,
+                "memory_limit": "512M",
+                "fpm_pm_status_path": "/status",
+                "opcache_blacklist_filename": "/etc/php/opcache-blacklist",
+            },
+        },
     }
-    entry.update(overrides)
+    entry["roles"]["php"].update(overrides)
     return [
         entry,
         {
@@ -359,7 +364,7 @@ async def run_role(
     The same ``Host`` objects come back for every entry, so state survives from
     one pass to the next -- which is the whole point of the second run.
     """
-    v = resolve_vars(PhpVars, "php_", inventory)
+    v = resolve_vars(PhpVars, "php", inventory)
 
     def factory(entry: dict[str, Any]) -> SimulatedHost:
         return hosts[entry["host"]]
@@ -380,7 +385,7 @@ async def run_and_capture(
     read ``webserver_notified`` back: the parent here is the shape §10.4 shows at
     a composition site, ``scoped`` label included.
     """
-    v = resolve_vars(PhpVars, "php_", inventory)
+    v = resolve_vars(PhpVars, "php", inventory)
     captured: dict[str, PhpOutputs] = {}
 
     def parent(host):
@@ -650,7 +655,7 @@ async def test_install_only_change_still_notifies():
     and the configure wave -- the last report folded in -- changes nothing. A body
     that read only the final checkpoint would restart nothing on this pass.
     """
-    inventory = make_inventory(php_enable_apc=False, php_opcache_enable="0")
+    inventory = make_inventory(enable_apc=False, opcache_enable="0")
     hosts = make_hosts(inventory)
     await run_role(inventory, hosts)
 
@@ -701,7 +706,7 @@ async def test_the_relay_is_the_union_and_not_the_last_wave():
     The configure wave is quiet here, so the last checkpoint alone would publish
     nobody: the set apache consumes (§16.8) has to be the union, and it is.
     """
-    inventory = make_inventory(php_enable_apc=False, php_opcache_enable="0")
+    inventory = make_inventory(enable_apc=False, opcache_enable="0")
     hosts = make_hosts(inventory)
     await run_role(inventory, hosts)
 
@@ -779,7 +784,7 @@ async def test_disabled_extension_is_not_deleted_on_install():
     With ``php_enable_apc: false`` the cleanup wave has no APCu removal to make
     -- the role only deletes a packaged ini it intends to replace.
     """
-    inventory = make_inventory(php_enable_apc=False)
+    inventory = make_inventory(enable_apc=False)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -829,7 +834,7 @@ async def test_fpm_disabled_drops_the_requests_but_not_the_pool_read():
     (``configure-fpm.yml``'s only FPM conditions are on the pool and service
     tasks), because its answer decides whether the directory is created.
     """
-    inventory = make_inventory(php_enable_php_fpm=False)
+    inventory = make_inventory(enable_php_fpm=False)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -920,7 +925,7 @@ async def test_fpm_handler_verb_follows_the_state(
     service module; ``started`` is fact-gated, and the configure wave already has
     the unit running, so it queues the verb and the verb no-ops.
     """
-    inventory = make_inventory(php_fpm_handler_state=fpm_handler_state)
+    inventory = make_inventory(fpm_handler_state=fpm_handler_state)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -935,7 +940,7 @@ async def test_fpm_state_stopped_suppresses_the_fpm_handler():
     handler fires only for a started unit), while the configure wave's service
     task still asks for the unit to be stopped.
     """
-    inventory = make_inventory(php_fpm_state="stopped")
+    inventory = make_inventory(fpm_state="stopped")
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -952,7 +957,7 @@ async def test_enable_webserver_false_drops_the_chain_but_not_the_pool():
     files are still written and still notify. Only ``restart webserver`` is
     suppressed -- and the pool's own notification still reaches php-fpm.
     """
-    inventory = make_inventory(php_enable_webserver=False)
+    inventory = make_inventory(enable_webserver=False)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -1118,8 +1123,8 @@ async def test_the_package_var_replaces_and_the_extra_var_appends():
     had.
     """
     inventory = make_inventory(
-        php_packages=["php8.3-cli"],
-        php_packages_extra=["php8.3-intl"],
+        packages=["php8.3-cli"],
+        packages_extra=["php8.3-intl"],
     )
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
@@ -1142,7 +1147,7 @@ async def test_packages_state_maps_onto_the_apt_flags(state, present, latest):
     ``absent`` is faithful: the role never guarded the configuration on the
     package state, so the ini files are still written after the removal wave.
     """
-    inventory = make_inventory(php_packages_state=state)
+    inventory = make_inventory(packages_state=state)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -1153,7 +1158,7 @@ async def test_packages_state_maps_onto_the_apt_flags(state, present, latest):
 
 
 async def test_install_recommends_is_the_only_apt_flag_from_a_var():
-    inventory = make_inventory(php_install_recommends=False)
+    inventory = make_inventory(install_recommends=False)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -1170,8 +1175,8 @@ async def test_the_path_vars_move_every_managed_file():
     php-xdebug reads back instead of guessing (§18.7).
     """
     inventory = make_inventory(
-        php_conf_paths=["/srv/php/conf"],
-        php_extension_conf_paths=["/srv/php/conf.d"],
+        conf_paths=["/srv/php/conf"],
+        extension_conf_paths=["/srv/php/conf.d"],
     )
     hosts = make_hosts(inventory)
     report, captured = await run_and_capture(inventory, hosts)
@@ -1194,7 +1199,7 @@ async def test_use_managed_ini_false_writes_no_php_ini():
     ``php.ini``; the extension configs the role owns are still written and still
     notify, so the relay is unaffected.
     """
-    inventory = make_inventory(php_use_managed_ini=False)
+    inventory = make_inventory(use_managed_ini=False)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -1213,7 +1218,7 @@ async def test_disabling_apc_switches_the_install_to_a_removal():
     ``Delete APCu configuration file if this role will provide one``. The packaged
     file is a symlink here, which is what the ``force`` on the removal is for.
     """
-    inventory = make_inventory(php_enable_apc=False)
+    inventory = make_inventory(enable_apc=False)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
     host = hosts["ubuntu"]
@@ -1238,7 +1243,7 @@ async def test_explicit_pools_are_the_template_contexts_themselves():
     key out, and an item setting it to ``0`` still gets the template's 500.
     """
     inventory = make_inventory(
-        php_fpm_pools=[
+        fpm_pools=[
             {"pool_name": "app", "pool_listen": "/run/php/app.sock"},
             {
                 "pool_name": "cron",
@@ -1527,18 +1532,22 @@ def test_php_vars_is_frozen_and_closed():
 
 
 def test_a_typoed_role_variable_is_named():
-    """A prefixed key that names no field is a spelling mistake, not an ignore."""
+    """A key inside the role mapping that names no field is a typo, not an ignore."""
     inventory = [
         {
             "host": "ubuntu",
             "family": "Ubuntu",
             "connection": {"address": "192.0.2.10"},
-            "php_memory_limi": "512M",
+            "roles": {
+                "php": {
+                    "memory_limi": "512M",
+                },
+            },
         }
     ]
 
-    with pytest.raises(RoleVarsError, match="php_memory_limi"):
-        resolve_vars(PhpVars, "php_", inventory)
+    with pytest.raises(RoleVarsError, match="memory_limi"):
+        resolve_vars(PhpVars, "php", inventory)
 
 
 def test_the_choice_variables_are_closed():
@@ -1579,13 +1588,17 @@ def test_a_bad_pool_item_in_the_inventory_is_refused_before_the_run():
             "host": "ubuntu",
             "family": "Ubuntu",
             "connection": {"address": "192.0.2.10"},
-            "php_enable_php_fpm": True,
-            "php_fpm_pools": [{"pool_listen": "/run/php/x.sock"}],
+            "roles": {
+                "php": {
+                    "enable_php_fpm": True,
+                    "fpm_pools": [{"pool_listen": "/run/php/x.sock"}],
+                },
+            },
         }
     ]
 
     with pytest.raises(ValidationError):
-        resolve_vars(PhpVars, "php_", inventory)
+        resolve_vars(PhpVars, "php", inventory)
 
 
 def test_numbers_arrive_as_jinja_would_render_them():

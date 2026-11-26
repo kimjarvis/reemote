@@ -95,11 +95,12 @@ from reemote.roles import (
     php,
 )
 
-# Each role's variables are resolved separately, from its own prefix, with its
-# own call-site ``overrides``. One inventory carries both roles' keys side by
-# side without collision: ``apache_``-prefixed keys bind ApacheVars, ``php_``
-# prefixed keys bind PhpVars, and neither sees the other's. Overrides use the
-# model's UNPREFIXED field names and win over the inventory for every host.
+# Each role's variables are resolved separately, from its own mapping in the
+# entry's ``roles`` dict, with its own call-site ``overrides``. One inventory
+# carries both roles' variables side by
+# side without collision: the ``apache`` mapping binds ApacheVars, the ``php``
+# mapping binds PhpVars, and neither sees the other's keys. Overrides use the
+# same bare field names and win over the inventory for every host.
 #
 # The apache override moves it off port 80 onto 8080 with one vhost, matching
 # examples/roles/apache.py, so a shared demo host does not collide with the nginx
@@ -125,10 +126,10 @@ async def main() -> None:
         # value raises here -- a pydantic ValidationError, which is a ValueError
         # -- not mid-run.
         apache_vars = resolve_vars(
-            ApacheVars, "apache_", inventory, overrides=APACHE_OVERRIDES
+            ApacheVars, "apache", inventory, overrides=APACHE_OVERRIDES
         )
         php_vars = resolve_vars(
-            PhpVars, "php_", inventory, overrides=PHP_OVERRIDES
+            PhpVars, "php", inventory, overrides=PHP_OVERRIDES
         )
 
         # The parent captures each child's outputs here. run_waves never returns

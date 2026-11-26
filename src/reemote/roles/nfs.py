@@ -8,8 +8,8 @@
 # mode ``0644``), starts and enables ``nfs-kernel-server`` when any export is
 # configured, and re-exports the filesystems (``exportfs -ra``) whenever the
 # exports file changes. :func:`nfs` is the whole task list and the handler,
-# :class:`NfsVars` is ``defaults/main.yml``, bound from the inventory's
-# ``nfs_``-prefixed keys by :func:`~reemote.rolevars.resolve_vars`.
+# :class:`NfsVars` is ``defaults/main.yml``, bound from the inventory entry's
+# ``nfs`` role mapping by :func:`~reemote.rolevars.resolve_vars`.
 #
 # Target: hosts in the ``"Ubuntu"`` OS family. A host outside the family
 # returns before its first ``yield`` and emits no requests, no barriers and no
@@ -140,10 +140,9 @@ NOTIFYING: frozenset[str] = frozenset(
 class NfsVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``nfs_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``nfs_exports`` in the
-    inventory to :attr:`exports`, so an inventory written for the role needs no
-    change. The model is frozen and hashable, so the export list is a
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``nfs`` role mapping, so ``exports`` there sets
+    :attr:`exports`. The model is frozen and hashable, so the export list is a
     ``tuple`` (never a ``list``) and a value that reaches
     :func:`~reemote.core.op` hashes (design doc section 8.1).
 
@@ -375,7 +374,7 @@ def nfs(v: VarsSet[NfsVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`NfsVars` per host
-            (``resolve_vars(NfsVars, "nfs_", inventory)``).
+            (``resolve_vars(NfsVars, "nfs", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves`. It publishes no outputs -- no

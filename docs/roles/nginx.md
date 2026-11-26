@@ -6,7 +6,7 @@
 | Module | [`reemote.roles.nginx`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/nginx.py) |
 | Example | [`examples/roles/nginx.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/nginx.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Variables | `nginx_`-prefixed inventory keys → `NginxVars` |
+| Variables | the entry's `nginx` role mapping → `NginxVars` |
 
 <!---
 | Waves | 4 (3 on a converged rerun — the handler wave disappears) |
@@ -102,14 +102,14 @@ than at import time. Both templates use only built-in Jinja2 filters (`indent`,
 SSH access to each Ubuntu host with the key named in its `connection`, and
 passwordless sudo (or a `privilege` section in the inventory): every request
 carries `sudo=True`, because reemote has no play-level `become`. With
-`nginx_ppa_use` the host also needs outbound HTTPS to `ppa.launchpad.net`.
+`ppa_use` set the host also needs outbound HTTPS to `ppa.launchpad.net`.
 
 ## 3. Variables
 
 `NginxVars` is a frozen pydantic model (`extra="forbid"`,
-`coerce_numbers_to_str=True`) with unprefixed field names; the prefix passed to
-`resolve_vars` binds the inventory keys, so an inventory written for the role needs
-no change.
+`coerce_numbers_to_str=True`) whose fields carry bare names; the role name passed
+to `resolve_vars` binds the entry's `nginx` role mapping, so an inventory written
+for the role needs no key gymnastics.
 
 --->
 
@@ -122,7 +122,7 @@ no change.
 
 **Variables:**
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `yum_repo_enabled` | `bool` | `true` — **inert** (RedHat-only) | `nginx_yum_repo_enabled` |
 | `zypper_repo_enabled` | `bool` | `true` — **inert** (Suse-only) | `nginx_zypper_repo_enabled` |
@@ -159,13 +159,13 @@ no change.
 
 <!---
 
-Precedence is `model defaults < inventory extra < overrides`. Sequences are
+Precedence is `model defaults < inventory role mapping < overrides>. Sequences are
 `tuple`, never `list`: the model is frozen and hashable, and a value that reaches
 `op()` must hash. Values that reach a template verbatim are `str`, with
-`coerce_numbers_to_str` so an inventory writing `nginx_keepalive_timeout: 75`
-renders `75` exactly as Jinja would render the integer. The two inert knobs are
-carried rather than dropped so an existing inventory still binds — a test pins that
-setting them changes no request.
+`coerce_numbers_to_str` so an inventory writing `keepalive_timeout: 75` in the
+`nginx` role mapping renders `75` exactly as Jinja would render the integer. The
+two inert knobs are carried rather than dropped so an existing inventory still
+binds — a test pins that setting them changes no request.
 
 Two sentinels keep the role's non-default resolution shape: `user` `None`
 reproduces the `set_fact: nginx_user={{ __nginx_user }}` fallback, and
@@ -185,7 +185,7 @@ documents.
 
 ### 3.1 Vhost and upstream mapping fields
 
-`nginx_vhosts` items are `VHost`; `nginx_upstreams` items are `Upstream`. Both are
+`vhosts` items are `VHost`; `upstreams` items are `Upstream`. Both are
 frozen with `extra="allow"`, so any further key the template might learn to read is
 kept.
 
@@ -216,7 +216,7 @@ eager-evaluation trap — `default()` evaluating the `server_name` fallback even
 The role is library code; `examples/roles/nginx.py` is the runnable artifact — a
 standalone program with its own `main()`, no shared runner. It loads and validates
 `inventory.json` from the current working directory, resolves the role's variables
-(the defaults overlaid with the entry's `nginx_`-prefixed keys, then the call-site
+(the defaults overlaid with the entry's `nginx` role mapping, then the call-site
 `overrides`), builds the deploy from the `nginx` factory and drives it with
 `run_waves` — a `dry=True` one-wave preview, then the real apply — printing the wave
 tree each time:
@@ -234,7 +234,7 @@ NGINX_OVERRIDES = {
 async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
-    vars_set = resolve_vars(NginxVars, "nginx_", inventory, overrides=NGINX_OVERRIDES)
+    vars_set = resolve_vars(NginxVars, "nginx", inventory, overrides=NGINX_OVERRIDES)
     deploy = nginx(vars_set)
     report, _hosts = await run_waves(inventory, deploy, dry=True)   # one-wave preview
     print(report.tree())
@@ -248,12 +248,12 @@ From the repository root:
 uv run python examples/roles/nginx.py
 ```
 
-The `ubuntu` entry of the shipped `inventory.json` carries no `nginx_` keys, so the
-program's call-site `overrides` decide the site: nginx drops the packaged `default`
-vhost and serves one `example.com` vhost out of `/var/www/example` on port `80`.
-Overrides use the model's **unprefixed** field names — the `nginx_` prefix only binds
-inventory keys — and win over both the defaults and any `nginx_`-prefixed inventory
-key. The `dry=True` pass is a one-wave preview: it plans the setup requests
+The `ubuntu` entry of the shipped `inventory.json` carries no `nginx` role
+mapping, so the program's call-site `overrides` decide the site: nginx drops the
+packaged `default` vhost and serves one `example.com` vhost out of
+`/var/www/example` on port `80`. Overrides use the model's bare field names and
+win over both the defaults and any key in the entry's `nginx` role mapping. The
+`dry=True` pass is a one-wave preview: it plans the setup requests
 (`dirmngr`, plus the PPA when `ppa_use` is set), parks on the
 `checkpoint("setup done")` barrier and stops (`barrier: setup done → unknown until
 run`), gathering nothing and applying nothing. A converged rerun is the real preview.
@@ -311,10 +311,10 @@ emits no requests, no barriers and no report lines at all.
 ## 7. Transcript
 
 From `tests/roles/test_nginx.py::test_tree_snapshot`, against the simulated Ubuntu
-host plus a RedHat host the role never touches. The inventory sets
-`nginx_ppa_use: true`, `nginx_remove_default_vhost: true`, one present vhost with a
-redirect and `extra_parameters`, one absent vhost, an `ip_hash` upstream and the two
-extra-option blocks. Fresh host, first pass:
+host plus a RedHat host the role never touches. The inventory's `nginx` role
+mapping sets `ppa_use: true`, `remove_default_vhost: true`, one present vhost
+with a redirect and `extra_parameters`, one absent vhost, an `ip_hash` upstream
+and the two extra-option blocks. Fresh host, first pass:
 
 ```text
 (root)

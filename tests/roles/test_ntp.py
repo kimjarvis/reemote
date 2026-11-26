@@ -81,10 +81,10 @@ UBUNTU_2404 = {
 def make_inventory(**overrides) -> list[dict]:
     """A two-host inventory: one Ubuntu target, one CentOS host that must be skipped.
 
-    The role variables ride as ``ntp_``-prefixed extra keys, bound by
-    ``resolve_vars``. The base entry turns on ``ntp_manage_config`` so the config
-    template and the ``restart ntp`` handler are exercised; the overrides drive the
-    non-default branches.
+    The role variables ride in the entry's ``roles`` mapping under ``"ntp"``,
+    bound by ``resolve_vars``. The base entry turns on ``manage_config`` so the
+    config template and the ``restart ntp`` handler are exercised; the overrides
+    drive the non-default branches.
     """
     entry = {
         "host": "ubuntu",
@@ -96,9 +96,13 @@ def make_inventory(**overrides) -> list[dict]:
         },
         "group": "ubuntu",
         "tags": ["ubuntu_host", "apt_package_manager"],
-        "ntp_manage_config": True,
+        "roles": {
+            "ntp": {
+                "manage_config": True,
+            },
+        },
     }
-    entry.update(overrides)
+    entry["roles"]["ntp"].update(overrides)
     return [
         entry,
         {
@@ -167,7 +171,7 @@ async def run_role(
     inventory: list[dict], hosts: dict[str, SimulatedHost], *, dry: bool = False
 ):
     """Resolve variables, build the sync factory's deploy, and run one wave pass."""
-    v = resolve_vars(NtpVars, "ntp_", inventory)
+    v = resolve_vars(NtpVars, "ntp", inventory)
 
     def factory(entry: dict) -> SimulatedHost:
         # The *same* host object every pass, so state survives the barriers.
@@ -353,7 +357,7 @@ async def test_dry_preview_stops_at_the_distribution_barrier():
 
 
 async def test_default_path_leaves_config_unmanaged():
-    inventory = make_inventory(ntp_manage_config=False)
+    inventory = make_inventory(manage_config=False)
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
     report = await run_role(inventory, hosts)
@@ -373,7 +377,7 @@ async def test_default_path_leaves_config_unmanaged():
 
 
 async def test_timezone_change_fires_cron_handler():
-    inventory = make_inventory(ntp_cron_handler_enabled=True)
+    inventory = make_inventory(cron_handler_enabled=True)
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
     host.os_timezone = "Europe/Amsterdam"  # differs from the default Etc/UTC
@@ -395,7 +399,7 @@ async def test_timezone_change_fires_cron_handler():
 
 
 async def test_cron_handler_flag_gates_the_restart():
-    inventory = make_inventory(ntp_cron_handler_enabled=False)
+    inventory = make_inventory(cron_handler_enabled=False)
     hosts = make_hosts(inventory)
     hosts["ubuntu"].os_timezone = "Europe/Amsterdam"
     report = await run_role(inventory, hosts)
@@ -412,7 +416,7 @@ async def test_cron_handler_flag_gates_the_restart():
 
 
 async def test_ntp_disabled_stops_disables_and_suppresses_restart():
-    inventory = make_inventory(ntp_enabled=False)
+    inventory = make_inventory(enabled=False)
     hosts = make_hosts(inventory, running=True)
     report = await run_role(inventory, hosts)
     host = hosts["ubuntu"]
@@ -462,9 +466,9 @@ async def test_timesyncd_present_is_stopped_and_disabled():
 
 async def test_chrony_override_renders_chrony_conf():
     inventory = make_inventory(
-        ntp_daemon="chrony",
-        ntp_package="chrony",
-        ntp_config_file="/etc/chrony/chrony.conf",
+        daemon="chrony",
+        package="chrony",
+        config_file="/etc/chrony/chrony.conf",
     )
     hosts = make_hosts(inventory, daemon="chrony")
     host = hosts["ubuntu"]

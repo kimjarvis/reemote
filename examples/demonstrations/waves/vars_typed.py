@@ -5,22 +5,22 @@
 
 A migrated role declares a frozen pydantic ``<Role>Vars`` model with
 **unprefixed** fields and reads ``hv = v.for_host(host)`` in its body instead
-of spelunking ``host.extra`` (§8). ``resolve_vars(cls, prefix, inventory,
+of spelunking ``host.extra`` (§8). ``resolve_vars(cls, role, inventory,
 overrides=...)`` resolves one model per host with a strict three-level
-precedence — the model's defaults, then the inventory's ``prefix``-stripped
-``extra`` keys, then call-site overrides — and a prefixed key that names no
-field raises ``RoleVarsError`` instead of silently defaulting (§8.2): a
-misspelled variable must never leave a role running on a value the operator
-meant to override.
+precedence — the model's defaults, then the inventory entry's ``role``
+mapping under its ``roles`` key, then call-site overrides — and a key in the
+role mapping that names no field raises ``RoleVarsError`` instead of
+silently defaulting (§8.2): a misspelled variable must never leave a role
+running on a value the operator meant to override.
 
 The traps this file runs for real:
 
 - ``list`` never reaches an ``op(...)``: an inventory JSON array binds onto a
   ``tuple[str, ...]`` field and pydantic *coerces* it, which is what keeps the
   request hashable (``UnhashableArgumentError`` is the alternative);
-- a prefixed typo (``demo_pot``) raises ``RoleVarsError``, and its message
-  names every valid field — while an *unprefixed* key is simply left for the
-  raw ``host.extra`` channel;
+- a typo inside the ``demo`` role mapping (``pot``) raises ``RoleVarsError``,
+  and its message names every valid field — while a top-level entry key
+  outside any mapping is simply left for the raw ``host.extra`` channel;
 - a bad *value* for a good field name raises pydantic's ``ValidationError``,
   a different gate with a different fix.
 
@@ -58,19 +58,19 @@ INVENTORY = [
         "host": "web1",
         "family": "RedHat",
         "connection": {"host": "web1.example"},
-        # Only the bare key is a typo; ``unprefixed_key`` does not start with
-        # ``demo_``, so it belongs to the raw host.extra channel and binds to
-        # nothing here.
+        # A top-level key outside any role mapping binds to nothing: it
+        # belongs to the raw host.extra channel.
         "unprefixed_key": "not a role variable",
     },
     {
         "host": "web2",
         "family": "RedHat",
         "connection": {"host": "web2.example"},
-        # A JSON *array* onto a tuple field: pydantic coerces, the request
-        # stays hashable.
-        "demo_packages": ["bash", "curl"],
-        "demo_port": 9443,
+        "roles": {
+            # A JSON *array* onto a tuple field: pydantic coerces, the request
+            # stays hashable.
+            "demo": {"packages": ["bash", "curl"], "port": 9443},
+        },
     },
 ]
 
@@ -88,9 +88,9 @@ def deploy(host: Host, v: VarsSet[DemoVars]) -> Generator[StageItem]:
     """Read ``hv = v.for_host(host)`` — never ``host.extra`` by name.
 
     The resolved model is the role's *only* view of configuration: the
-    defaults for web1, the inventory's prefixed keys for web2, the call-site
-    overrides on top of both. The ``fact`` barrier after the first stage keeps
-    the stream wave-shaped, like any real role body.
+    defaults for web1, the inventory's ``demo`` role mapping for web2, the
+    call-site overrides on top of both. The ``fact`` barrier after the first
+    stage keeps the stream wave-shaped, like any real role body.
     """
     hv = v.for_host(host)
     yield op(
@@ -113,10 +113,9 @@ def factory(entry: dict) -> SimulatedHost:
 
 
 async def main() -> None:
-    # Precedence, printed: defaults -> inventory extra -> call-site overrides.
-    v = resolve_vars(
-        DemoVars, "demo_", INVENTORY, overrides={"packages": ("git",)}
-    )
+    # Precedence, printed: defaults -> inventory role mapping -> call-site
+    # overrides.
+    v = resolve_vars(DemoVars, "demo", INVENTORY, overrides={"packages": ("git",)})
     for name, model in v.values.items():
         print(f"{name}: packages={model.packages} port={model.port}")
     # web1 keeps the model default (tuple-coerced override wins for packages),
@@ -129,18 +128,18 @@ async def main() -> None:
     print("\n== Wave tree: one body, two variable sets ==")
     print(report.tree())
 
-    # The typo gate: a prefixed key that names no field is a spelling mistake,
-    # reported with every valid name — not silently dropped.
+    # The typo gate: a key in the role mapping that names no field is a
+    # spelling mistake, reported with every valid name — not silently dropped.
     bad = [
         {
             "host": "web1",
             "family": "RedHat",
             "connection": {"host": "web1.example"},
-            "demo_pot": 1234,
+            "roles": {"demo": {"pot": 1234}},
         }
     ]
     try:
-        resolve_vars(DemoVars, "demo_", bad)
+        resolve_vars(DemoVars, "demo", bad)
     except RoleVarsError as exc:
         print(f"\ntypo gate: {exc}")
 
@@ -148,7 +147,7 @@ async def main() -> None:
     # ValidationError, not RoleVarsError — a different mistake, a different
     # message, the same fail-before-any-host-is-touched guarantee.
     try:
-        resolve_vars(DemoVars, "demo_", INVENTORY, overrides={"port": "not-a-number"})
+        resolve_vars(DemoVars, "demo", INVENTORY, overrides={"port": "not-a-number"})
     except ValidationError as exc:
         first = exc.errors()[0]
         print(f"value gate: {first['loc'][0]}: {first['msg']}")

@@ -15,9 +15,10 @@ no framework:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``docker_``-prefixed keys (``docker_edition``, ``docker_users``,
-   ``docker_daemon_options``, ``docker_restart_handler_state`` and the rest of
-   :class:`~reemote.roles.docker.DockerVars`) are bound and stripped, the
+   ``docker`` role mapping (``edition``, ``users``,
+   ``daemon_options``, ``restart_handler_state`` and the rest of the
+   :class:`~reemote.roles.docker.DockerVars` fields) is bound under the bare
+   field names, the
    call-site ``DOCKER_OVERRIDES`` below wins over them, and a bad value raises
    before any host is contacted.
 3. Build the deploy -- ``docker(vars_set)`` is the role's whole task list, one
@@ -45,13 +46,13 @@ The call-site ``overrides`` channel
 -----------------------------------
 
 ``DOCKER_OVERRIDES`` (``users=("supervisor",)`` plus two ``daemon_options``) is
-handed to ``resolve_vars`` and wins over the inventory's ``docker_``-prefixed
-keys for every host, so the demonstration exercises the ``/etc/docker/
+handed to ``resolve_vars`` and wins over the inventory's ``docker`` role
+mapping for every host, so the demonstration exercises the ``/etc/docker/
 daemon.json`` write, the ``restart docker`` handler it notifies, and the
-``docker`` group membership -- not just the package install. Overrides use the
-model's UNPREFIXED field names -- the ``docker_`` prefix is an inventory-key
-binding, stripped before validation. Precedence is model defaults < inventory
-extra < these overrides.
+``docker`` group membership -- not just the package install. Overrides and the
+inventory mapping both use the model's bare field names -- there is no key
+prefix anywhere. Precedence is model defaults < inventory role mapping < these
+overrides.
 
 One behaviour to watch on a real host: because ``run_waves`` keeps each
 connection open for the whole run, a *new* group membership lands on the next
@@ -104,10 +105,9 @@ from reemote.roles import DockerVars, docker
 # ``users`` turns on the getent gate and the membership wave for the inventory's
 # own SSH user, and ``daemon_options`` turns on the daemon.json write and the
 # ``restart docker`` handler it notifies, so the demonstration covers the full
-# stream, not just the packages. Overrides use the model's UNPREFIXED field
-# names -- the ``docker_`` prefix only binds inventory keys, and is stripped
-# before validation -- and win over any ``docker_``-prefixed key in the
-# inventory for every host.
+# stream, not just the packages. Overrides use the model's bare field
+# names -- the same names the inventory's ``docker`` role mapping uses -- and
+# win over it for every host.
 DOCKER_OVERRIDES = {
     "users": ("supervisor",),
     "daemon_options": {
@@ -125,10 +125,10 @@ async def main() -> None:
         print(", ".join(entry["host"] for entry in inventory))
 
         # Resolve the role's variables before any host is contacted: the
-        # inventory's docker_-prefixed keys, overlaid with the call-site
+        # inventory's docker role mapping, overlaid with the call-site
         # overrides. A rejected value raises here -- a pydantic ValidationError,
         # which is a ValueError -- not mid-run.
-        vars_set = resolve_vars(DockerVars, "docker_", inventory, overrides=DOCKER_OVERRIDES)
+        vars_set = resolve_vars(DockerVars, "docker", inventory, overrides=DOCKER_OVERRIDES)
         # The role's whole task list: one per-host generator, barriers and all.
         # A plain (non-async) factory, so it is called, not awaited.
         deploy = docker(vars_set)
@@ -163,8 +163,8 @@ async def main() -> None:
     except (ValueError, TypeError) as exc:
         # A rejected role variable (pydantic's ValidationError is a ValueError),
         # or the role body's own hard error: the gathered distribution carries
-        # no VERSION_CODENAME for the repository's Suites, or docker_users is
-        # listed while the docker group does not exist after the install. Each
+        # no VERSION_CODENAME for the repository's Suites, or a non-empty users
+        # list while the docker group does not exist after the install. Each
         # is raised at its barrier, before the requests it gates are built, so
         # nothing is half-applied.
         print(f"\nERROR: {exc}", file=sys.stderr)

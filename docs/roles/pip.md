@@ -6,7 +6,7 @@
 | Module | [`reemote.roles.pip`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/pip.py) |
 | Runner | [`examples/roles/pip.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/pip.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Variables | `pip_`-prefixed inventory keys → `PipVars` |
+| Variables | the entry's `pip` role mapping → `PipVars` |
 
 <!---
 | Waves | `2` — the `PythonVersion` barrier, then the whole role in one request wave |
@@ -69,18 +69,16 @@ request carries `sudo=True`. The `PythonVersion` barrier reads the target's own
 
 ## 3. Variables
 
-`PipVars` is a frozen pydantic model (`extra="forbid"`) with unprefixed field
-names; `resolve_vars(PipVars, "pip_", inventory)` binds the role's own variable
-names, so an inventory written for the role needs no change —
-`pip_package` → `package`, `pip_executable` → `executable`,
-`pip_install_packages` → `install_packages`. Precedence is
-`model defaults < inventory extra < overrides`.
+`PipVars` is a frozen pydantic model (`extra="forbid"`) whose fields carry bare
+names; the role name passed to `resolve_vars` binds the entry's `pip` role
+mapping, so an inventory written for the role needs no key gymnastics.
+Precedence is `model defaults < inventory role mapping < overrides`.
 
 Validation is fail-fast, before any host is contacted: an empty `package` or
 `executable`, an empty `name`, `version` or `extra_args` in an entry, and any
 `state` beyond `present`/`absent`/`latest` all raise pydantic `ValidationError`
-(a `ValueError`); an unprefixed misspelling such as `pip_packge` raises
-`RoleVarsError` naming the valid keys. A bare string entry (`- colorama`) is
+(a `ValueError`); a key naming no field in the role mapping, such as `packge`,
+raises `RoleVarsError` naming the valid keys. A bare string entry (`- colorama`) is
 coerced to `{"name": "colorama"}` by the `install_packages` before-validator,
 exactly as the role's `item.name | default(item)` reads it.
 --->
@@ -96,7 +94,7 @@ exactly as the role's `item.name | default(item)` reads it.
 
 ### Role variables (`defaults/main.yml`)
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `package` | `str` | `"python3-pip"` — the apt package providing pip | `pip_package` |
 | `executable` | `str \| None` | `null` → derived from `package` (`python3-…` → `pip3`, else `pip`, D5); an explicit value wins | `pip_executable` |
@@ -118,7 +116,7 @@ exactly as the role's `item.name | default(item)` reads it.
 The role is library code; `examples/roles/pip.py` is the runnable artifact —
 a standalone program with its own `main()`, no shared runner. It loads and
 validates `inventory.json` from the current working directory, resolves the
-role's variables (the defaults overlaid with the entry's `pip_`-prefixed keys,
+role's variables (the defaults overlaid with the entry's `pip` role mapping,
 then the call-site `overrides`), builds the deploy from the `pip` factory and
 drives it with `run_waves` — a `dry=True` one-wave preview, then the real
 apply — printing the wave tree each time:
@@ -131,7 +129,7 @@ async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
     vars_set = resolve_vars(
-        PipVars, "pip_", inventory,
+        PipVars, "pip", inventory,
         overrides={"install_packages": [
             {"name": "ipaddress", "version": "1.0.18"},
             "colorama",

@@ -6,10 +6,10 @@
 | Module | [`reemote.roles.docker`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/docker.py) |
 | Runner | [`examples/roles/docker.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/docker.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Variables | `docker_`-prefixed inventory keys → `DockerVars` |
+| Variables | the entry's `docker` role mapping → `DockerVars` |
 
 <!---
-| Waves | `5` on a changed host with users (0–4); one less without `docker_users`; the handler wave disappears once converged |
+| Waves | `5` on a changed host with users (0–4); one less without `users`; the handler wave disappears once converged |
 | Outputs | none — the deploy returns `None`; no other role reads docker's results |
 | Extra deps | **none** — `daemon.json` renders with `json.dumps`, no template engine |
 | Offline test | [`tests/roles/test_docker.py`](https://github.com/kimjarvis/reemote/blob/main/tests/roles/test_docker.py) |
@@ -97,12 +97,13 @@ passwordless sudo (or a `privilege` section): every request carries `sudo=True`.
 
 ## 3. Variables
 
-`DockerVars` is a frozen pydantic model (`extra="forbid"`) with unprefixed
-field names; the prefix passed to `resolve_vars` binds the inventory keys, so
-an inventory written for the role needs no change. The three derived fields
-(`packages`, `apt_repo_url`, `apt_gpg_key`) default to `None` — "compute it from
-`edition` / `repo_url`", exactly as the role's own `defaults/main.yml`
-templates them. Precedence is `model defaults < inventory extra < overrides`.
+`DockerVars` is a frozen pydantic model (`extra="forbid"`) whose fields carry
+bare names; the role name passed to `resolve_vars` binds the entry's `docker`
+role mapping, so an inventory written for the role needs no key gymnastics.
+The three derived fields (`packages`, `apt_repo_url`, `apt_gpg_key`) default to
+`None` — "compute it from `edition` / `repo_url`", exactly as the role's own
+`defaults/main.yml` templates them. Precedence is
+`model defaults < inventory role mapping < overrides`.
 
 --->
 
@@ -117,7 +118,7 @@ templates them. Precedence is `model defaults < inventory extra < overrides`.
 
 ### Repository
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `add_repo` | `bool` | `true` — when false, the sources file and keyring are **removed** | `docker_add_repo` |
 | `repo_url` | `str` | `https://download.docker.com/linux` — base for both derived URLs | `docker_repo_url` |
@@ -128,7 +129,7 @@ templates them. Precedence is `model defaults < inventory extra < overrides`.
 
 ### Packages and compose
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `edition` | `str` | `ce` — the package-name prefix | `docker_edition` |
 | `packages` | `tuple[str, …] \| None` | `null` → the edition's five packages | `docker_packages` |
@@ -140,7 +141,7 @@ templates them. Precedence is `model defaults < inventory extra < overrides`.
 
 ### Service and handler
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `service_manage` | `bool` | `true` — gates the service task **and** the handler | `docker_service_manage` |
 | `service_state` | `Literal["started","stopped","restarted","reloaded"]` | `started` | `docker_service_state` |
@@ -150,7 +151,7 @@ templates them. Precedence is `model defaults < inventory extra < overrides`.
 
 ### Users and daemon options
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `users` | `tuple[str, …]` | `()` — appended to the `docker` group behind the getent gate | `docker_users` |
 | `daemon_options` | `dict[str, Any]` | `{}` — non-empty renders `/etc/docker/daemon.json` | `docker_daemon_options` |
@@ -173,8 +174,8 @@ any host is contacted.
 The role is library code; `examples/roles/docker.py` is the runnable artifact —
 a standalone program with its own `main()`, no shared runner. It loads and
 validates `inventory.json` from the current working directory, resolves the
-role's variables (the defaults overlaid with the entry's `docker_`-prefixed
-keys, then the call-site `overrides`), builds the deploy from the `docker`
+role's variables (the defaults overlaid with the entry's `docker` role
+mapping, then the call-site `overrides`), builds the deploy from the `docker`
 factory and drives it with `run_waves` — a `dry=True` one-wave preview, then the
 real apply — printing the wave tree each time:
 
@@ -186,7 +187,7 @@ async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
     vars_set = resolve_vars(
-        DockerVars, "docker_", inventory,
+        DockerVars, "docker", inventory,
         overrides={"users": ("supervisor",), "daemon_options": {...}},
     )
     deploy = docker(vars_set)                                       # plain factory
@@ -265,9 +266,9 @@ inventory are never contacted.
 ## 7. Transcript
 
 From `tests/roles/test_docker.py`, against the simulated Ubuntu 24.04 host
-(`docker_users: ["alice"]`, `docker_daemon_options` set) plus a RedHat host the
-role never touches. `os_groups` is seeded to the intended post-install state
-(the simulated apt install records package names only, never the group the
+(`users: ["alice"]`, `daemon_options` set in the `docker` role mapping) plus a
+RedHat host the role never touches. `os_groups` is seeded to the intended
+post-install state (the simulated apt install records package names only, never the group the
 real postinst creates) and the key fetch is patched offline. Fresh host, first
 pass:
 

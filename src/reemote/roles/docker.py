@@ -10,7 +10,7 @@
 # ExecStart override, the service's running/enabled state, the ``restart docker``
 # handler, and the ``docker_users`` group memberships. :func:`docker` is the whole
 # task list and :class:`DockerVars` is ``defaults/main.yml``, bound from the
-# inventory's ``docker_``-prefixed keys by
+# inventory entry's ``docker`` role mapping by
 # :func:`~reemote.rolevars.resolve_vars`.
 #
 # Target: hosts in the ``"Ubuntu"`` OS family. A host outside the family returns
@@ -183,10 +183,9 @@ HANDLER_ACTIONS = {"restarted": "restarted", "reloaded": "reloaded", "started": 
 class DockerVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``docker_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``docker_users`` in the
-    inventory to :attr:`users`, so an inventory written for the role needs no
-    change. Every Ubuntu-path default is carried over; the RedHat-only
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``docker`` role mapping, so ``users`` there sets
+    :attr:`users`. Every Ubuntu-path default is carried over; the RedHat-only
     ``docker_yum_*`` variables are deliberately absent. :attr:`packages`,
     :attr:`apt_repo_url` and :attr:`apt_gpg_key`` default to ``None`` -- the
     role derives them from :attr:`edition` / :attr:`repo_url` when they are not
@@ -654,7 +653,7 @@ def docker(v: VarsSet[DockerVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`DockerVars` per host
-            (``resolve_vars(DockerVars, "docker_", inventory)``).
+            (``resolve_vars(DockerVars, "docker", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves`. It publishes no outputs -- no

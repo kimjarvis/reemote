@@ -35,6 +35,10 @@ script reads off the host to branch per host (``host.family``, ``host.group``,
 ``Host.from_inventory`` validates a single entry; ``validate_inventory``
 validates a whole inventory up front (``drivers.run`` calls it before
 materializing any host). Both raise ``InventoryError`` on bad input.
+An entry may also carry a ``roles`` mapping -- role name to that role's
+variables, spelled with the model's bare field names -- which
+``reemote.rolevars.resolve_vars`` binds per host; it is a claimed schema
+field, not an ``extra`` key.
 
 A plain ``Host`` owns a lazily-established asyncssh connection built from its
 ``connection`` data: ``connect`` opens it, ``run_shell`` runs one
@@ -592,17 +596,21 @@ class InventoryEntry(BaseModel):
     family -- one of ``"RedHat"``, ``"Ubuntu"`` or ``"Alpine"``) and
     ``connection`` (the SSH connection data -- possibly an empty mapping for a
     host only ever driven through the test framework's ``SimulatedHost``);
-    ``privilege``, ``group`` and ``tags`` are optional. ``family`` is the
-    declared distribution family a deploy script branches on to choose the
+    ``privilege``, ``group``, ``tags`` and ``roles`` are optional. ``family`` is
+    the declared distribution family a deploy script branches on to choose the
     package manager and service manager before gathering any facts;
     ``group`` is a single label naming the group the host belongs to; ``tags``
     is an unordered list of string labels. All three are static,
     inventory-supplied values a deploy script can branch on
-    (``host.family``, ``host.group``, ``host.tags``). Any other keys are allowed
-    and preserved:
+    (``host.family``, ``host.group``, ``host.tags``). ``roles`` maps a role
+    name to that role's variables, written with the model's bare (unprefixed)
+    field names -- the channel ``resolve_vars`` binds from (see
+    ``reemote.rolevars``). Any other keys are allowed and preserved:
     ``extra="allow"`` keeps them in ``model_extra``, which
     ``Host.from_inventory`` folds into ``Host.extra``, so the inventory
-    format stays extensible without schema changes.
+    format stays extensible without schema changes. Because ``roles`` is a
+    claimed field it never lands in ``model_extra``; a malformed mapping (not
+    role name -> mapping) fails schema validation as ``InventoryError``.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -613,6 +621,7 @@ class InventoryEntry(BaseModel):
     privilege: dict[str, Any] = Field(default_factory=dict)
     group: str | None = None
     tags: list[str] = Field(default_factory=list)
+    roles: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 # Reusable adapter: validating the whole inventory in one call is clearer and
@@ -684,6 +693,10 @@ class Host:
     ``family`` is required by the inventory schema, so it is only ``None`` for a
     ``Host`` built directly rather than from an entry (as the test framework's
     ``SimulatedHost`` does).
+    ``roles`` mirrors the entry's claimed ``roles`` mapping (role name -> that
+    role's variables, written with the model's bare field names and bound by
+    ``reemote.rolevars.resolve_vars``); it is a field of its own, never part
+    of ``extra``.
     Any unrecognised inventory keys are
     preserved in ``extra``, so the inventory format is extensible without
     library changes.
@@ -713,6 +726,7 @@ class Host:
     privilege: dict = field(default_factory=dict)
     group: str | None = None
     tags: list[str] = field(default_factory=list)
+    roles: dict = field(default_factory=dict)
     extra: dict = field(default_factory=dict)
 
     @classmethod
@@ -721,8 +735,8 @@ class Host:
 
         The entry is validated with pydantic (``InventoryEntry``) first, so
         it must carry at least ``host``, ``family`` and ``connection``;
-        ``privilege``, ``group`` and ``tags`` are optional and every other key
-        lands in ``extra``. Raises ``InventoryError`` on invalid input.
+        ``privilege``, ``group``, ``tags`` and ``roles`` are optional and every
+        other key lands in ``extra``. Raises ``InventoryError`` on invalid input.
 
         The ``connection.connector`` key selects the transport: the default
         ``"ssh"`` builds this class, while ``"docker"`` builds a
@@ -754,6 +768,7 @@ class Host:
             privilege=dict(validated.privilege),
             group=validated.group,
             tags=list(validated.tags),
+            roles=dict(validated.roles),
             extra=dict(validated.model_extra or {}),
         )
 

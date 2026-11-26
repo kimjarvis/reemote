@@ -6,7 +6,7 @@
 | Module | [`reemote.roles.nodejs`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/nodejs.py) |
 | Runner | [`examples/roles/nodejs.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/nodejs.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Variables | `nodejs_`-prefixed inventory keys → `NodejsVars`; `npm_config_*` read raw from `host.extra` (D5) |
+| Variables | the entry's `nodejs` role mapping → `NodejsVars`; `npm_config_*` read raw from `host.extra` (D5) |
 
 <!---
 | Waves | `1` — no barrier at all: the whole role is one request wave |
@@ -80,14 +80,13 @@ The control-side signing-key fetch needs the control machine to reach
 
 ## 3. Variables
 
-`NodejsVars` is a frozen pydantic model (`extra="forbid"`) with unprefixed field
-names; `resolve_vars(NodejsVars, "nodejs_", inventory)` binds the role's own
-variable names, so an inventory written for the role needs no change —
-`nodejs_version` → `version`, `nodejs_npm_global_packages` → `npm_global_packages`.
-Precedence is `model defaults < inventory extra < overrides`.
+`NodejsVars` is a frozen pydantic model (`extra="forbid"`) whose fields carry bare
+names; the role name passed to `resolve_vars` binds the entry's `nodejs` role
+mapping, so an inventory written for the role needs no key gymnastics.
+Precedence is `model defaults < inventory role mapping < overrides`.
 
 The two `npm_config_*` knobs are the exception (D5): they carry an `npm_` prefix
-upstream, not the role's `nodejs_` prefix, so they are **not** `NodejsVars`
+upstream, outside the `nodejs` role mapping, so they are **not** `NodejsVars`
 fields — the role reads them raw from each host's `extra` channel to preserve the
 existing inventory spelling byte-for-byte. Renaming them `nodejs_npm_config_*`
 would break every inventory that already sets `npm_config_prefix` (the datadog
@@ -105,7 +104,7 @@ role's six unprefixed probe-config variables are the same precedent).
 
 ### Role variables (`defaults/main.yml`)
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `version` | `str` | `"16.x"` — interpolated into the repository name/URI and, with `x`→`*`, the `nodejs=<major>.*` apt pin | `nodejs_version` |
 | `install_npm_user` | `str` | `""` → the inventory connection's login name; owner of the global npm directory (D4) | `nodejs_install_npm_user` |
@@ -122,9 +121,10 @@ role's six unprefixed probe-config variables are the same precedent).
 
 An `npm_global_packages` entry with an empty `name`, or an empty `version`,
 raises pydantic `ValidationError` (a `ValueError`) before any host is contacted;
-an unprefixed misspelling such as `nodejs_verson` raises `RoleVarsError` naming
-the valid keys. A wrong-typed or empty `npm_config_*` extra key raises in the
-body (`TypeError` / `ValueError`) before the request wave is built.
+a key naming no field in the role mapping, such as `verson`, raises
+`RoleVarsError` naming the valid keys. A wrong-typed or empty `npm_config_*`
+extra key raises in the body (`TypeError` / `ValueError`) before the request wave
+is built.
 
 <!---
 ## 5. Run it
@@ -132,8 +132,8 @@ body (`TypeError` / `ValueError`) before the request wave is built.
 The role is library code; `examples/roles/nodejs.py` is the runnable artifact —
 a standalone program with its own `main()`, no shared runner. It loads and
 validates `inventory.json` from the current working directory, resolves the
-role's variables (the defaults overlaid with the entry's `nodejs_`-prefixed
-keys, then the call-site `overrides`), builds the deploy from the `nodejs`
+role's variables (the defaults overlaid with the entry's `nodejs` role mapping,
+then the call-site `overrides`), builds the deploy from the `nodejs`
 factory and drives it with `run_waves` — a `dry=True` preview, then the real
 apply — printing the wave tree each time:
 
@@ -145,7 +145,7 @@ async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
     vars_set = resolve_vars(
-        NodejsVars, "nodejs_", inventory,
+        NodejsVars, "nodejs", inventory,
         overrides={"version": "20.x", "npm_global_packages": ["npm-check-updates"]},
     )
     deploy = nodejs(vars_set)                                          # plain factory
@@ -198,7 +198,7 @@ Four rules are load-bearing:
   report and nothing forces a wave split. The dry run plans everything and
   applies nothing (D9).
 * **Both error paths raise before any request.** A host with neither
-  `nodejs_install_npm_user` nor a connection login name (D4), and a wrong-typed
+  `install_npm_user` nor a connection login name (D4), and a wrong-typed
   or empty `npm_config_*` extra key (D5), fail while the plan resolves — the
   role's only error paths, and neither leaves a half-installed host.
 * **The glob pin converges (issue #41).** `nodejs=16.*` is recorded verbatim by
@@ -258,7 +258,7 @@ The RedHat host appears in neither tree: no request line, no report record.
 | D2 | The keyring path differs: `/etc/apt/keyrings/nodesource_<version>.asc`, not the role's `/etc/apt/signing-key-nodesource-repo.asc` | `apt.sources_file`'s fixed convention; functionally identical, the sources file references wherever the key lands. The role's `get_url` User-Agent workaround is dropped — reemote's fetch is a plain control-side GET; if NodeSource rejects it, fetch the key yourself and pass `signed_by` a local path |
 | D3 | `signed_by=<URL>` accepts ASCII-armored text ONLY and raises `ValueError` on a binary `.gpg` body | if NodeSource serves a binary key, install it with `apt.key` from a control-side fetch and pass `signed_by` the keyring path — the documented fallback in the operation's own error message |
 | D4 | `set_fact: nodejs_install_npm_user = ansible_user \| default(env USER)` becomes `resolve_npm_user` — the explicit var, else the connection's login name | reemote has no `ansible_user` magic variable and the *controller's* `$USER` is not a meaningful per-host owner; a host with neither raises before any request is built |
-| D5 | `npm_config_prefix` and `npm_config_unsafe_perm` are read raw from `host.extra`, not modeled as `NodejsVars` fields | they carry an `npm_` prefix upstream, and `resolve_vars` binds only `nodejs_`; renaming them would break every existing inventory that sets `npm_config_prefix` (the datadog role's six unprefixed probe-config variables are the same precedent) |
+| D5 | `npm_config_prefix` and `npm_config_unsafe_perm` are read raw from `host.extra`, not modeled as `NodejsVars` fields | they carry an `npm_` prefix upstream, and `resolve_vars` binds only the `nodejs` role mapping; renaming them would break every existing inventory that sets `npm_config_prefix` (the datadog role's six unprefixed probe-config variables are the same precedent) |
 | D6 | `NODE_PATH` on the npm task's environment is dropped | the `npm` module scopes it out deliberately — it steers Node's *runtime* module resolution, not what `npm install` records as installed. The rendered `/etc/profile.d/npm.sh` still exports it verbatim, so the login environment is preserved where it matters |
 | D7 | The global-package loop's per-item `state` partitions into up to three `npm.packages` requests (present / latest / absent) | `present` and `latest` are request-level flags applying to every package in one call; the role ran one npm task per item. A version pin becomes reemote's shared `<pkg>=<version>` spelling, translated to npm's `<pkg>@<version>` |
 | D8 | The npm requests carry `sudo=True`, and the profile `template: mode=0644` gets a paired `files.file(mode="0644")` companion | the root-owned global prefix needs escalation to write, where the role relied on play-level `become`; `files.install` idempotence is content-only and would never re-converge a drifted mode (the java/apache precedent) |

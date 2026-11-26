@@ -131,9 +131,10 @@ CATALOG_BARRIER = "read pg_roles catalog"
 def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
     """A two-host inventory: one CentOS target, one Ubuntu host to be skipped.
 
-    The role variables ride on the entry as ``postgresql_``-prefixed extra keys,
-    which is what ``resolve_vars(PostgresqlVars, "postgresql_", inventory)``
-    binds, so a test changes a variable exactly the way an operator does. With no
+    The role variables ride on the entry's ``roles`` mapping under
+    ``"postgresql"``, written with the model's bare field names, which is what
+    ``resolve_vars(PostgresqlVars, "postgresql", inventory)`` binds, so a test
+    changes a variable exactly the way an operator does. With no
     overrides the role defaults apply (no databases/users/privileges).
     """
     entry: dict[str, Any] = {
@@ -145,8 +146,12 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
             "key_path": "~/.ssh/id_ed25519",
         },
         "group": "centos",
+        "roles": {
+            "postgresql": {
+            },
+        },
     }
-    entry.update(overrides)
+    entry["roles"]["postgresql"].update(overrides)
     return [
         entry,
         {
@@ -161,9 +166,9 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
 def data_overrides() -> dict[str, Any]:
     """The doc's example inventory: one database, one user, one table grant."""
     return {
-        "postgresql_databases": [{"name": "exampledb"}],
-        "postgresql_users": [{"name": "jdoe", "role_attr_flags": "CREATEDB"}],
-        "postgresql_privs": [
+        "databases": [{"name": "exampledb"}],
+        "users": [{"name": "jdoe", "role_attr_flags": "CREATEDB"}],
+        "privs": [
             {
                 "db": "exampledb",
                 "roles": "jdoe",
@@ -305,7 +310,7 @@ async def run_pass_a(
     dry: bool = False,
 ) -> Any:
     """Run :func:`postgresql` (the system half) on the ordinary inventory view."""
-    v = resolve_vars(PostgresqlVars, "postgresql_", inventory)
+    v = resolve_vars(PostgresqlVars, "postgresql", inventory)
     report, _hosts = await run_waves(
         inventory, postgresql(v), host_factory=_factory(hosts), dry=dry
     )
@@ -319,7 +324,7 @@ async def run_pass_b(
     dry: bool = False,
 ) -> Any:
     """Run :func:`postgresql_data` (the data half) on the postgres-privilege view."""
-    v = resolve_vars(PostgresqlVars, "postgresql_", inventory)
+    v = resolve_vars(PostgresqlVars, "postgresql", inventory)
     pg_inventory = [
         {
             **entry,
@@ -436,7 +441,7 @@ async def test_first_pass_deploys_everything():
     assert host.file_stats[CONF_PATH]["mode"] == 644
 
     # pg_hba rendered byte-exactly (the template's extra/trailing spaces).
-    v = resolve_vars(PostgresqlVars, "postgresql_", inventory)
+    v = resolve_vars(PostgresqlVars, "postgresql", inventory)
     plan = resolve_plan(v["web1"], MAJOR, False)
     hba = host.remote_files[HBA_PATH].decode()
     assert hba == plan.hba_content
@@ -661,7 +666,7 @@ async def test_unlisted_flags_survive_reconcile():
         "oid": 16384,
     }
     inventory = make_inventory(
-        postgresql_users=[{"name": "jdoe", "role_attr_flags": "CREATEDB"}]
+        users=[{"name": "jdoe", "role_attr_flags": "CREATEDB"}]
     )
     hosts = make_hosts(inventory, initialized=True)
     hosts["web1"].postgres_roles["jdoe"] = dict(superuser_jdoe)
@@ -681,7 +686,7 @@ async def test_unlisted_flags_survive_reconcile():
 
 
 async def test_absent_user_is_dropped_and_converges():
-    inventory = make_inventory(postgresql_users=[{"name": "jdoe", "state": "absent"}])
+    inventory = make_inventory(users=[{"name": "jdoe", "state": "absent"}])
     hosts = make_hosts(inventory, initialized=True)
     hosts["web1"].postgres_roles["jdoe"] = {**BOOTSTRAP_ROLE, "oid": 16384}
     _, report_b = await run_role(inventory, hosts)
@@ -708,8 +713,8 @@ async def test_all_in_schema_grant_converges():
         "grantable": False,
     }
     inventory = make_inventory(
-        postgresql_users=[{"name": "jdoe"}],
-        postgresql_privs=[
+        users=[{"name": "jdoe"}],
+        privs=[
             {
                 "db": "exampledb",
                 "roles": "jdoe",
@@ -735,8 +740,8 @@ async def test_all_in_schema_grant_converges():
 
 async def test_all_in_schema_empty_schema_is_noop():
     inventory = make_inventory(
-        postgresql_users=[{"name": "jdoe"}],
-        postgresql_privs=[
+        users=[{"name": "jdoe"}],
+        privs=[
             {
                 "db": "exampledb",
                 "roles": "jdoe",
@@ -761,7 +766,7 @@ async def test_all_in_schema_empty_schema_is_noop():
 
 
 async def test_packages_variable_reaches_the_install_request():
-    inventory = make_inventory(postgresql_packages=["postgresql", "postgresql-libs"])
+    inventory = make_inventory(packages=["postgresql", "postgresql-libs"])
     hosts = make_hosts(inventory)
     report_a = await run_pass_a(inventory, hosts)
 
@@ -773,7 +778,7 @@ async def test_packages_variable_reaches_the_install_request():
 
 async def test_service_state_and_enabled_reach_the_service_task():
     inventory = make_inventory(
-        postgresql_service_state="stopped", postgresql_service_enabled=False
+        service_state="stopped", service_enabled=False
     )
     hosts = make_hosts(inventory)
     report_a = await run_pass_a(inventory, hosts)
@@ -824,7 +829,7 @@ def test_parse_role_flags():
 
 
 def test_resolve_plan_defaults_and_fips():
-    v = resolve_vars(PostgresqlVars, "postgresql_", make_inventory())["web1"]
+    v = resolve_vars(PostgresqlVars, "postgresql", make_inventory())["web1"]
     plan = resolve_plan(v, MAJOR, False)
     # auth_method is folded into the rendered hba content, not a plan field.
     assert plan.version == REDHAT_VARS[MAJOR]["version"]
@@ -841,10 +846,10 @@ def test_resolve_plan_defaults_and_fips():
 def test_resolve_plan_enablerepo_and_absolute_log_dir():
     v = resolve_vars(
         PostgresqlVars,
-        "postgresql_",
+        "postgresql",
         make_inventory(
-            postgresql_enablerepo="crb, extras",
-            postgresql_global_config_options=[
+            enablerepo="crb, extras",
+            global_config_options=[
                 {"option": "log_directory", "value": "/var/log/pgsql"}
             ],
         ),
@@ -857,9 +862,9 @@ def test_resolve_plan_enablerepo_and_absolute_log_dir():
 def test_normalize_privs_exotic_type_cites_29():
     v = resolve_vars(
         PostgresqlVars,
-        "postgresql_",
+        "postgresql",
         make_inventory(
-            postgresql_privs=[
+            privs=[
                 {"db": "exampledb", "roles": "jdoe", "privs": "ALL", "type": "language"}
             ]
         ),
@@ -871,9 +876,9 @@ def test_normalize_privs_exotic_type_cites_29():
 def test_normalize_privs_mappings():
     v = resolve_vars(
         PostgresqlVars,
-        "postgresql_",
+        "postgresql",
         make_inventory(
-            postgresql_privs=[
+            privs=[
                 {
                     "db": "exampledb",
                     "roles": "jdoe",
@@ -901,7 +906,7 @@ def test_render_pg_hba_byte_exact():
 
 def test_resolve_data_normalizes_users_and_databases():
     v = resolve_vars(
-        PostgresqlVars, "postgresql_", make_inventory(**data_overrides())
+        PostgresqlVars, "postgresql", make_inventory(**data_overrides())
     )["web1"]
     data = resolve_data(v)
     assert data.pg_user == "postgres"
@@ -917,8 +922,8 @@ def test_resolve_data_normalizes_users_and_databases():
 def test_duplicate_user_fails_fast():
     v = resolve_vars(
         PostgresqlVars,
-        "postgresql_",
-        make_inventory(postgresql_users=[{"name": "jdoe"}, {"name": "jdoe"}]),
+        "postgresql",
+        make_inventory(users=[{"name": "jdoe"}, {"name": "jdoe"}]),
     )["web1"]
     with pytest.raises(ValueError, match="duplicate postgresql_users name"):
         resolve_data(v)
@@ -957,17 +962,17 @@ def test_vars_reject_bad_enum_values():
 
 def test_inventory_binds_the_prefixed_variables():
     v = resolve_vars(
-        PostgresqlVars, "postgresql_", make_inventory(postgresql_user="pg")
+        PostgresqlVars, "postgresql", make_inventory(user="pg")
     )
     assert v["web1"].user == "pg"
     # The other role's host keeps the defaults: no postgresql_ keys, nothing bound.
     assert v["ubuntu"] == PostgresqlVars()
 
 
-def test_prefixed_typo_is_reported_not_ignored():
-    inventory = make_inventory(postgresql_usr="pg")
-    with pytest.raises(RoleVarsError, match="postgresql_usr"):
-        resolve_vars(PostgresqlVars, "postgresql_", inventory)
+def test_typoed_role_variable_is_reported_not_ignored():
+    inventory = make_inventory(usr="pg")
+    with pytest.raises(RoleVarsError, match="usr"):
+        resolve_vars(PostgresqlVars, "postgresql", inventory)
 
 
 # --- the wave tree (design doc section 7.2) -----------------------------------

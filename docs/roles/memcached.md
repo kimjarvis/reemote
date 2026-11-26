@@ -6,7 +6,7 @@
 | Module | [`reemote.roles.memcached`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/memcached.py) |
 | Runner | [`examples/roles/memcached.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/memcached.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Variables | `memcached_`-prefixed inventory keys → `MemcachedVars` |
+| Variables | the entry's `memcached` role mapping → `MemcachedVars` |
 
 <!---
 | Waves | `2` on a changing pass (requests, then handler), `1` once converged — one checkpoint, no facts |
@@ -47,7 +47,7 @@ The role's tasks — and its handler — map onto reemote requests and one barri
 | Ansible task | reemote stage | Status |
 | --- | --- | --- |
 | `include_vars: "{{ ansible_facts.os_family }}.yml"` | frozen `vars/Debian.yml` constants (`CONFIG_FILE`, `DEFAULT_USER`), the single-OS collapse needs no gather | recipe |
-| `set_fact: memcached_user={{ __memcached_user }}` when not defined | `MemcachedVars.user` defaults to `DEFAULT_USER`; an explicit `memcached_user` key wins, as the extra key won over the `set_fact` | recipe |
+| `set_fact: memcached_user={{ __memcached_user }}` when not defined | `MemcachedVars.user` defaults to `DEFAULT_USER`; an explicit `user` key in the role mapping wins, as the inventory variable won over the `set_fact` | recipe |
 | `apt: update_cache=yes cache_valid_time=86400` | `apt.update(cache_valid_time=86400)`, gated on the `AptUpdateStamp` fact | covered |
 | `package: name=memcached state=present` (`register: memcached_install`) | `apt.packages(packages=("memcached",))`; the register is never consumed → dropped (D2) | covered |
 | `template: memcached-Debian.conf.j2 dest=… mode=0644` `notify: restart memcached` | control-side Jinja2 render → `files.install(mode="0644", user="root", group="root")` + `files.file` metadata companion; both names notify | recipe |
@@ -89,7 +89,7 @@ elevates.
 
 ### Role variables (`defaults/main.yml`)
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `user` | `str` | `memcache` — from `vars/Debian.yml`'s `__memcached_user`, the `set_fact` default | `memcached_user` |
 | `port` | `int` | `11211` | `memcached_port` |
@@ -102,13 +102,13 @@ elevates.
 | `threads` | `int` | `4` (`-t`) | `memcached_threads` |
 
 <!---
-Precedence is `model defaults < inventory extra < overrides`. Validation is
+Precedence is `model defaults < inventory role mapping < overrides`. Validation is
 fail-fast at `resolve_vars`, before any host is contacted: `user`, `log_file`
 and `max_item_size` must be non-empty strings; `listen_ip` accepts a string or
 a list/tuple (normalized to a `tuple`, the hashability rule) of non-empty
 strings; a wrongly typed value is a pydantic `ValidationError` — a
-`ValueError`, so the runner maps it. An unprefixed misspelling such as
-`memcached_packagez` raises `RoleVarsError` naming the valid keys. Plain `int`
+`ValueError`, so the runner maps it. A key naming no field in the role mapping,
+such as `packagez`, raises `RoleVarsError` naming the valid keys. Plain `int`
 fields keep pydantic's lax coercion — `"11211"` is accepted as `11211` — the
 repo-wide convention (apache's `listen_port` behaves the same) and the render
 is identical either way (D5).
@@ -119,7 +119,7 @@ The role is library code; `examples/roles/memcached.py` is the runnable
 artifact — a standalone program with its own `main()`, no shared runner. It
 loads and validates `inventory.json` from the current working directory,
 resolves the role's variables (the defaults overlaid with the entry's
-`memcached_`-prefixed keys, then the call-site `overrides`), builds the deploy
+`memcached` role mapping, then the call-site `overrides`), builds the deploy
 from the `memcached` factory and drives it with `run_waves` — a `dry=True`
 preview, then the real apply — printing the wave tree each time:
 
@@ -133,7 +133,7 @@ async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
     vars_set = resolve_vars(
-        MemcachedVars, "memcached_", inventory, overrides=MEMCACHED_OVERRIDES
+        MemcachedVars, "memcached", inventory, overrides=MEMCACHED_OVERRIDES
     )
     deploy = memcached(vars_set)                                            # plain factory
     report, _hosts = await run_waves(inventory, deploy, dry=True)           # parks at the checkpoint

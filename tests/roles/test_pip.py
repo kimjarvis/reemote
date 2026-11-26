@@ -87,8 +87,9 @@ def _regular_file(host: SimulatedHost, path: str, data: bytes = b"", mode: int =
 def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
     """A two-host inventory: one Ubuntu target, one RedHat host to be skipped.
 
-    The role variables ride on the Ubuntu entry as ``pip_``-prefixed extra keys,
-    which is what ``resolve_vars(PipVars, "pip_", inventory)`` binds, so a test
+    The role variables ride on the Ubuntu entry's ``roles`` mapping under
+    ``"pip"``, written with the model's bare field names, which is what
+    ``resolve_vars(PipVars, "pip", inventory)`` binds, so a test
     changes a variable exactly the way an operator does.
     """
     entry: dict[str, Any] = {
@@ -100,9 +101,13 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
             "key_path": "~/.ssh/id_ed25519",
         },
         "group": "ubuntu",
-        "pip_install_packages": INSTALL_PACKAGES,
+        "roles": {
+            "pip": {
+                "install_packages": INSTALL_PACKAGES,
+            },
+        },
     }
-    entry.update(overrides)
+    entry["roles"]["pip"].update(overrides)
     return [
         entry,
         {
@@ -154,7 +159,7 @@ async def run_role(
     dry: bool = False,
 ) -> Any:
     """Resolve the role's variables and run one wave pass against persistent hosts."""
-    v = resolve_vars(PipVars, "pip_", inventory)
+    v = resolve_vars(PipVars, "pip", inventory)
 
     def factory(entry: dict[str, Any]) -> SimulatedHost:
         return hosts[entry["host"]]
@@ -319,7 +324,7 @@ async def test_removing_an_absent_marker_is_a_noop():
 async def test_state_partitions_into_present_latest_absent():
     """Each item's ``state`` maps onto one request with the right flags (D3)."""
     inventory = make_inventory(
-        pip_install_packages=[
+        install_packages=[
             {"name": "kept"},
             {"name": "fresh", "state": "latest"},
             {"name": "dropped", "state": "absent"},
@@ -338,7 +343,7 @@ async def test_state_partitions_into_present_latest_absent():
 
 async def test_virtualenv_item_creates_the_tree_and_targets_its_pip():
     """A virtualenv item is a create request then an install via ``<venv>/bin/pip`` (D4)."""
-    inventory = make_inventory(pip_install_packages=[{"name": "six", "virtualenv": VENV}])
+    inventory = make_inventory(install_packages=[{"name": "six", "virtualenv": VENV}])
     hosts = make_hosts(inventory, pip_package_installed=True, marker_present=False)
 
     report = await run_role(inventory, hosts)
@@ -384,8 +389,8 @@ def test_pip_plan_defaults():
 
 
 def test_inventory_binds_the_prefixed_variables():
-    inventory = make_inventory(pip_package="python-pip", pip_executable="pip2.7")
-    v = resolve_vars(PipVars, "pip_", inventory)
+    inventory = make_inventory(package="python-pip", executable="pip2.7")
+    v = resolve_vars(PipVars, "pip", inventory)
 
     assert v["web1"].package == "python-pip"
     assert v["web1"].executable == "pip2.7"
@@ -427,12 +432,12 @@ def test_vars_are_frozen_and_reject_unknown_fields():
         PipVars(pip_package="python-pip")  # the Ansible name, not the field
 
 
-def test_prefixed_typo_is_reported_not_ignored():
-    inventory = make_inventory(pip_packge="python3-pip")
+def test_typoed_role_variable_is_reported_not_ignored():
+    inventory = make_inventory(packge="python3-pip")
     make_hosts(inventory)
 
-    with pytest.raises(RoleVarsError, match="pip_packge"):
-        resolve_vars(PipVars, "pip_", inventory)
+    with pytest.raises(RoleVarsError, match="packge"):
+        resolve_vars(PipVars, "pip", inventory)
 
 
 # --- the wave tree (design doc section 7.2) -----------------------------------

@@ -6,7 +6,7 @@
 | Module | [`reemote.roles.ntp`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/ntp.py) |
 | Runner | [`examples/roles/ntp.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/ntp.py) |
 | Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
-| Variables | `ntp_`-prefixed inventory keys → `NtpVars` |
+| Variables | the entry's `ntp` role mapping → `NtpVars` |
 
 <!---
 | Waves | `5` on a changed host (0–4); `4` once converged — the handler wave disappears |
@@ -96,9 +96,10 @@ not controller-side calls.
 
 ## 3. Variables
 
-`NtpVars` is a frozen pydantic model (`extra="forbid"`) with unprefixed field names;
-the prefix passed to `resolve_vars` binds the inventory keys, so an inventory written
-for the role needs no change. The four `set_fact` overrides (`daemon`, `package`,
+`NtpVars` is a frozen pydantic model (`extra="forbid"`) whose fields carry bare
+names; the role name passed to `resolve_vars` binds the entry's `ntp` role
+mapping, so an inventory written for the role needs no key gymnastics. The four
+`set_fact` overrides (`daemon`, `package`,
 `config_file`, `driftfile`) default to `None` — "derive from the gathered vars table",
 exactly as the role's `when: ... is not defined` guards.
 
@@ -113,7 +114,7 @@ exactly as the role's `when: ... is not defined` guards.
 
 **Variables:**
 
-| Field | Type | Default | Inventory key |
+| Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
 | `enabled` | `bool` | `true` | `ntp_enabled` |
 | `timezone` | `str` | `Etc/UTC` | `ntp_timezone` |
@@ -131,13 +132,13 @@ exactly as the role's `when: ... is not defined` guards.
 
 <!---
 
-Precedence is `model defaults < inventory extra < overrides`. Sequences are `tuple`,
+Precedence is `model defaults < inventory role mapping < overrides`. Sequences are `tuple`,
 never `list`: the model is frozen and hashable, and a value that reaches `op()` must
 hash — a JSON list from the inventory is normalized to a tuple by a `before`
 validator. Validation is fail-fast: `timezone` and `chrony_maxdistance` must be
 non-empty, every `servers`/`restrict` entry a non-empty string, and each `set_fact`
 override — when given — non-empty. `extra="forbid"` plus `resolve_vars`' binding
-report a prefixed key that names no field, and the two handler flags gate the restarts
+report a key that names no field in the role mapping, and the two handler flags gate the restarts
 rather than the requests (as `handlers/main.yml`'s `when:` does), before any host is
 contacted.
 
@@ -146,7 +147,7 @@ contacted.
 The role is library code; `examples/roles/ntp.py` is the runnable artifact — a
 standalone program with its own `main()`, no shared runner. It loads and validates
 `inventory.json` from the current working directory, resolves the role's variables (the
-defaults overlaid with the entry's `ntp_`-prefixed keys, then the call-site
+defaults overlaid with the entry's `ntp` role mapping, then the call-site
 `overrides`), builds the deploy from the `ntp` factory and drives it with `run_waves` —
 a `dry=True` one-wave preview, then the real apply — printing the wave tree each time:
 
@@ -157,7 +158,7 @@ from reemote.roles import NtpVars, ntp
 async def main() -> None:
     inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
     validate_inventory(inventory)
-    vars_set = resolve_vars(NtpVars, "ntp_", inventory, overrides={"manage_config": True})
+    vars_set = resolve_vars(NtpVars, "ntp", inventory, overrides={"manage_config": True})
     deploy = ntp(vars_set)                                          # plain factory
     report, _hosts = await run_waves(inventory, deploy, dry=True)    # one-wave preview
     print(report.tree())
@@ -219,7 +220,7 @@ emits no requests, no barriers and no report lines at all.
 
 ## 7. Transcript
 
-From `tests/roles/test_ntp.py`, against the simulated Ubuntu host (`ntp_manage_config`
+From `tests/roles/test_ntp.py`, against the simulated Ubuntu host (`manage_config`
 on) plus a RedHat host the role never touches. The `systemd_unit_files` store is seeded
 to the intended post-install state (the daemon's own unit + `cron.service`, timesyncd
 gone — the conflict removed it). Fresh host, first pass:

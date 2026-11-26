@@ -121,8 +121,9 @@ SSL_VHOST = {
 def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
     """A two-host inventory: one Ubuntu target, one CentOS host to be skipped.
 
-    The role variables ride on the entry as ``apache_``-prefixed extra keys,
-    which is what ``resolve_vars(ApacheVars, "apache_", inventory)`` binds, so a
+    The role variables ride on the entry's ``roles`` mapping under ``"apache"``,
+    written with the model's bare field names, which is what
+    ``resolve_vars(ApacheVars, "apache", inventory)`` binds, so a
     test changes a variable exactly the way an operator does. The base entry
     exercises the non-default branches: a custom port, the default-vhost
     removal, a disabled mod, an enabled conf, and a vhost with the optional
@@ -137,23 +138,27 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
             "key_path": "~/.ssh/id_ed25519",
         },
         "group": "ubuntu",
-        "apache_listen_port": 8080,
-        "apache_remove_default_vhost": True,
-        "apache_mods_disabled": ["autoindex"],
-        "apache_conf_enabled": ["security"],
-        "apache_vhosts": [
-            {
-                "servername": "example.com",
-                "serveralias": "www.example.com",
-                "documentroot": "/var/www/example",
-                "extra_parameters": (
-                    "ErrorLog /var/log/apache2/example-error.log\n"
-                    "CustomLog /var/log/apache2/example-access.log combined"
-                ),
-            }
-        ],
+        "roles": {
+            "apache": {
+                "listen_port": 8080,
+                "remove_default_vhost": True,
+                "mods_disabled": ["autoindex"],
+                "conf_enabled": ["security"],
+                "vhosts": [
+                        {
+                            "servername": "example.com",
+                            "serveralias": "www.example.com",
+                            "documentroot": "/var/www/example",
+                            "extra_parameters": (
+                                "ErrorLog /var/log/apache2/example-error.log\n"
+                                "CustomLog /var/log/apache2/example-access.log combined"
+                            ),
+                        }
+                    ],
+            },
+        },
     }
-    entry.update(overrides)
+    entry["roles"]["apache"].update(overrides)
     return [
         entry,
         {
@@ -251,7 +256,7 @@ async def run_role(
     The same ``Host`` objects come back for every entry, so state survives from
     one pass to the next -- which is the whole point of the second run.
     """
-    v = resolve_vars(ApacheVars, "apache_", inventory)
+    v = resolve_vars(ApacheVars, "apache", inventory)
 
     def factory(entry: dict[str, Any]) -> SimulatedHost:
         return hosts[entry["host"]]
@@ -468,7 +473,7 @@ async def test_handler_verb_follows_the_restart_state(
     own service task already has the unit running, so it queues the verb and the
     verb no-ops.
     """
-    inventory = make_inventory(apache_restart_state=restart_state)
+    inventory = make_inventory(restart_state=restart_state)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -577,8 +582,8 @@ async def test_dry_preview_stops_at_the_probe_barrier():
 async def test_ssl_certificate_present_renders_the_443_block():
     """One certificate read is one extra wave: four waves for a single SSL vhost."""
     inventory = make_inventory(
-        apache_ignore_missing_ssl_certificate=False,
-        apache_vhosts_ssl=[SSL_VHOST],
+        ignore_missing_ssl_certificate=False,
+        vhosts_ssl=[SSL_VHOST],
     )
     hosts = make_hosts(inventory, cert_present=True)
     report = await run_role(inventory, hosts)
@@ -611,8 +616,8 @@ async def test_ssl_certificate_present_renders_the_443_block():
 async def test_ssl_vhost_is_gated_when_the_certificate_is_missing():
     """The stat answer the role registered is now the barrier's own value."""
     inventory = make_inventory(
-        apache_ignore_missing_ssl_certificate=False,
-        apache_vhosts_ssl=[SSL_VHOST],
+        ignore_missing_ssl_certificate=False,
+        vhosts_ssl=[SSL_VHOST],
     )
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
@@ -635,7 +640,7 @@ async def test_ignore_missing_ssl_certificate_skips_the_gate_not_the_read():
     unchanged. That is faithful, and worth pinning: the extra wave is the cost of
     the loop, not of the gate.
     """
-    inventory = make_inventory(apache_vhosts_ssl=[SSL_VHOST])
+    inventory = make_inventory(vhosts_ssl=[SSL_VHOST])
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -648,8 +653,8 @@ async def test_ignore_missing_ssl_certificate_skips_the_gate_not_the_read():
 async def test_two_certificates_cost_two_waves_and_stay_aligned():
     """Per-certificate waves, and the exists list keeps the vhost order."""
     inventory = make_inventory(
-        apache_ignore_missing_ssl_certificate=False,
-        apache_vhosts_ssl=[
+        ignore_missing_ssl_certificate=False,
+        vhosts_ssl=[
             SSL_VHOST,
             {
                 **SSL_VHOST,
@@ -685,7 +690,7 @@ async def test_apache_22_selects_the_22_table():
     ``Require all granted``, no ``SSLCompression off``, and the default vhost
     file without its ``.conf`` suffix.
     """
-    inventory = make_inventory(apache_vhosts_ssl=[SSL_VHOST])
+    inventory = make_inventory(vhosts_ssl=[SSL_VHOST])
     hosts = make_hosts(inventory, version_stdout=VERSION_22_STDOUT)
     report = await run_role(inventory, hosts)
 
@@ -753,7 +758,7 @@ async def test_malformed_probe_output_raises():
 
 
 async def test_packages_variable_replaces_the_debian_pair():
-    inventory = make_inventory(apache_packages=["apache2", "php"])
+    inventory = make_inventory(packages=["apache2", "php"])
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -761,7 +766,7 @@ async def test_packages_variable_replaces_the_debian_pair():
 
 
 async def test_state_and_enabled_reach_the_service_task():
-    inventory = make_inventory(apache_state="stopped", apache_enabled=False)
+    inventory = make_inventory(state="stopped", enabled=False)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -782,7 +787,7 @@ async def test_state_and_enabled_reach_the_service_task():
 
 async def test_create_vhosts_false_drops_the_notifying_pair():
     """No vhosts file, no symlink, and neither name in the notification set."""
-    inventory = make_inventory(apache_create_vhosts=False)
+    inventory = make_inventory(create_vhosts=False)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -792,7 +797,7 @@ async def test_create_vhosts_false_drops_the_notifying_pair():
     assert "Add vhost symlink in sites-enabled" not in ordered
     assert entry_named(report, HANDLER_NAME).changed  # the other tasks still notify
 
-    plan = configure_plan(resolve_vars(ApacheVars, "apache_", inventory)["ubuntu"], "2.4.58", ())
+    plan = configure_plan(resolve_vars(ApacheVars, "apache", inventory)["ubuntu"], "2.4.58", ())
     assert "Add apache vhosts configuration" not in notifying_names(plan)
 
     second = await run_role(inventory, hosts)
@@ -806,7 +811,7 @@ async def test_custom_vhosts_template_is_read_controller_side(tmp_path):
         "Listen {{ apache_listen_port }} for {{ apache_vhosts[0].servername }}\n",
         encoding="utf-8",
     )
-    inventory = make_inventory(apache_vhosts_template=str(template))
+    inventory = make_inventory(vhosts_template=str(template))
     hosts = make_hosts(inventory)
     await run_role(inventory, hosts)
 
@@ -819,7 +824,7 @@ async def test_inert_variables_still_bind():
     Pinned as equality against the default tree: an inventory written for the
     role keeps working, and the two knobs provably change no request.
     """
-    inventory = make_inventory(apache_enablerepo="extra", apache_ssl_no_log=False)
+    inventory = make_inventory(enablerepo="extra", ssl_no_log=False)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
@@ -963,11 +968,11 @@ def test_packages_default_to_the_debian_pair():
 def test_vhosts_sequence_binds_from_lists():
     v = resolve_vars(
         ApacheVars,
-        "apache_",
+        "apache",
         make_inventory(
-            apache_packages=["apache2"],
-            apache_mods_enabled=["rewrite"],
-            apache_vhosts=[{"servername": "a.example.com"}],
+            packages=["apache2"],
+            mods_enabled=["rewrite"],
+            vhosts=[{"servername": "a.example.com"}],
         ),
     )["ubuntu"]
 
@@ -1022,19 +1027,19 @@ def test_vars_are_frozen_and_reject_unknown_fields():
 
 
 def test_inventory_binds_the_prefixed_variables():
-    v = resolve_vars(ApacheVars, "apache_", make_inventory(apache_listen_port=8443))
+    v = resolve_vars(ApacheVars, "apache", make_inventory(listen_port=8443))
 
     assert v["ubuntu"].listen_port == 8443
     # The other role's host keeps the defaults: no apache_ keys, nothing bound.
     assert v["web1"] == ApacheVars()
 
 
-def test_prefixed_typo_is_reported_not_ignored():
-    inventory = make_inventory(apache_listen_prot=8080)
+def test_typoed_role_variable_is_reported_not_ignored():
+    inventory = make_inventory(listen_prot=8080)
     hosts = make_hosts(inventory)
 
-    with pytest.raises(RoleVarsError, match="apache_listen_prot"):
-        resolve_vars(ApacheVars, "apache_", inventory)
+    with pytest.raises(RoleVarsError, match="listen_prot"):
+        resolve_vars(ApacheVars, "apache", inventory)
     assert hosts["ubuntu"].apt_packages == {}
 
 
@@ -1050,7 +1055,7 @@ async def test_composing_role_captures_the_outputs():
     """
     inventory = make_inventory()
     hosts = make_hosts(inventory)
-    v = resolve_vars(ApacheVars, "apache_", inventory)
+    v = resolve_vars(ApacheVars, "apache", inventory)
     captured: dict[str, ApacheOutputs] = {}
 
     def parent(host):

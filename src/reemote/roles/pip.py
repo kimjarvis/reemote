@@ -7,8 +7,8 @@
 # install the interpreter's pip package via apt, remove the distro's PEP 668
 # ``EXTERNALLY-MANAGED`` marker so pip may write the system site-packages, then
 # run the ``pip_install_packages`` loop. :func:`pip` is the whole task list and
-# :class:`PipVars` is ``defaults/main.yml``, bound from the inventory's
-# ``pip_``-prefixed keys by :func:`~reemote.rolevars.resolve_vars`.
+# :class:`PipVars` is ``defaults/main.yml``, bound from the inventory entry's
+# ``pip`` role mapping by :func:`~reemote.rolevars.resolve_vars`.
 #
 # Target: hosts in the ``"Ubuntu"`` OS family. A host outside the family returns
 # before its first ``yield`` and emits no requests, no barriers and no log lines
@@ -168,9 +168,9 @@ class PipPackage(BaseModel):
 class PipVars(BaseModel):
     """The role's static inputs: ``defaults/main.yml``, unprefixed.
 
-    Field names carry no ``pip_`` prefix -- the prefix passed to
-    :func:`~reemote.rolevars.resolve_vars` binds ``pip_package`` to :attr:`package`,
-    ``pip_executable`` to :attr:`executable` and ``pip_install_packages`` to
+    Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
+    inventory entry's ``pip`` role mapping, so ``package`` sets
+    :attr:`package`, ``executable`` :attr:`executable` and ``install_packages``
     :attr:`install_packages`. :attr:`executable` stays ``None`` by default so the
     ``pip_package``-derived autodetect applies (D5), exactly how
     ``defaults/main.yml`` computes ``pip_executable``.
@@ -387,7 +387,7 @@ def pip(v: VarsSet[PipVars]) -> Deploy:
 
     Args:
         v: The role's resolved variables, one :class:`PipVars` per host
-            (``resolve_vars(PipVars, "pip_", inventory)``).
+            (``resolve_vars(PipVars, "pip", inventory)``).
 
     Returns:
         A deploy for :func:`~reemote.run_waves`. It publishes no outputs -- no
