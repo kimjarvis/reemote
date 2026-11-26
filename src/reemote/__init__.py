@@ -327,8 +327,10 @@ from .modules.git.git import (
     GitWorktreeRemoveCommand,
 )
 from .modules.go.go import (
+    GoInstallCommand,
     GoPackageInfo,
     GoPackages,
+    GoRemoveCommand,
 )
 from .modules.gpg.gpg import (
     GpgDearmorCommand,
@@ -966,8 +968,10 @@ __all__ = [
     "GitTrackingBranch",
     "GitWorktreeAddCommand",
     "GitWorktreeRemoveCommand",
+    "GoInstallCommand",
     "GoPackageInfo",
     "GoPackages",
+    "GoRemoveCommand",
     "GpgDearmorCommand",
     "GpgDeleteKeyCommand",
     "GpgExportCommand",

@@ -41,7 +41,8 @@ descriptors it yields,
 ``GitStatus``, ``GitSubmodule``, ``GitTag`` and ``GitTrackingBranch``
 facts beside the ``config``, ``repo`` and ``worktree`` operations,
 ``modules/go/go.py`` holds the ``GoPackages`` fact (with its
-``GoPackageInfo`` entry type),
+``GoPackageInfo`` entry type) beside the ``packages`` operation and the
+``GoInstallCommand``/``GoRemoveCommand`` descriptors it yields,
 ``modules/gpg/gpg.py`` holds the ``GpgKey``, ``GpgKeyrings``, ``GpgKeys``
 and ``GpgSecretKeys`` facts,
 ``modules/hardware/hardware.py`` holds the ``BlockDevices``, ``CpuInfo``,

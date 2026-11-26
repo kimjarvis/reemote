@@ -6,12 +6,14 @@
       members:
         - GoPackageInfo
         - GoPackages
+        - packages
 
 
 
 <!---
 
-`reemote.modules.go.go` holds the go fact. `GoPackages` reports the Go
+`reemote.modules.go.go` holds the go fact and the `go.packages` operation.
+`GoPackages` reports the Go
 binaries installed via `go install` as `GoPackageInfo` entries — the binary's
 main-package import `path` plus one module `version` — parsed from the
 `go version -m` rows the fact prints for every regular executable in the go
@@ -39,5 +41,46 @@ substitutions and `find -exec` failures stay hidden, the exit is 0 or 1 rather
 than 127, and fact gathering reads the unparsable silence as `[]` — exactly
 the answer the baseline's `default = dict` gate produced. A host with the
 tooling but no `go install` binaries answers `[]` the same honest way.
+
+`go.packages` is the operation counterpart of the baseline's `go.packages`. It
+installs, upgrades or removes `go install` binaries given as bare import paths
+or `<pkg>=<version>` pins. Its idempotence reads `GoPackages` once: a pinned
+request is present only when that *exact* version is installed (the
+`ensure_packages` rule `apt.packages` and `npm.packages` also follow), while an
+unpinned one — and one pinned to the special `latest` — is present when the
+path is installed at any version. The pin spelling is reemote's one
+user-facing format, `<pkg>=<version>`, translated for the shell by
+`_go_package_spec` into go's own `<pkg>@<version>` token (npm's `=`-to-`@`
+precedent); the baseline's `@` input spelling is therefore not accepted, and
+an unpinned request renders `@latest` exactly as the baseline emits it.
+
+`latest=True` keeps the baseline's documented non-idempotence: with no
+registry to compare against, an installed unpinned request re-issues
+`go install <pkg>@latest` and reports changed on every run (the legacy latest
+behavior `pip.packages`/`gem.packages` follow, deliberately unlike the
+version-checked `latest` of `apt.packages`). Install and upgrade batches are
+yielded as two separate `GoInstallCommand`s, installs first, mirroring the
+baseline's two identical `go install` commands — go has no update verb — and a
+pinned request joins the install batch when missing but is never an upgrade
+candidate.
+
+Removal is name-based, the baseline verbatim and deliberately unlike the
+version-aware removal of `apt`/`gem`: a compiled binary carries no per-version
+state, so `rm -f` cannot select or spare a version — a pin on removal requests
+the path, not the pin. The `GoRemoveCommand` resolves the bin directory in the
+shell (`GOBIN`, else `$GOPATH/bin`, the fact's own guard) and removes
+`"$BINDIR"/<binary>` for each requested path, where the binary name drops a
+trailing Semantic-Import-Versioning `/vN` segment (`github.com/foo/bar/v2`
+installs `bar`). Two distinct import paths can share a binary name — mirroring
+how `go install` itself clobbers one with the other — so removals dedup
+requested paths but not resolved names.
+
+Both commands act on the connecting user's go tree, so the operation runs
+unprivileged: flagging `sudo=True` would install into root's `GOPATH`, a tree
+the unprivileged fact read never sees. The `GoInstallCommand`/`GoRemoveCommand`
+descriptors render every package token `shlex`-quoted, byte-identical to the
+baseline's `QuoteString` output. All three baseline options map — `packages`,
+`present` and `latest` — with the single-package-as-string shorthand and the
+`packages=None` no-op kept; `go` has no further baseline options to drop.
 
 --->

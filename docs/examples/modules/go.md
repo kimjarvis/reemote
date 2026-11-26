@@ -1,12 +1,13 @@
 # Module examples: go
 
-Scripts under `examples/modules/go/` — one per fact of the
+Scripts under `examples/modules/go/` — one per fact or operation of the
 [`go`](../../modules/go.md) module. See the
 [Examples overview](../../examples.md) for the shared "connects for real"
 warning and the error-reporting contract every script follows.
 
 The provisioning helper (`provision_go.py`) is not rendered here — it is the
-shared prerequisite step the script below awaits, not a per-fact demonstration:
+shared prerequisite step the scripts below await, not a per-fact or
+per-operation demonstration:
 Ubuntu ships no `go` toolchain until the `golang-go` deb is installed, and the
 module deliberately drops the baseline's `requires_command` gating, so — because
 the fact's compound command is self-guarding — a host without go reads as an
@@ -37,5 +38,42 @@ parameter of its own — so the other demo hosts are named in a
 demo host.
 
 ::: go_go_packages
+    options:
+      members: []
+
+## Installing and removing go binaries
+
+The package operation: `go.packages` installs (or with `present=False` removes)
+`go install` binaries by bare import path or `<pkg>=<version>` pin, reading the
+[`GoPackages`][reemote.modules.go.go.GoPackages] fact (the `go version -m`
+listing of the go bin directory) — a pinned request is present only when that
+*exact* version is installed and an unpinned one (or one pinned to the special
+`latest`) when the path is installed at any version, so re-running is a no-op.
+The script installs one pinned tool (`staticcheck=v0.4.5`) beside one unpinned
+one (`mvdan.cc/gofumpt`), then removes both again — a self-restoring cycle that
+leaves the host's go bin directory as it found it — yielding each request twice
+so the second of each pair is a guaranteed no-op in the apply phase through the
+fresh per-step fact cache. The pin is reemote's one user-facing spelling,
+shared with apt, dnf, apk and npm; it rides through to the install shell
+translated into go's own grammar as `staticcheck@v0.4.5`, while the unpinned
+request renders `@latest` exactly as the baseline emits it. Removal is
+name-based — a compiled binary carries no per-version state, so `rm -f` cannot
+select or spare a version: the command resolves the bin directory (`GOBIN`,
+else `$GOPATH/bin`) in the shell and drops `"$BINDIR"/<binary>`, the binary name
+stripping a trailing Semantic-Import-Versioning `/vN` segment. No request is
+elevated: both commands work on the connecting user's go tree, and `sudo` would
+install into root's `GOPATH`, a tree the unprivileged fact read never sees.
+`latest=True` keeps the baseline's documented non-idempotence — an installed
+unpinned request re-issues `go install <pkg>@latest` and reports changed every
+run — which the pytest suite exercises rather than this script.
+`provision_go.py` installs the `golang-go` deb with `apt.packages` before the
+deploy runs, so the example works even on a host where go was never installed.
+Like the other examples the script reads the shared project-root
+`inventory.json` (validated up front with `validate_inventory`) and every
+request carries `when=is_ubuntu` — on a non-Ubuntu host neither the `go`
+commands nor the fact behind them run, and plan and log render
+`[skipped: when guard is_ubuntu]`.
+
+::: go_packages
     options:
       members: []

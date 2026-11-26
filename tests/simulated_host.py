@@ -331,6 +331,11 @@ from reemote.modules.git.git import (
     GitWorktreeAddCommand,
     GitWorktreeRemoveCommand,
 )
+from reemote.modules.go.go import (
+    GoInstallCommand,
+    GoRemoveCommand,
+    _go_split_spec,
+)
 from reemote.modules.gpg.gpg import (
     GpgDearmorCommand,
     GpgDeleteKeyCommand,
@@ -1396,9 +1401,10 @@ class SimulatedHost(Host):
     # import path exactly, and ``GoPackages.parse`` performs no
     # normalization -- and a ``(devel)`` (``go build``) binary simply has no
     # entry. Defaults to {} -- a simulated machine with no ``go install``
-    # binaries in its go bin directory, so the fact answers ``[]``. A
-    # read-only seam: the namespace has no operations yet, so no
-    # ``execute_command`` mutator maintains it and a test seeds it directly.
+    # binaries in its go bin directory, so the fact answers ``[]``. The
+    # ``go.packages`` mutators ``install_go_packages``/``remove_go_packages``
+    # maintain it through ``execute_command``, and a test may seed it
+    # directly too.
     go_packages: dict[str, list[str]] = field(default_factory=dict)
     # GPG key files' contents (src path -> the ``GpgKeyInfo`` entries
     # ``GpgKey`` returns for that file), backing ``GpgKey``. An unseeded
@@ -2818,6 +2824,10 @@ class SimulatedHost(Host):
                 self.remove_gem_packages(
                     names, version, user_install, gem_home, gem_path
                 )
+            case GoInstallCommand(packages=packages):
+                self.install_go_packages(packages)
+            case GoRemoveCommand(packages=packages):
+                self.remove_go_packages(packages)
             case PipInstallCommand(packages=packages):
                 self.install_pip_packages(packages)
             case PipUpgradeCommand():
@@ -7972,6 +7982,40 @@ class SimulatedHost(Host):
                 versions.remove(version)
             if not versions:
                 store.pop(name, None)
+
+    def install_go_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``go install``: mark the binaries installed.
+
+        ``go.packages``' install mutation (the ``latest`` re-install batch
+        runs through the same descriptor). Each go token is split with the
+        library's own ``_go_split_spec``: a ``<path>@<version>`` pin REPLACES
+        the path's version list with that one version -- go links a single
+        binary per import path and re-links it on a re-pin, so a repeat
+        pinned install is a no-op and a version-changing deploy converges
+        (npm's overwrite precedent) -- while the special ``@latest`` carries
+        no registry metadata to resolve a version from, so an absent path
+        gets the ``[""]`` placeholder (pip's/apk's/gem's precedent) and an
+        installed path keeps its recorded version.
+        """
+        for package in packages:
+            name, version = _go_split_spec(package)
+            if version is None or version == "latest":
+                self.go_packages.setdefault(name, [""])
+            else:
+                self.go_packages[name] = [version]
+
+    def remove_go_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated go bin directory ``rm -f``: drop the paths.
+
+        The ``present=False`` direction of ``go.packages``. The descriptor
+        carries the import paths, so each path's whole entry leaves
+        ``go_packages`` and ``GoPackages`` no longer reports it -- one
+        binary, one entry, no per-version selection to model. An absent
+        path is tolerated (the real ``rm -f`` exits 0 either way, and the
+        operation's fact check never yields that removal anyway).
+        """
+        for package in packages:
+            self.go_packages.pop(package, None)
 
     def install_snap_packages(self, packages: tuple[str, ...], channel: str) -> None:
         """Record a simulated ``snap install``: mark the snaps installed.
