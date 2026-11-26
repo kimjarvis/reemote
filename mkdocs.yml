@@ -178,6 +178,7 @@ nav:
           - git: roles/git.md
           - security: roles/security.md
           - certbot: roles/certbot.md
+          - redis: roles/redis.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md

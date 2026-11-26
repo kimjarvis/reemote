@@ -3,9 +3,9 @@
 
 """The single jinja2 / PyYAML import site for the template-rendering roles (§17.4).
 
-Six roles render a control-side template while building their deploys: five use
-Jinja2 (``apache``, ``memcached``, ``nginx``, ``ntp``, ``postgresql``) and
-``datadog`` dumps YAML with PyYAML. As scripts they each did a lazy
+Seven roles render a control-side template while building their deploys: six use
+Jinja2 (``apache``, ``memcached``, ``nginx``, ``ntp``, ``postgresql``, ``redis``)
+and ``datadog`` dumps YAML with PyYAML. As scripts they each did a lazy
 ``try: import jinja2`` with an ``except ImportError`` branch printing
 ``uv run --with jinja2 python ...``. That advice is a script's privilege, not a
 library's: a consumer who installed the base ``reemote`` cannot be told to

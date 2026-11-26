@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships nineteen configuration roles as **library code**. Each one is the
+reemote ships twenty configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -51,6 +51,7 @@ driver that understands barriers; `run()` is not.
 | [git](git.md) | [`geerlingguy.git`](https://github.com/geerlingguy/ansible-role-git) | Ubuntu | 1 | none | no | 1 |
 | [security](security.md) | [`geerlingguy.security`](https://github.com/geerlingguy/ansible-role-security) | Ubuntu | 2 changed / 1 converged | none | no | 1 |
 | [certbot](certbot.md) | [`geerlingguy.certbot`](https://github.com/geerlingguy/ansible-role-certbot) | Ubuntu | `2 + 2C` (`C` certs); 2 install-only | none | no | 1 |
+| [redis](redis.md) | [`geerlingguy.redis`](https://github.com/geerlingguy/ansible-role-redis) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
 
 ## Reading the columns
 
@@ -65,9 +66,9 @@ driver that understands barriers; `run()` is not.
   `PhpOutputs` — the PHP version and extension paths it used to carry as a copied
   constant. Every other role returns `None`, and does so on its family-guard's
   early return too.
-- **`reemote[templates]`** is needed by the six roles that render configuration
-  through Jinja2 or PyYAML — `apache`, `datadog`, `memcached`, `nginx`, `ntp` and
-  `postgresql`, the list [`reemote.roles._render`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/_render.py)
+- **`reemote[templates]`** is needed by the seven roles that render configuration
+  through Jinja2 or PyYAML — `apache`, `datadog`, `memcached`, `nginx`, `ntp`,
+  `postgresql` and `redis`, the list [`reemote.roles._render`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/_render.py)
   exists to carry. The others render in plain Python — `json.dumps`, an f-string, a
   `str.join` — and need nothing beyond the library.
 - **`run_waves` passes** is `1` for every role but `postgresql`, which cannot be
@@ -139,6 +140,11 @@ driver that understands barriers; `run()` is not.
   certificates (standalone with its `systemctl` pre/post hooks, or webroot) and
   the renewal cron entry. The most barrier-dense role without a checkpoint: a
   `stat` gate and probe/create action gates per cert, all in one stream.
+- **[redis](redis.md)** — the setgid `/etc/redis` directory, the rendered
+  `/etc/redis/redis.conf`, the package, the service, one restart handler. The
+  Debian-ordering case: the config requests precede the package install inside
+  the single wave, because the install starts the daemon — and still the
+  checkpoint-only shape, no facts at all.
 
 ## Running one
 

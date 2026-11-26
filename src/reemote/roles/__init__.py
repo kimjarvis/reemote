@@ -24,7 +24,7 @@ module is aliased (``from reemote.modules
 import postgresql as pg``). ``tests/roles/test_exports.py`` pins both facts.
 
 The template-rendering roles (``apache``, ``datadog``, ``memcached``, ``nginx``,
-``ntp``, ``postgresql``) import jinja2 and PyYAML only through
+``ntp``, ``postgresql``, ``redis``) import jinja2 and PyYAML only through
 :mod:`reemote.roles._render`, the single import site for them, which needs the
 ``reemote[templates]`` extra (§17.4). Nothing in this package pulls that module
 in at import time, so ``import reemote.roles`` stays clean without the extra.
@@ -57,6 +57,7 @@ from .php import PhpOutputs, PhpVars, php
 from .php_xdebug import PhpXdebugVars, php_xdebug
 from .pip import PipPackage, PipVars, pip
 from .postgresql import PostgresqlVars, postgresql, postgresql_data
+from .redis import RedisVars, redis
 from .repo_epel import EpelVars, repo_epel
 from .security import SecurityVars, security
 
@@ -84,6 +85,7 @@ __all__: list[str] = [
     "PipPackage",
     "PipVars",
     "PostgresqlVars",
+    "RedisVars",
     "SecurityVars",
     "apache",
     "certbot",
@@ -103,6 +105,7 @@ __all__: list[str] = [
     "pip",
     "postgresql",
     "postgresql_data",
+    "redis",
     "repo_epel",
     "security",
 ]
