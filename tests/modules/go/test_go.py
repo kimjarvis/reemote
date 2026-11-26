@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Tests for the go module: the ``GoPackages`` fact and ``go.packages``.
+"""Tests for the go module: the six facts and ``go.packages``.
 
 Covers ``reemote.modules.go.go.GoPackages`` -- the ``go install`` binaries
 as ``GoPackageInfo`` entries -- both over the real-transport path (a
@@ -9,6 +9,14 @@ as ``GoPackageInfo`` entries -- both over the real-transport path (a
 pyinfra's own fact fixture verbatim: the compound command string, the
 ``(devel)`` skip, the ``dep``-row and header-line ignores) and through the
 ``SimulatedHost`` seam, plus the ``gather_fact`` fan-out and the exports.
+
+Covers the five toolchain facts -- ``GoVersion``, ``GoEnv``,
+``GoInstalledSDKs``, ``GoModuleInfo`` and ``GoBinaryBuildInfo`` -- the same
+way: the exact rendered shell (each self-guarded so a host without go reads
+empty output rather than exit 127), pure ``parse`` fixtures taken from real
+go output, the parameterized command builders, and each seam store
+(``go_version``/``go_env``/``go_sdks``/``go_modules``/``go_binaries``),
+including copying and the empty/unseeded projections.
 
 The ``go.packages`` operation -- a pyinfra port reading ``GoPackages`` -- is
 exercised over its two command descriptors (``GoInstallCommand`` /
@@ -23,6 +31,7 @@ path, the ``SimulatedHost`` seam dispatch, and end to end through ``run`` /
 ``asyncio_mode = "auto"`` lets the async tests run without decorators.
 """
 
+import json
 import shlex
 
 from reemote.core import FactCache, OpContext, op
@@ -38,10 +47,18 @@ from reemote.drivers import (
 from reemote.hosts import Host
 from reemote.modules import go
 from reemote.modules.go.go import (
+    GoBinaryBuildInfo,
+    GoBuildInfo,
+    GoEnv,
     GoInstallCommand,
+    GoInstalledSDKs,
+    GoModInfo,
+    GoModuleInfo,
     GoPackageInfo,
     GoPackages,
     GoRemoveCommand,
+    GoVersion,
+    GoVersionInfo,
     _binary_name,
     _go_package_spec,
     _go_split_spec,
@@ -785,22 +802,448 @@ async def test_go_packages_latest_stays_changed_across_runs():
     assert plans2["h"][0].changed
 
 
+# --- Fact: GoVersion ------------------------------------------------------------
+
+
+def test_go_version_command_is_self_guarded():
+    """The guard replaces the design's ``requires_command`` gate: a host
+    without go exits 0 with empty output -- never 127 -- and the fact reads
+    absence from it."""
+    assert GoVersion.COMMAND == (
+        "command -v go >/dev/null 2>&1 || exit 0; "
+        "go version && go env GOOS GOARCH"
+    )
+
+
+async def test_go_version_parses_the_real_output():
+    """Fixture shaped like real ``go version``/``go env`` output (verified
+    against a go 1.24 toolchain): the header's ``go``-prefixed third field
+    is the stripped version, the two bare env lines are the target."""
+    host = CannedShellHost(
+        "go version go1.23.4 linux/amd64\nlinux\namd64\n"
+    )
+    assert await GoVersion.process(host) == {
+        "version": "1.23.4",
+        "raw": "go version go1.23.4 linux/amd64",
+        "goos": "linux",
+        "goarch": "amd64",
+    }
+    assert host.last_shell == GoVersion.COMMAND
+
+
+async def test_go_version_short_output_reads_absent():
+    """Fewer than three non-blank lines is no answer: the guarded empty
+    read of a host without go, and stray noise, both give None (the design
+    proposed ``{}``; a single-valued fact answers None, the ``Which``
+    precedent)."""
+    assert GoVersion.parse([]) is None
+    assert await GoVersion.process(CannedShellHost("")) is None
+    assert (
+        await GoVersion.process(CannedShellHost("go version go1.23.4\n"))
+        is None
+    )
+
+
+async def test_go_version_devel_build_reports_empty_version():
+    """A ``devel`` toolchain header carries no ``go``-prefixed version
+    field: the answer keeps the raw line and the target with an empty
+    ``version``."""
+    assert GoVersion.parse(
+        ["go version devel linux/arm64", "linux", "arm64"]
+    ) == {
+        "version": "",
+        "raw": "go version devel linux/arm64",
+        "goos": "linux",
+        "goarch": "arm64",
+    }
+
+
+async def test_go_version_seam_projects_the_store():
+    """A seeded store copies straight out (no shell); the default empty
+    store projects None -- the simulated host without go."""
+    info: GoVersionInfo = {
+        "version": "1.22.10",
+        "raw": "go version go1.22.10 linux/amd64",
+        "goos": "linux",
+        "goarch": "amd64",
+    }
+    host = SimulatedHost(name="h", go_version=info)
+    assert await GoVersion.process(host) == info
+    answer = await GoVersion.process(host)
+    answer["version"] = "tampered"
+    assert await GoVersion.process(host) == info
+    assert await GoVersion.process(SimulatedHost(name="h")) is None
+
+
+# --- Fact: GoEnv ----------------------------------------------------------------
+
+
+def test_go_env_command_is_the_guarded_full_listing():
+    """Always the plain ``go env`` listing: the design's filtered
+    ``go env <KEY>...`` form prints bare values with no ``KEY=`` prefix and
+    cannot be parsed back, so a filtered read narrows the full listing in
+    ``process`` instead."""
+    assert GoEnv.COMMAND == "command -v go >/dev/null 2>&1 || exit 0; go env"
+
+
+async def test_go_env_parses_quoted_rows():
+    """Fixture shaped like real ``go env`` output: every value is
+    single-quoted and the one matched outer pair is stripped; GOFLAGS
+    spaces and GOPROXY commas survive untouched."""
+    host = CannedShellHost(
+        "GOBIN=''\n"
+        "GOCACHE='/root/.cache/go-build'\n"
+        "GOFLAGS='-mod=vendor -trimpath'\n"
+        "GOPATH='/root/go'\n"
+        "GOPROXY='https://proxy.golang.org,direct'\n"
+    )
+    env = await GoEnv.process(host)
+    assert env == {
+        "GOBIN": "",
+        "GOCACHE": "/root/.cache/go-build",
+        "GOFLAGS": "-mod=vendor -trimpath",
+        "GOPATH": "/root/go",
+        "GOPROXY": "https://proxy.golang.org,direct",
+    }
+    assert host.last_shell == GoEnv.COMMAND
+
+
+async def test_go_env_process_filters_keys():
+    """A filtered read keeps the requested order and drops unknown or unset
+    keys -- an empty answer when nothing requested is configured."""
+    host = CannedShellHost(
+        "GOBIN=''\nGOMODCACHE='/root/go/pkg/mod'\nGOPATH='/root/go'\n"
+    )
+    assert await GoEnv.process(host, keys=["GOPATH", "GOBIN", "NOPE"]) == {
+        "GOPATH": "/root/go",
+        "GOBIN": "",
+    }
+    assert await GoEnv.process(host, keys=["NOPE"]) == {}
+
+
+async def test_go_env_skips_noise_lines():
+    """A line without ``=`` contributes nothing; an unquoted value (go
+    varies its quoting) is kept verbatim."""
+    assert GoEnv.parse(["# go env output", "GOVERSION=go1.24.4"]) == {
+        "GOVERSION": "go1.24.4"
+    }
+
+
+async def test_go_env_seam_filters_and_copies():
+    """The seam reads the ``go_env`` store (no shell), the default empty
+    store answers {} like a host without go, a filter narrows the copy, and
+    mutation never reaches simulated state."""
+    host = SimulatedHost(
+        name="h",
+        go_env={"GOPATH": "/home/dev/go", "GOPROXY": "https://proxy.golang.org,direct"},
+    )
+    assert await GoEnv.process(host, keys=["GOPATH"]) == {"GOPATH": "/home/dev/go"}
+    env = await GoEnv.process(host)
+    env["GOPATH"] = "tampered"
+    assert await GoEnv.process(host) == {
+        "GOPATH": "/home/dev/go",
+        "GOPROXY": "https://proxy.golang.org,direct",
+    }
+    assert await GoEnv.process(SimulatedHost(name="h")) == {}
+
+
+# --- Fact: GoInstalledSDKs --------------------------------------------------------
+
+
+def test_go_installed_sdks_command_loops_the_quoted_dirs():
+    """The POSIX scan of the design's search directories -- each directory
+    ``shlex``-quoted, both the ``go*/bin/go`` and ``*/bin/go`` shapes
+    probed, every executable printing ``<path>TAB<version line>``."""
+    command = GoInstalledSDKs.command()
+    assert command.startswith(
+        'for d in /usr/local /opt; do for b in "$d"/go*/bin/go "$d"/*/bin/go; do '
+    )
+    # The literal ``\t``/``\n`` escape pair belongs to printf's format.
+    assert "printf '%s\\t%s\\n'" in command
+    assert '"$("$b" version 2>/dev/null)"' in command
+    assert command.endswith("done; done")
+    hostile = GoInstalledSDKs.command(["/srv/weird $dir"])
+    assert shlex.quote("/srv/weird $dir") in hostile
+
+
+async def test_go_installed_sdks_parses_version_rows():
+    """Rows map version -> path (the ``GoVersion`` strip rule on the
+    printed header); a path matched by both glob shapes lands twice and
+    collapses, and a row without a tab or a ``go``-prefixed version
+    contributes nothing."""
+    host = CannedShellHost(
+        "/usr/local/go/bin/go\tgo version go1.23.4 linux/amd64\n"
+        "/usr/local/go1.22.10/bin/go\tgo version go1.22.10 linux/amd64\n"
+        "/opt/go/bin/go\tgo version go1.23.4 linux/amd64\n"
+        "/usr/local/notgo/bin/go\tgo version devel linux/amd64\n"
+        "garbage without a tab"
+    )
+    assert await GoInstalledSDKs.process(host) == {
+        "1.22.10": "/usr/local/go1.22.10/bin/go",
+        "1.23.4": "/opt/go/bin/go",  # the later scan wins the shared key
+    }
+    assert host.last_shell == GoInstalledSDKs.command()
+
+
+async def test_go_installed_sdks_seam_whole_host():
+    """The store models the whole host, so ``search_dirs`` does not filter
+    it; the default empty store answers {} -- no SDKs found."""
+    host = SimulatedHost(
+        name="h", go_sdks={"1.22.10": "/usr/local/go1.22.10/bin/go"}
+    )
+    assert await GoInstalledSDKs.process(host, search_dirs=("/nowhere",)) == {
+        "1.22.10": "/usr/local/go1.22.10/bin/go"
+    }
+    sdks = await GoInstalledSDKs.process(host)
+    sdks["1.0.0"] = "tampered"
+    assert await GoInstalledSDKs.process(host) == {
+        "1.22.10": "/usr/local/go1.22.10/bin/go"
+    }
+    assert await GoInstalledSDKs.process(SimulatedHost(name="h")) == {}
+
+
+# --- Fact: GoModuleInfo -----------------------------------------------------------
+
+
+def test_go_module_info_command_reads_one_directory():
+    """Guarded, ``shlex``-quoted ``cd`` plus ``go mod edit -json`` with the
+    stderr hidden -- every failure mode (missing go, missing directory, no
+    or unparsable go.mod) reaches the same empty output."""
+    assert GoModuleInfo.command("/srv/app") == (
+        "command -v go >/dev/null 2>&1 || exit 0; "
+        "cd /srv/app 2>/dev/null && go mod edit -json 2>/dev/null"
+    )
+    hostile = GoModuleInfo.command("/srv/weird $dir")
+    assert shlex.quote("/srv/weird $dir") in hostile
+
+
+async def test_go_module_info_parses_go_mod_edit_json():
+    """Fixture shaped like real ``go mod edit -json`` output: the module
+    path and go directive lift out of the JSON wrapper names, and only
+    direct requirements are mapped -- ``Indirect`` entries dropped."""
+    host = CannedShellHost(
+        json.dumps(
+            {
+                "Module": {"Path": "example.com/app"},
+                "Go": "1.23",
+                "Require": [
+                    {"Path": "github.com/gin-gonic/gin", "Version": "v1.10.0"},
+                    {
+                        "Path": "github.com/go-playground/validator",
+                        "Version": "v10.20.0",
+                        "Indirect": True,
+                    },
+                ],
+            }
+        )
+        + "\n"
+    )
+    assert await GoModuleInfo.process(host, "/srv/app") == {
+        "module": "example.com/app",
+        "go": "1.23",
+        "require": {"github.com/gin-gonic/gin": "v1.10.0"},
+    }
+    assert host.last_shell == GoModuleInfo.command("/srv/app")
+
+
+def test_go_module_info_parse_edge_cases():
+    """Empty output, a non-JSON error line, a JSON non-object and a
+    wrapper with no module path all read None; a missing go directive
+    reads ``""``, and a keyless require entry contributes nothing."""
+    assert GoModuleInfo.parse([]) is None
+    assert GoModuleInfo.parse(["not json"]) is None
+    assert GoModuleInfo.parse(["[]"]) is None
+    assert GoModuleInfo.parse([json.dumps({"Go": "1.23"})]) is None
+    assert GoModuleInfo.parse([json.dumps({"Module": {"Path": "m"}})]) == {
+        "module": "m",
+        "go": "",
+        "require": {},
+    }
+    assert GoModuleInfo.parse(
+        [json.dumps({"Module": {"Path": "m"}, "Require": [{"Version": "v1"}]})]
+    ) == {"module": "m", "go": "", "require": {}}
+
+
+async def test_go_module_info_seam_keys_by_directory():
+    """The store keys by the same path the caller asks for; an unseeded
+    directory reads None and the returned entry is freshly built."""
+    info: GoModInfo = {
+        "module": "example.com/app",
+        "go": "1.23",
+        "require": {"github.com/gin-gonic/gin": "v1.10.0"},
+    }
+    host = SimulatedHost(name="h", go_modules={"/srv/app": info})
+    assert await GoModuleInfo.process(host, "/srv/app") == info
+    assert await GoModuleInfo.process(host, "/srv/other") is None
+    answer = await GoModuleInfo.process(host, "/srv/app")
+    answer["require"]["evil.co/x"] = "v0"
+    assert await GoModuleInfo.process(host, "/srv/app") == info
+
+
+# --- Fact: GoBinaryBuildInfo -------------------------------------------------------
+
+
+def test_go_binary_build_info_command_reads_one_binary():
+    """Guarded ``go version -m`` with go's own errors hidden: a missing
+    toolchain, a missing file and a non-Go binary all read the same empty
+    output."""
+    assert GoBinaryBuildInfo.command("/usr/local/go/bin/go") == (
+        "command -v go >/dev/null 2>&1 || exit 0; "
+        "go version -m /usr/local/go/bin/go 2>/dev/null"
+    )
+    hostile = GoBinaryBuildInfo.command("/srv/weird $dir")
+    assert shlex.quote("/srv/weird $dir") in hostile
+
+
+async def test_go_binary_build_info_parses_real_output():
+    """Fixture shaped like real ``go version -m`` output (verified against
+    a go 1.24 toolchain): the header's last field is the compiler version
+    (the ``go`` prefix KEPT here), the ``path``/``mod`` rows fill the module
+    pair, and ``build`` rows map into settings -- both printed forms."""
+    host = CannedShellHost(
+        "/usr/local/bin/api: go1.23.4\n"
+        "\tpath\texample.com/app/cmd/api\n"
+        "\tmod\texample.com/app\tv1.4.2\th1:zzz\n"
+        "\tbuild\t-buildmode=exe\n"
+        "\tbuild\t-compiler=gc\n"
+        "\tbuild\tCGO_ENABLED=0\n"
+        "\tbuild\tGOARCH=amd64\n"
+        "\tbuild\tGOOS=linux\n"
+        "\tbuild\tvcs.revision\tabc123def456\n"
+        "\tbuild\tvcs.time\t2026-01-02T03:04:05Z\n"
+        "\tdep\tgithub.com/gin-gonic/gin\tv1.10.0\th1:ggg\n"
+    )
+    assert await GoBinaryBuildInfo.process(host, "/usr/local/bin/api") == {
+        "go_version": "go1.23.4",
+        "path": "example.com/app/cmd/api",
+        "module_path": "example.com/app",
+        "module_version": "v1.4.2",
+        "settings": {
+            "buildmode": "exe",
+            "compiler": "gc",
+            "CGO_ENABLED": "0",
+            "GOARCH": "amd64",
+            "GOOS": "linux",
+            "vcs.revision": "abc123def456",
+            "vcs.time": "2026-01-02T03:04:05Z",
+        },
+    }
+    assert host.last_shell == GoBinaryBuildInfo.command("/usr/local/bin/api")
+
+
+async def test_go_binary_build_info_keeps_devel_and_noises():
+    """Unlike the ``GoPackages`` install listing a ``(devel)`` module
+    version is KEPT -- a ``go build`` artifact still reports its
+    provenance; a header-only print leaves every field empty, and a tab row
+    before any header reads None."""
+    assert GoBinaryBuildInfo.parse(
+        ["/out/tool: go1.24.4", "\tmod\texample.com/tool\t(devel)\t"]
+    ) == {
+        "go_version": "go1.24.4",
+        "path": "",
+        "module_path": "example.com/tool",
+        "module_version": "(devel)",
+        "settings": {},
+    }
+    assert GoBinaryBuildInfo.parse(["/out/tool: go1.24.4"]) == {
+        "go_version": "go1.24.4",
+        "path": "",
+        "module_path": "",
+        "module_version": "",
+        "settings": {},
+    }
+    assert GoBinaryBuildInfo.parse([]) is None
+    assert GoBinaryBuildInfo.parse(["\tpath\texample.com/orphan"]) is None
+    assert await GoBinaryBuildInfo.process(CannedShellHost(""), "/nope") is None
+
+
+async def test_go_binary_build_info_seam_keys_by_path():
+    """The store keys by the same binary path the caller asks for; an
+    unseeded path reads None and the returned entry is freshly built."""
+    info: GoBuildInfo = {
+        "go_version": "go1.23.4",
+        "path": "example.com/app/cmd/api",
+        "module_path": "example.com/app",
+        "module_version": "v1.4.2",
+        "settings": {"GOOS": "linux"},
+    }
+    host = SimulatedHost(name="h", go_binaries={"/usr/local/bin/api": info})
+    assert await GoBinaryBuildInfo.process(host, "/usr/local/bin/api") == info
+    assert await GoBinaryBuildInfo.process(host, "/usr/local/bin/other") is None
+    answer = await GoBinaryBuildInfo.process(host, "/usr/local/bin/api")
+    answer["settings"]["GOOS"] = "tampered"
+    assert await GoBinaryBuildInfo.process(host, "/usr/local/bin/api") == info
+
+
+# --- gather_fact: parameterized caching --------------------------------------------
+
+
+async def test_gather_fact_keys_the_parameterized_facts():
+    """``gather_fact`` forwards the fact's arguments and keys its cache by
+    them: two directories answer separately, a repeat read is served from
+    the cache without re-gathering, and a fleet fans out per host."""
+    host1 = SimulatedHost(
+        name="web1",
+        go_modules={"/srv/a": {"module": "a", "go": "1.23", "require": {}}},
+        go_version={"version": "1.23.4", "raw": "go version", "goos": "linux", "goarch": "amd64"},
+    )
+    host2 = SimulatedHost(name="web2")
+    cache = FactCache(host1, phase="prepare")
+    first = await cache.get(GoModuleInfo, "/srv/a")
+    assert first == {"module": "a", "go": "1.23", "require": {}}
+    assert await cache.get(GoModuleInfo, "/srv/a") is first  # cached, no re-gather
+    assert await cache.get(GoModuleInfo, "/srv/b") is None
+    answers = await gather_fact([host1, host2], GoVersion)
+    assert answers == {
+        "web1": {
+            "version": "1.23.4",
+            "raw": "go version",
+            "goos": "linux",
+            "goarch": "amd64",
+        },
+        "web2": None,
+    }
+
+
 # --- Exports ----------------------------------------------------------------------
 
 
 def test_go_module_exports():
-    """The package re-exports the fact, its entry type, the operation and
-    the descriptors, so both ``go.packages`` and ``go.GoPackages`` resolve,
-    and the top-level package makes ``from reemote import GoPackages``
-    work."""
+    """The package re-exports every fact, entry type, the operation and the
+    descriptors, so both ``go.packages`` and ``go.GoPackages`` resolve, and
+    the top-level package makes ``from reemote import GoPackages`` (and
+    each new fact) work."""
     assert go.GoPackages is GoPackages
     assert go.GoPackageInfo is GoPackageInfo
     assert go.packages is not None
     assert go.GoInstallCommand is GoInstallCommand
     assert go.GoRemoveCommand is GoRemoveCommand
+    for name in (
+        "GoVersion",
+        "GoVersionInfo",
+        "GoEnv",
+        "GoInstalledSDKs",
+        "GoModuleInfo",
+        "GoModInfo",
+        "GoBinaryBuildInfo",
+        "GoBuildInfo",
+    ):
+        assert getattr(go, name) is globals()[name]
     import reemote
 
     assert reemote.GoPackages is GoPackages
     assert reemote.GoPackageInfo is GoPackageInfo
     assert reemote.GoInstallCommand is GoInstallCommand
     assert reemote.GoRemoveCommand is GoRemoveCommand
+    for name in (
+        "GoVersion",
+        "GoVersionInfo",
+        "GoEnv",
+        "GoInstalledSDKs",
+        "GoModuleInfo",
+        "GoModInfo",
+        "GoBinaryBuildInfo",
+        "GoBuildInfo",
+    ):
+        assert getattr(reemote, name) is globals()[name]
+        assert name in reemote.__all__

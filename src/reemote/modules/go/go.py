@@ -6,8 +6,13 @@
 # Fact side: ``GoPackages`` reports the Go binaries installed via
 # ``go install`` as ``GoPackageInfo`` entries (the binary's main-package
 # import path plus one module version), parsed from the ``go version -m``
-# rows of the executable listing of the go bin directory. Like every fact it
-# is phase-unaware: its ``process`` coroutine just gathers the raw value.
+# rows of the executable listing of the go bin directory. ``GoVersion``
+# reports the active toolchain's version and default target platform, ``GoEnv``
+# the effective ``go env`` configuration, ``GoInstalledSDKs`` the side-by-side
+# SDK binaries under a set of search directories, ``GoModuleInfo`` the go.mod
+# metadata of a module directory on the host, and ``GoBinaryBuildInfo`` the
+# build metadata embedded in a compiled binary. Like every fact they are
+# phase-unaware: their ``process`` coroutines just gather the raw value.
 #
 # Operation side: ``go.packages`` installs, re-installs or removes those
 # binaries -- bare import paths or ``<pkg>=<version>`` pins -- through its
@@ -16,9 +21,10 @@
 # ``ctx.changed``/``ctx.reason``, and yield command descriptors; they never
 # touch the host directly.
 
+import json
 import re
 import shlex
-from collections.abc import AsyncGenerator, Iterable
+from collections.abc import AsyncGenerator, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, TypedDict
 
@@ -221,6 +227,595 @@ class GoPackages:
             ]
         # Real transport: gather over asyncssh from the host's connection.
         stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
+class GoVersionInfo(TypedDict):
+    """
+    Attributes:
+        version: The toolchain version with its ``go`` prefix stripped
+            (``"1.23.4"``). ``""`` when the version line carries no
+            ``go``-prefixed field (a ``devel`` build reports ``devel`` there).
+        raw: The full ``go version`` output line verbatim
+            (``"go version go1.23.4 linux/amd64"``).
+        goos: The default target OS from ``go env GOOS`` (``"linux"``).
+        goarch: The default target architecture from ``go env GOARCH``
+            (``"amd64"``).
+    """
+
+    # The answer shape of the ``GoVersion`` fact -- one toolchain, four
+    # fields. A TypedDict rather than a class instance, the ``GoPackageInfo``
+    # convention: the answer is an ordinary field bag, so equality against a
+    # literal dict works and ``json.dumps`` serializes it directly.
+
+    version: str
+    raw: str
+    goos: str
+    goarch: str
+
+
+class GoVersion:
+    """The active Go toolchain's version and default target platform.
+
+    **Commands:**
+
+    ```bash
+    command -v go >/dev/null 2>&1 || exit 0; go version && go env GOOS GOARCH
+    ```
+
+    **Returns:**
+
+    ```python
+    GoVersionInfo | None
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/go/go_go_version.py``.
+    """
+
+    # Adapted from the proposed ``GoVersion`` design, which paired a
+    # ``requires_command = "go"`` gate with ``default = dict``. reemote drops
+    # the gate (the established decision every go fact here follows), and --
+    # like the self-guarding ``GoPackages`` command -- the guard lives in the
+    # shell instead: ``command -v go || exit 0`` short-circuits a host without
+    # the toolchain to empty output that parses to absence, never to exit 127
+    # and ``CommandNotFoundError``. The proposal reported absence as ``{}``;
+    # a single-valued fact answers ``None`` here (the ``Which`` precedent), so
+    # callers can branch on the answer directly.
+    #
+    # ``go env GOOS GOARCH`` with positional arguments prints the two BARE
+    # values (one per line, no ``KEY=`` prefix -- unlike the plain ``go env``
+    # listing) and ``go version`` one header line, so the parser reads lines
+    # positionally: the third field of the header is the version (its ``go``
+    # prefix stripped, the proposal's rule) and lines two and three are
+    # GOOS/GOARCH. Fewer than three non-blank lines is no answer at all.
+
+    #: Shell used to gather the value over SSH.
+    COMMAND = (
+        "command -v go >/dev/null 2>&1 || exit 0; "
+        "go version && go env GOOS GOARCH"
+    )
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> GoVersionInfo | None:
+        """Parse the version header plus two env lines; short output is None.
+
+        The first non-blank line is the ``go version`` output (its third
+        field, ``go``-prefixed, is the version), the next two the bare
+        ``GOOS`` and ``GOARCH`` values. A header whose version field carries
+        no ``go`` prefix (a ``devel`` build) still reports an answer with an
+        empty ``version`` -- the raw line and the target are known. Pure and
+        testable.
+        """
+        lines = [line.strip() for line in output if line.strip()]
+        if len(lines) < 3:
+            return None
+        raw = lines[0]
+        parts = raw.split()
+        version = ""
+        if len(parts) >= 3 and parts[2].startswith("go"):
+            version = parts[2].removeprefix("go")
+        return {
+            "version": version,
+            "raw": raw,
+            "goos": lines[1],
+            "goarch": lines[2],
+        }
+
+    @classmethod
+    async def process(cls, host: Host) -> GoVersionInfo | None:
+        go_version = getattr(host, "go_version", None)
+        if go_version is not None:
+            # SimulatedHost seam: the version/goos/goarch store, copied so
+            # callers never mutate simulated state. An unseeded (empty) store
+            # is a host without the toolchain, reported None like a guarded
+            # empty shell read.
+            return dict(go_version) if go_version else None
+        # Real transport: gather over asyncssh from the host's connection.
+        stdout = await host.run_shell(cls.COMMAND)
+        return cls.parse(stdout.splitlines())
+
+
+class GoEnv:
+    """The effective ``go env`` configuration, as a KEY -> value mapping.
+
+    **Commands:**
+
+    ```bash
+    command -v go >/dev/null 2>&1 || exit 0; go env
+    ```
+
+    **Returns:**
+
+    ```python
+    dict[str, str]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/go/go_go_env.py``.
+    """
+
+    # Adapted from the proposed ``GoEnv`` design: the same KEY='VALUE' reader
+    # and the same self-guarded absence reading as the sibling go facts (a
+    # host without go answers ``{}``, the proposal's ``default = dict``).
+    #
+    # The proposal's filtered form has a shell bug: ``go env <KEY>...`` with
+    # positional arguments prints the bare VALUES, one per line, with no
+    # ``KEY=`` prefix -- unparseable back into a mapping by any KEY= reader.
+    # A filtered read therefore runs the full listing and narrows it in
+    # ``process``, which also keeps the shell (and the cache key) independent
+    # of the key list.
+    #
+    # ``go env`` single-quotes every value (``GOFLAGS=''``, ``GOPATH='/x'``);
+    # ``parse`` strips one matched outer quote pair. ``GOPROXY`` values
+    # legitimately carry commas and ``GOFLAGS`` spaces -- the parser is
+    # split-on-first-``=`` only, so nothing else is touched.
+
+    #: Shell used to gather the value over SSH (always the full listing; a
+    #: filtered read narrows its parse in ``process``).
+    COMMAND = "command -v go >/dev/null 2>&1 || exit 0; go env"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> dict[str, str]:
+        """Parse ``KEY='VALUE'`` rows into the mapping.
+
+        Lines without an ``=`` contribute nothing (the listing is the only
+        expected output, so stray noise is skipped the way every sibling
+        reader skips it), and one matched outer pair of single or double
+        quotes is stripped from each value -- an unquoted value is kept
+        verbatim. Pure and testable.
+        """
+        env: dict[str, str] = {}
+        for line in output:
+            line = line.strip()
+            if "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+                value = value[1:-1]
+            env[key.strip()] = value
+        return env
+
+    @classmethod
+    async def process(
+        cls, host: Host, keys: Sequence[str] | None = None
+    ) -> dict[str, str]:
+        state = getattr(host, "go_env", None)
+        if state is not None:
+            # SimulatedHost seam: the variable -> value store. A fresh dict
+            # so callers never mutate simulated state; an unseeded store
+            # answers {} -- the simulated machine reports no go configuration
+            # until a test names it.
+            env = dict(state)
+        else:
+            # Real transport: gather over asyncssh from the host's connection.
+            stdout = await host.run_shell(cls.COMMAND)
+            env = cls.parse(stdout.splitlines())
+        if keys is None:
+            return env
+        # A filtered read keeps the requested order and drops unknown keys --
+        # an unset variable simply has no entry, exactly like the full read.
+        return {key: env[key] for key in keys if key in env}
+
+
+class GoInstalledSDKs:
+    """Side-by-side installed Go SDKs, as version -> binary path.
+
+    **Commands:**
+
+    ```bash
+    for d in /usr/local /opt; do for b in "$d"/go*/bin/go "$d"/*/bin/go; do [ -x "$b" ] && printf '%s\\t%s\\n' "$b" "$("$b" version 2>/dev/null)"; done; done
+    ```
+
+    **Returns:**
+
+    ```python
+    dict[str, str]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in
+        ``examples/modules/go/go_go_installed_sdks.py``.
+    """
+
+    # Adapted from the proposed ``GoInstalledSDKs`` design. The proposal's
+    # shell loop was mis-quoted (its ``echo "$bin"$'\\t'`` fragment cannot
+    # parse); this is the equivalent POSIX loop: for each search directory,
+    # every executable ``bin/go`` under a ``go*``-prefixed or any other
+    # subdirectory prints ``<path>TAB<version line>``. No toolchain gate is
+    # needed -- the loop never invokes ``go`` itself, only the SDK binaries it
+    # finds, and a host with none prints nothing and reads ``{}`` (matching
+    # the proposal, which declared no ``requires_command`` either). Unmatched
+    # globs stay literal and fail the ``[ -x ]`` test, so absent directories
+    # contribute nothing.
+    #
+    # One path matches both patterns (``/usr/local/go/bin/go`` is also
+    # ``*/bin/go``) and lands twice; the version -> path mapping collapses
+    # that to one entry. Two SDKs reporting the same version share the key --
+    # the later scan wins, the proposal's mapping rule (version is identity
+    # here, path is the answer). A ``devel`` build reports ``devel`` where the
+    # version field belongs and contributes nothing.
+
+    #: Directories scanned when the caller names none: the tarball install
+    #: locations (``/usr/local/go``, versioned ``/usr/local/go1.x`` copies,
+    #: ``/opt`` installs), the proposal's defaults.
+    DEFAULT_SEARCH_DIRS = ("/usr/local", "/opt")
+
+    @classmethod
+    def command(cls, search_dirs: Sequence[str] = DEFAULT_SEARCH_DIRS) -> str:
+        """Shell looping the search dirs and printing each SDK's version.
+
+        Every directory is ``shlex``-quoted, so a search path carrying shell
+        metacharacters is scanned literally rather than executed.
+        """
+        dirs = " ".join(shlex.quote(directory) for directory in search_dirs)
+        return (
+            f'for d in {dirs}; do for b in "$d"/go*/bin/go "$d"/*/bin/go; '
+            "do "
+            '[ -x "$b" ] && '
+            "printf '%s\\t%s\\n' \"$b\" \"$(\"$b\" version 2>/dev/null)\"; "
+            "done; done"
+        )
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> dict[str, str]:
+        """Parse ``<path>TAB<go version line>`` rows into version -> path.
+
+        Rows without a tab contribute nothing; the version is the third
+        field of the printed ``go version`` line (``go1.22.10`` ->
+        ``"1.22.10"``, the ``GoVersion`` strip rule) and an empty or devel
+        version line yields no entry. Later rows win an already-claimed
+        version key. Pure and testable.
+        """
+        sdks: dict[str, str] = {}
+        for line in output:
+            path, sep, version_line = line.partition("\t")
+            if not sep:
+                continue
+            parts = version_line.split()
+            if len(parts) >= 3 and parts[2].startswith("go"):
+                sdks[parts[2].removeprefix("go")] = path.strip()
+        return sdks
+
+    @classmethod
+    async def process(
+        cls,
+        host: Host,
+        search_dirs: Sequence[str] = DEFAULT_SEARCH_DIRS,
+    ) -> dict[str, str]:
+        state = getattr(host, "go_sdks", None)
+        if state is not None:
+            # SimulatedHost seam: the version -> path store. The store models
+            # the whole host, not one scan, so ``search_dirs`` cannot narrow
+            # it -- simulated state is expected to hold what the default (or
+            # requested) directories would yield.
+            return dict(state)
+        # Real transport: gather over asyncssh from the host's connection.
+        stdout = await host.run_shell(cls.command(search_dirs))
+        return cls.parse(stdout.splitlines())
+
+
+class GoModInfo(TypedDict):
+    """
+    Attributes:
+        module: The module path declared by the ``module`` directive
+            (``"example.com/app"``).
+        go: The ``go`` directive's language version (``"1.23"``), ``""`` when
+            the file carries no directive.
+        require: Direct dependency import path -> required version
+            (``{"github.com/gin-gonic/gin": "v1.10.0"}``); ``go mod edit``
+            marks indirect requirements and they are excluded, so the mapping
+            is empty when the module has no direct requires.
+    """
+
+    # The answer shape of the ``GoModuleInfo`` fact. A TypedDict whose
+    # ``require`` is an ordinary mapping -- the proposal's shape, with the
+    # module path and go directive lifted out of the JSON wrapper names
+    # (``Module.Path`` -> ``module``) because the fact's answer is the
+    # proposal's dict, not go's wire format.
+
+    module: str
+    go: str
+    require: dict[str, str]
+
+
+class GoModuleInfo:
+    """The go.mod metadata of a module directory on the host.
+
+    **Commands:**
+
+    ```bash
+    command -v go >/dev/null 2>&1 || exit 0; cd '<path>' 2>/dev/null && go mod edit -json 2>/dev/null
+    ```
+
+    **Returns:**
+
+    ```python
+    GoModInfo | None
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/go/go_go_module_info.py``.
+    """
+
+    # Adapted from the proposed ``GoModuleInfo`` design, which mixed an awk
+    # scan of go.mod with (inconsistently) ``go env -json`` -- environment,
+    # not module metadata. This port asks go itself for the authoritative
+    # machine view of the file: ``go mod edit -json`` parses module, go and
+    # require directives -- including block-form ``require ( ... )`` and the
+    # ``// indirect`` markers no awk excerpt reproduced faithfully -- and
+    # performs no network access. A directory without a parsable go.mod makes
+    # the command exit non-zero with hidden stderr, and every failure mode
+    # (missing directory, missing file, invalid syntax, missing toolchain)
+    # reaches the same empty output.
+    #
+    # The proposal reported absence as ``{}``; like ``GoVersion`` this
+    # single-valued fact answers ``None`` (the ``Which`` precedent). Only
+    # direct requirements are mapped, the proposal's stated intent; indirect
+    # ones are visible in go's own JSON and deliberately dropped here.
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell reading the module metadata of one directory.
+
+        The path is ``shlex``-quoted and both the ``cd`` and the go command
+        hide their stderr, so a missing directory is an empty answer rather
+        than a message on the wire.
+        """
+        return (
+            "command -v go >/dev/null 2>&1 || exit 0; "
+            f"cd {shlex.quote(path)} 2>/dev/null "
+            "&& go mod edit -json 2>/dev/null"
+        )
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> GoModInfo | None:
+        """Parse ``go mod edit -json`` into the module/go/require triple.
+
+        Output that is not JSON, not an object, or carries no module path is
+        no answer at all (``None``) -- the proposal's ``"module" in info``
+        rule. The go directive defaults to ``""`` when the file has none, and
+        ``require`` maps only entries that carry a path and are not marked
+        ``Indirect``. Pure and testable.
+        """
+        try:
+            data = json.loads("\n".join(output))
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(data, dict):
+            return None
+        module = data.get("Module")
+        if not isinstance(module, dict) or not module.get("Path"):
+            return None
+        require = {
+            entry["Path"]: entry.get("Version", "")
+            for entry in data.get("Require") or []
+            if isinstance(entry, dict)
+            and entry.get("Path")
+            and not entry.get("Indirect")
+        }
+        return {"module": module["Path"], "go": data.get("Go", ""), "require": require}
+
+    @classmethod
+    async def process(cls, host: Host, path: str) -> GoModInfo | None:
+        modules = getattr(host, "go_modules", None)
+        if modules is not None:
+            # SimulatedHost seam: module directory -> its GoModInfo, keyed by
+            # the same path the caller asked for. Freshly built dicts (and a
+            # fresh require mapping) so callers never mutate simulated state;
+            # an unseeded directory reads None like a missing go.mod.
+            info = modules.get(path)
+            if info is None:
+                return None
+            return {**info, "require": dict(info.get("require", {}))}
+        # Real transport: gather over asyncssh from the host's connection.
+        stdout = await host.run_shell(cls.command(path))
+        return cls.parse(stdout.splitlines())
+
+
+class GoBuildInfo(TypedDict):
+    """
+    Attributes:
+        go_version: The compiler that built the binary, verbatim from the
+            header line (``"go1.23.4"`` -- the ``go`` prefix is kept here,
+            unlike the ``GoVersion`` strip).
+        path: The main package's import path from the ``path`` row, ``""``
+            when the binary carries none.
+        module_path: The ``mod`` row's module path, ``""`` for a binary
+            built without module info.
+        module_version: The ``mod`` row's version -- ``(devel)`` for a
+            ``go build`` artifact, ``""`` when there is no ``mod`` row.
+        settings: ``build`` rows as setting -> value (``"buildmode"",
+            ``"GOOS"``, ``"CGO_ENABLED"``, ``"vcs.revision"`` ...), the
+            leading ``-`` stripped from flag-style names.
+    """
+
+    # The answer shape of the ``GoBinaryBuildInfo`` fact. The proposal folded
+    # the whole ``mod`` row into one joined string; this port splits it into
+    # ``module_path``/``module_version`` -- the ``GoPackageInfo`` vocabulary
+    # the module already uses -- and does not model the row's checksum half.
+
+    go_version: str
+    path: str
+    module_path: str
+    module_version: str
+    settings: dict[str, str]
+
+
+class GoBinaryBuildInfo:
+    """The build metadata embedded in a compiled Go binary.
+
+    **Commands:**
+
+    ```bash
+    command -v go >/dev/null 2>&1 || exit 0; go version -m '<path>' 2>/dev/null
+    ```
+
+    **Returns:**
+
+    ```python
+    GoBuildInfo | None
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in
+        ``examples/modules/go/go_go_binary_build_info.py``.
+    """
+
+    # Adapted from the proposed ``GoBinaryBuildInfo`` design: the same
+    # ``go version -m`` reader, the same self-guarded absence reading as the
+    # sibling go facts (missing toolchain, missing file and a non-Go binary
+    # all hide their stderr behind the guard/redirect and read None -- the
+    # proposal's ``{}``). The first non-blank, non-tab line is the per-binary
+    # ``<file>: go1.x`` header every ``go version -m`` print starts with
+    # (the row grouping ``GoPackages.parse`` uses); tab-indented rows then
+    # fill the fields: ``path`` and ``mod`` verbatim, ``build`` rows into
+    # ``settings`` with a flag name's leading ``-`` stripped.
+    #
+    # Unlike the ``GoPackages`` install listing, a ``(devel)`` module version
+    # is KEPT (a ``go build`` artifact still reports its provenance -- that
+    # is the question this fact answers), and ``dep``/``buildInformation``
+    # rows match no key and contribute nothing, exactly like the sibling
+    # reader's rule. ``build`` rows come in two printed forms (verified
+    # against real ``go version -m`` output): ``build<TAB>-flag=value`` for
+    # compiler flags and environment (the ``=`` half belongs to the name),
+    # and ``build<TAB>vcs.revision<TAB>abc123`` for the long VCS fields --
+    # both are split into the same setting -> value mapping, the leading
+    # ``-`` stripped from flag names.
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell reading one binary's embedded build info.
+
+        The path is ``shlex``-quoted and go's own errors (unreadable file,
+        non-Go binary) stay on the hidden stderr, so every failure mode
+        reaches the same empty output.
+        """
+        return (
+            "command -v go >/dev/null 2>&1 || exit 0; "
+            f"go version -m {shlex.quote(path)} 2>/dev/null"
+        )
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> GoBuildInfo | None:
+        """Parse the header plus ``path``/``mod``/``build`` rows.
+
+        No non-blank line, or a first line that is already a tab-indented
+        row (not build-info output at all), reads as ``None``. The header's
+        last field is the compiler version when it is ``go``-prefixed (the
+        file half may carry spaces, so the position is not counted from).
+        A ``build`` row carries its value after the name with ``=``
+        (``-buildmode=exe``) or as a further tab column (``vcs.revision``);
+        either way the row maps to one setting. Missing rows leave their
+        fields empty; entries are returned in the order go printed them.
+        Pure and testable.
+        """
+        lines = list(output)
+        header_index: int | None = None
+        for index, line in enumerate(lines):
+            if line.strip():
+                header_index = index
+                break
+        if header_index is None or lines[header_index].startswith("\t"):
+            return None
+        tokens = lines[header_index].split()
+        go_version = tokens[-1] if tokens[-1].startswith("go") else ""
+        path = ""
+        module_path = ""
+        module_version = ""
+        settings: dict[str, str] = {}
+        for line in lines[header_index + 1:]:
+            if not line.startswith("\t"):
+                continue
+            row = line.split("\t")
+            if len(row) < 3:
+                continue
+            kind, name = row[1], row[2]
+            if kind == "path":
+                path = name
+            elif kind == "mod":
+                module_path = name
+                module_version = row[3] if len(row) >= 4 else ""
+            elif kind == "build":
+                # Two printed forms: ``-flag=value`` in one column, or the
+                # name and a separate tab column for the long vcs fields.
+                if len(row) >= 4:
+                    settings[name.removeprefix("-")] = row[3]
+                elif "=" in name:
+                    setting, _, value = name.partition("=")
+                    settings[setting.removeprefix("-")] = value
+        return {
+            "go_version": go_version,
+            "path": path,
+            "module_path": module_path,
+            "module_version": module_version,
+            "settings": settings,
+        }
+
+    @classmethod
+    async def process(cls, host: Host, path: str) -> GoBuildInfo | None:
+        binaries = getattr(host, "go_binaries", None)
+        if binaries is not None:
+            # SimulatedHost seam: binary path -> its GoBuildInfo, keyed by the
+            # same path the caller asked for. Freshly built dicts (and a fresh
+            # settings mapping) so callers never mutate simulated state; an
+            # unseeded path reads None like an unreadable binary.
+            info = binaries.get(path)
+            if info is None:
+                return None
+            return {**info, "settings": dict(info.get("settings", {}))}
+        # Real transport: gather over asyncssh from the host's connection.
+        stdout = await host.run_shell(cls.command(path))
         return cls.parse(stdout.splitlines())
 
 
@@ -475,9 +1070,17 @@ async def packages(
 
 
 __all__ = [
+    "GoBinaryBuildInfo",
+    "GoBuildInfo",
+    "GoEnv",
     "GoInstallCommand",
+    "GoInstalledSDKs",
+    "GoModInfo",
+    "GoModuleInfo",
     "GoPackageInfo",
     "GoPackages",
     "GoRemoveCommand",
+    "GoVersion",
+    "GoVersionInfo",
     "packages",
 ]

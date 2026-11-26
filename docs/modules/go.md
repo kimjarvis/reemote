@@ -6,13 +6,21 @@
       members:
         - GoPackageInfo
         - GoPackages
+        - GoVersionInfo
+        - GoVersion
+        - GoEnv
+        - GoInstalledSDKs
+        - GoModInfo
+        - GoModuleInfo
+        - GoBuildInfo
+        - GoBinaryBuildInfo
         - packages
 
 
 
 <!---
 
-`reemote.modules.go.go` holds the go fact and the `go.packages` operation.
+`reemote.modules.go.go` holds the go facts and the `go.packages` operation.
 `GoPackages` reports the Go
 binaries installed via `go install` as `GoPackageInfo` entries — the binary's
 main-package import `path` plus one module `version` — parsed from the
@@ -41,6 +49,74 @@ substitutions and `find -exec` failures stay hidden, the exit is 0 or 1 rather
 than 127, and fact gathering reads the unparsable silence as `[]` — exactly
 the answer the baseline's `default = dict` gate produced. A host with the
 tooling but no `go install` binaries answers `[]` the same honest way.
+
+`GoVersion` asks a different question — the active toolchain itself: its
+version and default target platform, so an operation can check a minimum
+version or a target architecture before building from source. One guarded
+shell runs `go version && go env GOOS GOARCH` and the answer is a
+`GoVersionInfo` entry: the `version` with its `go` prefix stripped, the full
+header line kept `raw`, plus the `goos`/`goarch` pair. Because positional
+`go env KEY...` prints bare values, the parser reads the three lines
+positionally rather than as `KEY=` rows. The design proposed a
+`requires_command = "go"` gate reporting absence as `{}`; reemote drops the
+gate the way `GoPackages` does — the command leads with
+`command -v go || exit 0`, so a host without go reads empty output and never
+exits 127 — and a single-valued fact answers `None` when absent (the `Which`
+precedent), so callers branch on the answer directly. A `devel` toolchain
+header still answers, with an empty `version` and the raw line intact.
+
+`GoEnv` reads the effective `go env` configuration as a `KEY -> value`
+mapping — hosts override `GOPATH`, `GOBIN`, `GOMODCACHE` or `GOPROXY` in
+profiles, and reading `go env` avoids hardcoding the defaults. The shell is
+always the full `go env` listing (also the cache-key-stable choice); a
+filtered read names its `keys` and narrows the parsed mapping in `process`,
+keeping the requested order and dropping unset variables. That is a fix to
+the design's filtered form, which ran `go env <KEY>...` — a command that
+prints bare values with no `KEY=` prefix, unparseable back into a mapping.
+`go env` single-quotes every value; the parser strips one matched outer
+quote pair and otherwise splits on the first `=` only, so a `GOPROXY`
+comma or a `GOFLAGS` space survives whole. Absence — a host without go — is
+the natural empty `{}`.
+
+`GoInstalledSDKs` lists the side-by-side SDK binaries under a set of search
+directories (the design's `/usr/local` and `/opt` by default) as version ->
+path, for hosts that keep several toolchains installed. A POSIX loop probes
+every executable `bin/go` under a `go*`-prefixed or any other subdirectory
+and prints `<path>TAB<version line>`; no toolchain gate is needed because
+the loop never invokes `go` itself, only the SDKs it finds. One path
+matching both glob shapes lands twice and collapses in the mapping, two SDKs
+reporting the same version share the key (the later scan wins, the design's
+rule), and a `devel` build — no `go`-prefixed version field — contributes
+nothing. The design's own loop was mis-quoted and cannot parse; this is the
+equivalent working shell, each search directory `shlex`-quoted.
+
+`GoModuleInfo` reports a module directory's `go.mod` metadata — the
+`module` path, the `go` directive, and its `require` mapping — so an
+operation can decide `go mod download`/`go mod verify` or a rebuild without
+parsing the file by hand. Instead of the design's awk excerpt (which could
+not reproduce block-form `require ( ... )` or the `// indirect` markers
+faithfully, and which it inconsistently paired with `go env -json` —
+environment, not module metadata), the guarded command asks go itself for
+the authoritative machine view: `cd '<path>' && go mod edit -json`, which
+performs no network access. Only direct requirements are mapped, the
+design's stated intent; every failure mode (missing go, missing directory,
+no or unparsable `go.mod`) hides its stderr and reaches the same empty
+output, which reads `None` — the single-valued rule, where the design
+proposed `{}`.
+
+`GoBinaryBuildInfo` inspects a compiled binary on disk through
+`go version -m <path>`, answering which compiler built it (`go_version`, the
+`go` prefix kept verbatim here) from which module (`module_path` and
+`module_version`, the `GoPackageInfo` vocabulary rather than the design's
+one joined `mod` string) and with which settings — so a check no longer
+relies on mtimes or checksums. `build` rows arrive in two printed forms
+(verified against real go output): `-flag=value` inside one column, and the
+long `vcs.*` fields as a separate tab column; both map into the same
+`settings` dictionary, a flag name's leading `-` stripped. Unlike the
+`GoPackages` install listing a `(devel)` version is kept here — a
+`go build` artifact still reports its provenance, which is exactly the
+question this fact answers — and `dep` rows contribute nothing. A missing
+toolchain, missing file or non-Go binary all read `None`.
 
 `go.packages` is the operation counterpart of the baseline's `go.packages`. It
 installs, upgrades or removes `go install` binaries given as bare import paths

@@ -45,7 +45,9 @@ a real asyncssh transport is missing:
   / ``git_configs`` / ``git_head_detached`` / ``git_local_commits``
   / ``git_remote_commits`` / ``git_remote_urls`` / ``git_repos``
   / ``git_ssh_authenticated`` / ``git_statuses`` / ``git_submodules``
-  / ``git_tags`` / ``git_tracking_branches`` / ``go_packages`` / ``gpg_key``
+  / ``git_tags`` / ``git_tracking_branches`` / ``go_binaries`` / ``go_env``
+  / ``go_modules`` / ``go_packages`` / ``go_sdks`` / ``go_version``
+  / ``gpg_key``
   / ``gpg_key_details`` / ``gpg_keyrings``
   / ``gpg_keys`` / ``gpg_secret_keys`` / ``gpg_trust`` / ``gpg_verify``
   / ``os_group_details`` / ``os_groups`` / ``has_gui``
@@ -115,7 +117,9 @@ a real asyncssh transport is missing:
   ``GitHeadDetached``, ``GitIsRepo``, ``GitLocalCommit``,
   ``GitRemoteBranchCommit``, ``GitRemoteUrl``, ``GitSshKeyConfigured``,
   ``GitStatus``, ``GitSubmodule``, ``GitTag``,
-  ``GitTrackingBranch``, ``GoPackages``, ``GpgKey``, ``GpgKeyDetails``, ``GpgKeyrings``,
+  ``GitTrackingBranch``, ``GoBinaryBuildInfo``, ``GoEnv``, ``GoInstalledSDKs``,
+  ``GoModuleInfo``, ``GoPackages``, ``GoVersion``, ``GpgKey``, ``GpgKeyDetails``,
+  ``GpgKeyrings``,
   ``GpgKeys``, ``GpgSecretKeys``, ``GpgTrust``, ``GpgVerify`` (the gpg-local
   ``_KeyringFileExists`` probe reads the shared ``existing_files`` seam),
   ``GroupDetails`` (which reads ``os_groups`` for the names and the parallel
@@ -332,8 +336,11 @@ from reemote.modules.git.git import (
     GitWorktreeRemoveCommand,
 )
 from reemote.modules.go.go import (
+    GoBuildInfo,
     GoInstallCommand,
+    GoModInfo,
     GoRemoveCommand,
+    GoVersionInfo,
     _go_split_spec,
 )
 from reemote.modules.gpg.gpg import (
@@ -1391,6 +1398,27 @@ class SimulatedHost(Host):
     # branch without an upstream. A read-only seam: a test seeds it
     # directly.
     git_tracking_branches: dict[str, str] = field(default_factory=dict)
+    # Embedded build metadata of compiled Go binaries (binary path -> the
+    # ``GoBuildInfo`` dict ``GoBinaryBuildInfo`` returns for that file),
+    # backing ``GoBinaryBuildInfo``: keyed by the same absolute path the
+    # caller asks for, so an unseeded path reads None like a missing or
+    # non-Go binary whose guarded ``go version -m`` prints nothing. A
+    # read-only seam: a test seeds it directly.
+    go_binaries: dict[str, GoBuildInfo] = field(default_factory=dict)
+    # Effective ``go env`` configuration (variable -> value, values stored
+    # unquoted -- the shape ``GoEnv.parse`` produces), backing ``GoEnv``.
+    # ``GoEnv.process`` copies the store and, when the caller names keys,
+    # keeps only the requested ones in order; unknown keys contribute
+    # nothing. Defaults to {} -- an unseeded store and a host without go
+    # both answer {}, like the self-guarded command's empty read. A
+    # read-only seam: a test seeds it directly.
+    go_env: dict[str, str] = field(default_factory=dict)
+    # go.mod metadata of module directories (directory path -> its
+    # ``GoModInfo`` dict ``GoModuleInfo`` returns for that path), backing
+    # ``GoModuleInfo``: keyed by the same path the caller asks for, so an
+    # unseeded directory reads None like a missing or unparsable go.mod.
+    # A read-only seam: a test seeds it directly.
+    go_modules: dict[str, GoModInfo] = field(default_factory=dict)
     # Installed ``go install`` binaries -- the state store the fact reads,
     # kept as the import path -> installed-version-list mapping (e.g.
     # ``github.com/bitmagnet-io/bitmagnet`` -> ``["v0.9.0"]``) which
@@ -1406,6 +1434,20 @@ class SimulatedHost(Host):
     # maintain it through ``execute_command``, and a test may seed it
     # directly too.
     go_packages: dict[str, list[str]] = field(default_factory=dict)
+    # Side-by-side installed Go SDKs (version -> binary path, e.g.
+    # ``"1.22.10"`` -> ``"/usr/local/go1.22.10/bin/go"``), backing
+    # ``GoInstalledSDKs``. The store models the whole host rather than one
+    # scan, so the fact's ``search_dirs`` argument does not filter it --
+    # simulated state holds what the requested directories would yield.
+    # Defaults to {} -- a simulated machine with no SDK directories under
+    # the scanned roots. A read-only seam: a test seeds it directly.
+    go_sdks: dict[str, str] = field(default_factory=dict)
+    # The active Go toolchain (the ``GoVersionInfo`` dict ``GoVersion``
+    # returns: version, raw, goos, goarch), backing ``GoVersion``. The
+    # empty-dict default projects to None -- a simulated host without go,
+    # whose self-guarded command reads empty output. A read-only seam: a
+    # test seeds it directly.
+    go_version: dict[str, GoVersionInfo] = field(default_factory=dict)
     # GPG key files' contents (src path -> the ``GpgKeyInfo`` entries
     # ``GpgKey`` returns for that file), backing ``GpgKey``. An unseeded
     # path reads as [], the simulated stand-in for a file gpg cannot read.
