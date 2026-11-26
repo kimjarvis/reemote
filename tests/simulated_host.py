@@ -175,6 +175,7 @@ a real asyncssh transport is missing:
   ``SysctlFiles`` (the two persistence reads project the shared
   ``remote_files`` seam onto the standard sysctl paths), ``TcpEndpoint``,
   ``Timezone``,
+  ``Tools`` (the uv fact reads the ``uv_tools`` seam),
   ``UfwApplications``, ``UfwRules``, ``UfwStatus``,
   ``Uptime``, ``User``, ``Users`` (the server-local ``_HomeDirectory`` and
   ``_HomeIsLink`` home probes read the shared ``directory_stats`` and
@@ -641,8 +642,6 @@ from reemote.modules.ufw.ufw import (
     _is_v6,
     _rule_key,
 )
-
-
 from reemote.modules.uv.uv import (
     PythonInfo,
     ToolInfo,

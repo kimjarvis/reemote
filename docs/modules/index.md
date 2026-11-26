@@ -19,7 +19,7 @@ operations; typed entry shapes describe returned data, not extra commands.
 | [apt](apt.md) | Debian/Ubuntu `apt` — packages, sources, keys, PPAs, `.deb` files, holds, upgrades |
 | [dnf](dnf.md) | Fedora/RHEL `dnf` — packages, modules, groups, repositories, GPG keys, `.rpm` files |
 | [pip](pip.md) | Python `pip` — packages, requirements files, virtualenvs via the stdlib `venv` module or the `virtualenv` tool |
-| [uv](uv.md) | Python `uv` — packages of the environment `uv pip list` resolves |
+| [uv](uv.md) | Python `uv` — the installation record, packages of the environment `uv pip list` resolves, installed tools and their entrypoints, interpreters present on the host |
 | [npm](npm.md) | Node.js `npm` — global and project packages, prefixes, `package.json` manifests |
 | [gem](gem.md) | RubyGems `gem` — system-wide and user-install gems, version pins, bindir, `GEM_HOME`/`GEM_PATH` overrides |
 | [go](go.md) | Go `go install` binaries — import paths and module versions from the go bin directory |

@@ -131,9 +131,13 @@ the typed command descriptors they yield,
 ``UfwApplications`` facts beside the ``state``, ``default_policy``,
 ``rule``, ``logging`` and ``reset`` operations and the typed command
 descriptors they yield,
-``modules/uv/uv.py`` holds the ``Packages`` fact (with its ``PackageInfo``
-entry type) -- the port of pyinfra's ``uv.UvPipPackages`` -- the namespace's
-sole surface until the ``uv.packages`` operation lands,
+``modules/uv/uv.py`` holds the ``Info`` fact (with its ``InstallInfo``
+record), the ``Packages`` fact (with its ``PackageInfo`` entry type) -- the
+port of pyinfra's ``uv.UvPipPackages`` -- and the ``Pythons`` and ``Tools``
+facts (with ``PythonInfo`` and ``ToolInfo``), which together consolidate
+pyinfra's scattered ``UvVersion``/``UvToolDir``/``UvPythonDir``/``UvTools``
+and installed-Pythons family; the namespace's sole surface until the
+``uv.packages`` operation lands,
 ``modules/snap/snap.py`` holds the ``SnapPackage`` fact (with its
 ``SnapPackageInfo`` entry type) beside the ``package`` operation and the
 ``SnapInstallCommand``/``SnapRefreshCommand``/``SnapRemoveCommand``
@@ -145,7 +149,7 @@ are re-exported here, so a deploy can keep writing
 and read ``apk.ApkInstalledPackages`` / ``apt.AptKeys`` / ``cargo.CargoPackages`` / ``cargo.packages`` / ``dnf.packages`` /
 ``files.link`` / ``firewalld.FirewalldZones`` / ``gem.GemPackages`` / ``git.GitBranch`` / ``go.GoPackages`` / ``gpg.GpgKeys`` / ``hardware.BlockDevices`` /
 ``iptables.IptablesChains`` / ``lxd.LxdInstances`` / ``mysql.MysqlDatabases`` / ``npm.NpmPackages`` / ``openrc.OpenrcStatus`` / ``postgresql.PostgresqlRoles`` / ``rustup.RustupToolchains`` /
-``selinux.Mode`` / ``sysctl.setting`` / ``systemd.service`` / ``ufw.UfwRules`` / ``uv.Packages`` / ``server.wait_service``.
+``selinux.Mode`` / ``sysctl.setting`` / ``systemd.service`` / ``ufw.UfwRules`` / ``uv.Info`` / ``uv.Packages`` / ``uv.Pythons`` / ``uv.Tools`` / ``server.wait_service``.
 """
 
 from . import (
