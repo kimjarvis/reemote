@@ -23,6 +23,7 @@ operations; typed entry shapes describe returned data, not extra commands.
 | [gem](gem.md) | RubyGems `gem` — system-wide and user-install gems, version pins, bindir, `GEM_HOME`/`GEM_PATH` overrides |
 | [go](go.md) | Go `go install` binaries — import paths and module versions from the go bin directory |
 | [cargo](cargo.md) | Rust `cargo install` crates — crate names and versions from cargo's global install listing |
+| [rustup](rustup.md) | Rust `rustup` toolchains — default/channel per toolchain, installed target triples and components |
 | [flatpak](flatpak.md) | Flatpak applications |
 | [snap](snap.md) | Ubuntu `snap` packages |
 

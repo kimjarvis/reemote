@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Tests for the cargo module: the ``CargoPackages`` fact and ``cargo.packages``.
+"""Tests for the cargo module: the ``CargoPackages`` and ``CargoConfig`` facts and ``cargo.packages``.
 
 Covers ``reemote.modules.cargo.cargo.CargoPackages`` -- the globally
 installed ``cargo install`` crates as ``CargoPackageInfo`` entries -- both
@@ -10,6 +10,12 @@ over the real-transport path (a ``CannedShellHost`` returning canned
 verbatim: the command string, the ``- <path>`` binary-line and blank-line
 ignores) and through the ``SimulatedHost`` seam, plus the parser's widened
 name/version character classes, the ``gather_fact`` fan-out and the exports.
+
+Also covers ``reemote.modules.cargo.cargo.CargoConfig`` -- the parsed TOML
+of the host's ``$CARGO_HOME`` ``config.toml`` (legacy ``config`` fallback) --
+over both paths: the file-test chain that never swallows a present-but
+unreadable config, the control-side ``tomllib`` parse with its total
+empty/malformed answers, and the ``cargo_config`` seam.
 
 The ``cargo.packages`` operation -- a pyinfra port reading ``CargoPackages``
 -- is exercised over its two command descriptors (``CargoInstallCommand`` /
@@ -26,6 +32,8 @@ go's name-based one), the documented non-idempotent ``latest`` path, the
 
 import shlex
 
+import pytest
+
 from reemote.core import FactCache, OpContext, op
 from reemote.drivers import (
     command_shell,
@@ -39,6 +47,9 @@ from reemote.drivers import (
 from reemote.hosts import Host
 from reemote.modules import cargo
 from reemote.modules.cargo.cargo import (
+    CargoCacheRemoveCommand,
+    CargoCleanCommand,
+    CargoConfig,
     CargoInstallCommand,
     CargoPackageInfo,
     CargoPackages,
@@ -231,6 +242,95 @@ async def test_gather_fact_cargo_packages_fans_out():
     assert answers == {
         "web1": [_entry("ripgrep", "14.1.0")],
         "web2": [],
+    }
+
+
+# --- CargoConfig fact ------------------------------------------------------------
+
+
+def test_cargo_config_command_tests_the_files_it_prints():
+    """The chain resolves ``$CARGO_HOME`` (falling back to ``$HOME/.cargo``)
+    and prints ``config.toml`` first, the legacy ``config`` second -- each
+    behind an ``[ -f ]`` test, never the ``cat ... 2>/dev/null || true``
+    shape that swallows a present-but-unreadable file; and it never invokes
+    the ``cargo`` binary, so no host can answer 127 here."""
+    assert CargoConfig.command() == (
+        'CFG="${CARGO_HOME:-$HOME/.cargo}"; '
+        'if [ -f "$CFG/config.toml" ]; then cat "$CFG/config.toml"; '
+        'elif [ -f "$CFG/config" ]; then cat "$CFG/config"; fi'
+    )
+
+
+def test_cargo_config_command_quotes_an_explicit_home():
+    """An explicit ``cargo_home`` replaces the host-side resolution as one
+    ``shlex``-quoted assignment."""
+    assert CargoConfig.command(cargo_home="/srv/cargo home").startswith(
+        "CFG='/srv/cargo home'; "
+    )
+    hostile = "/srv/$(rm -rf /)"
+    assert CargoConfig.command(cargo_home=hostile).startswith(
+        f"CFG={shlex.quote(hostile)}; "
+    )
+
+
+async def test_cargo_config_parses_multiline_toml():
+    """The printed file is re-joined and parsed control-side: tables, string
+    and boolean values come back as the mapping cargo reads."""
+    output = (
+        "[build]\n"
+        'target-dir = "/tmp/cargo"\n'
+        "jobs = 4\n"
+        "\n"
+        "[net]\n"
+        "git-fetch-with-cli = true\n"
+    )
+    host = CannedShellHost(output)
+    assert await CargoConfig.process(host) == {
+        "build": {"target-dir": "/tmp/cargo", "jobs": 4},
+        "net": {"git-fetch-with-cli": True},
+    }
+    assert host.last_shell == CargoConfig.command()
+
+
+async def test_cargo_config_absent_and_malformed_read_empty():
+    """No config file (the ``if``/``elif`` prints nothing) and unparseable
+    text both read ``{}`` -- the total-parser rule, the design's
+    ``default = dict``; a crash mid-gather is never the answer."""
+    assert await CargoConfig.process(CannedShellHost("")) == {}
+    assert CargoConfig.parse(["not toml at all ["]) == {}
+    assert CargoConfig.parse([]) == {}
+
+
+async def test_cargo_config_reads_the_simulated_seam():
+    """A SimulatedHost answers from its ``cargo_config`` store, bypassing
+    the shell; the default empty store is the fact's own absent-file
+    answer, and ``cargo_home`` cannot narrow a store that models the one
+    config file (the ``GoInstalledSDKs`` rule)."""
+    host = SimulatedHost(name="h", cargo_config={"build": {"jobs": 8}})
+    assert await CargoConfig.process(host, cargo_home="/ignored") == {
+        "build": {"jobs": 8}
+    }
+    assert await CargoConfig.process(SimulatedHost(name="h")) == {}
+
+
+async def test_cargo_config_seam_returns_a_copy():
+    """Mutating the returned dict never touches the simulated state."""
+    host = SimulatedHost(name="h", cargo_config={"build": {"jobs": 8}})
+    config = await CargoConfig.process(host)
+    config["install"] = {"force": True}
+    assert await CargoConfig.process(host) == {"build": {"jobs": 8}}
+    assert host.cargo_config == {"build": {"jobs": 8}}
+
+
+async def test_gather_fact_cargo_config_fans_out():
+    """Across a simulated fleet each host answers from its own store, keyed
+    by host name."""
+    host1 = SimulatedHost(name="web1", cargo_config={"net": {"offline": True}})
+    host2 = SimulatedHost(name="web2")
+    answers = await gather_fact([host1, host2], CargoConfig)
+    assert answers == {
+        "web1": {"net": {"offline": True}},
+        "web2": {},
     }
 
 
@@ -435,7 +535,7 @@ async def test_cargo_packages_latest_upgrades_installed_unpinned():
     ]
     assert ctx.changed
     assert ctx.reason == "1 package(s) to upgrade"
-    assert commands == [CargoInstallCommand(packages=("ripgrep",))]
+    assert commands == [CargoInstallCommand(packages=("ripgrep",), force=True)]
 
 
 async def test_cargo_packages_latest_batches_install_before_upgrade():
@@ -454,7 +554,7 @@ async def test_cargo_packages_latest_batches_install_before_upgrade():
     ]
     assert commands == [
         CargoInstallCommand(packages=("new-crate", "pin-crate@1")),
-        CargoInstallCommand(packages=("foo",)),
+        CargoInstallCommand(packages=("foo",), force=True),
     ]
     assert ctx.reason == "2 package(s) to install; 1 package(s) to upgrade"
 
@@ -680,6 +780,250 @@ async def test_cargo_packages_latest_stays_changed_across_runs():
     assert plans2["h"][0].reason == "1 package(s) to upgrade"
 
 
+# --- Operation: CI/source option rendering --------------------------------------
+
+
+def test_cargo_install_command_renders_the_lockfile_and_feature_flags():
+    """``locked``/``features``/``all_features``/``no_default_features`` each
+    render once, in the fixed order, joined as cargo spells them -- the
+    comma list of ``--features`` and the two standalone flags."""
+    cmd = CargoInstallCommand(
+        packages=("ripgrep",),
+        locked=True,
+        features=("mmap", "pretty"),
+        all_features=True,
+        no_default_features=True,
+    )
+    assert cmd.shell() == (
+        "cargo install --locked --features mmap,pretty --all-features "
+        "--no-default-features ripgrep"
+    )
+
+
+def test_cargo_install_command_renders_a_git_source_and_ref():
+    """With ``git`` the URL and one ref selector lead the flags, and the
+    crate names follow -- cargo's ``cargo install --git <url> [crate...]``
+    grammar, every token quoted."""
+    cmd = CargoInstallCommand(
+        packages=("rustup",), git="https://g/rustup.git", branch="main"
+    )
+    assert cmd.shell() == (
+        "cargo install --git https://g/rustup.git --branch main rustup"
+    )
+
+
+def test_cargo_install_command_scopes_under_a_cargo_home():
+    """``cargo_home`` rides as a ``shlex``-quoted ``CARGO_HOME=<q> `` env
+    prefix ahead of the whole command, mirroring the fact read."""
+    cmd = CargoInstallCommand(packages=("ripgrep",), cargo_home="/opt/cargo")
+    assert cmd.shell() == "CARGO_HOME=/opt/cargo cargo install ripgrep"
+
+
+def test_cargo_remove_command_scopes_under_a_cargo_home():
+    """Uninstall reaches the same relocated tree as the install/list."""
+    cmd = CargoRemoveCommand(packages=("ripgrep",), cargo_home="/opt/cargo")
+    assert cmd.shell() == "CARGO_HOME=/opt/cargo cargo uninstall ripgrep"
+
+
+# --- Operation: source/CI behavior -----------------------------------------------
+
+
+async def test_cargo_packages_rides_ci_flags_on_every_install():
+    """``locked``/``features`` reach the install command of a request -- the
+    feature selection chooses how the crate is built, not the version
+    comparison -- and ``cargo_home`` scopes both the fact read and command."""
+    host = SimulatedHost(name="h")
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in cargo.packages(
+            ctx,
+            packages=("ripgrep",),
+            locked=True,
+            features=("mmap",),
+            cargo_home="/opt/cargo",
+        )
+    ]
+    assert commands == [
+        CargoInstallCommand(
+            packages=("ripgrep",), locked=True, features=("mmap",),
+            cargo_home="/opt/cargo",
+        )
+    ]
+    assert commands[0].shell() == (
+        "CARGO_HOME=/opt/cargo cargo install --locked --features mmap ripgrep"
+    )
+
+
+async def test_cargo_packages_git_always_reinstalls_by_name():
+    """A ``git`` source is non-idempotent and names packages inside the repo,
+    so any pin drops to its bare name; the fact is never read for a
+    comparison. A git request with ``present=False`` is still an install
+    (``git`` only means the install direction)."""
+    host = SimulatedHost(name="h", cargo_packages={"rustup": ["1.0"]})
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in cargo.packages(
+            ctx, packages=("rustup=1.0",), git="https://g/rustup.git"
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == "install rustup from git"
+    assert commands == [
+        CargoInstallCommand(packages=("rustup",), git="https://g/rustup.git")
+    ]
+
+
+async def test_cargo_packages_git_without_names_installs_repo_default():
+    """A ``git`` request with no crate names installs the repository's
+    default package -- one bare ``cargo install --git`` command."""
+    host = SimulatedHost(name="h")
+    ctx = _ctx(host)
+    commands = [
+        c async for c in cargo.packages(ctx, git="https://g/x.git", rev="abc123")
+    ]
+    assert ctx.reason == "install from git"
+    assert commands == [
+        CargoInstallCommand(packages=(), git="https://g/x.git", rev="abc123")
+    ]
+
+
+async def test_cargo_packages_ref_selectors_are_mutually_exclusive():
+    """cargo allows a single ref per git install, so a request carrying two
+    is refused with ``ValueError`` before any command (the design note's
+    ``OperationError`` transliterated to the gem/npm validation precedent)."""
+    host = SimulatedHost(name="h")
+    ctx = _ctx(host)
+    with pytest.raises(ValueError, match="only one of branch/tag/rev"):
+        [
+            c
+            async for c in cargo.packages(
+                ctx, git="https://g/x.git", branch="main", tag="v1"
+            )
+        ]
+
+
+async def test_cargo_packages_ref_selector_without_git_is_refused():
+    """A ``branch``/``tag``/``rev`` without a ``git`` source selects nothing,
+    so it raises ``ValueError`` -- cargo's ref flags pair with ``--git``."""
+    host = SimulatedHost(name="h")
+    ctx = _ctx(host)
+    with pytest.raises(ValueError, match="only together with git"):
+        [c async for c in cargo.packages(ctx, packages=("ripgrep",), rev="abc")]
+
+
+async def test_cargo_packages_ignores_git_on_removal():
+    """``present=False`` uninstalls by name alone; ``git`` only means the
+    install direction, so a removal ignores it and the fact gate decides."""
+    host = SimulatedHost(name="h", cargo_packages={"ripgrep": ["14.1.0"]})
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in cargo.packages(
+            ctx, packages=("ripgrep",), present=False, git="https://g/x.git"
+        )
+    ]
+    assert commands == [CargoRemoveCommand(packages=("ripgrep",))]
+
+
+# --- Fact: cargo_home parity ------------------------------------------------------
+
+
+async def test_cargo_packages_command_scopes_the_read():
+    """``CargoPackages.command`` renders the ``CARGO_HOME=<q> `` prefix, and
+    the real-transport read issues it so the listing covers one tree."""
+    assert CargoPackages.command() == CargoPackages.COMMAND
+    assert CargoPackages.command("/opt/cargo") == (
+        "CARGO_HOME=/opt/cargo cargo install --list"
+    )
+    host = CannedShellHost("ripgrep v14.1.0:\n    /x/rg\n")
+    assert await CargoPackages.process(host, cargo_home="/opt/cargo") == [
+        _entry("ripgrep", "14.1.0")
+    ]
+    assert host.last_shell == "CARGO_HOME=/opt/cargo cargo install --list"
+
+
+# --- Operation: cargo.cache_clean --------------------------------------------------
+
+
+def test_cargo_clean_command_shells_cargo_clean():
+    """A project clean is cargo's own verb against the manifest path; a
+    trailing slash on ``path`` is normalized away."""
+    assert CargoCleanCommand(path="/srv/app").shell() == (
+        "cargo clean --manifest-path /srv/app/Cargo.toml"
+    )
+    assert CargoCleanCommand(path="/srv/app/", cargo_home="/opt/cargo").shell() == (
+        "CARGO_HOME=/opt/cargo cargo clean --manifest-path /srv/app/Cargo.toml"
+    )
+
+
+def test_cargo_cache_remove_command_guards_each_directory():
+    """The default removes both caches, each behind an ``if [ -d ]`` test so
+    the compound exits 0 on a host that never populated one; the resolution
+    honors ``$CARGO_HOME``/``~/.cargo``."""
+    assert CargoCacheRemoveCommand().shell() == (
+        'CFG="${CARGO_HOME:-$HOME/.cargo}"; '
+        'if [ -d "$CFG/registry" ]; then rm -rf "$CFG/registry"; fi; '
+        'if [ -d "$CFG/git" ]; then rm -rf "$CFG/git"; fi'
+    )
+
+
+def test_cargo_cache_remove_command_touches_only_selected_caches():
+    """Selecting one cache renders one ``rm``; an explicit ``cargo_home``
+    replaces the resolution."""
+    assert CargoCacheRemoveCommand(registry=False, git=True, cargo_home="/o").shell() == (
+        'CFG=/o; if [ -d "$CFG/git" ]; then rm -rf "$CFG/git"; fi'
+    )
+
+
+async def test_cargo_cache_clean_path_direction():
+    """A ``path`` asks for a project clean, always (stateless) -- one
+    ``CargoCleanCommand`` and a reason."""
+    host = SimulatedHost(name="h")
+    ctx = _ctx(host)
+    commands = [c async for c in cargo.cache_clean(ctx, path="/srv/app")]
+    assert ctx.changed
+    assert ctx.reason == "clean build artifacts of /srv/app"
+    assert commands == [CargoCleanCommand(path="/srv/app")]
+
+
+async def test_cargo_cache_clean_cache_direction():
+    """With no path the selected caches are emptied in one command; the
+    ``path`` branch wins when both would apply."""
+    host = SimulatedHost(name="h")
+    ctx = _ctx(host)
+    commands = [c async for c in cargo.cache_clean(ctx, clean_registry=False)]
+    assert ctx.changed
+    assert ctx.reason == "clean git cache"
+    assert commands == [CargoCacheRemoveCommand(registry=False, git=True)]
+
+
+async def test_cargo_cache_clean_nothing_selected_is_a_noop():
+    """No path and neither cache selected yields nothing and stays
+    unchanged."""
+    host = SimulatedHost(name="h")
+    ctx = _ctx(host)
+    commands = [
+        c
+        async for c in cargo.cache_clean(
+            ctx, clean_registry=False, clean_git=False
+        )
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "no caches or project selected"
+    assert commands == []
+
+
+async def test_cargo_cache_clean_seam_is_a_noop():
+    """The simulation models no cache contents, so both clean descriptors
+    dispatch without touching any store (like ``GoCleanCommand``)."""
+    host = SimulatedHost(name="h", cargo_packages={"ripgrep": ["14.1.0"]})
+    await send_command(host, CargoCleanCommand(path="/srv/app"))
+    await send_command(host, CargoCacheRemoveCommand())
+    assert host.cargo_packages == {"ripgrep": ["14.1.0"]}
+
+
 # --- Exports ----------------------------------------------------------------------
 
 
@@ -691,18 +1035,28 @@ def test_cargo_module_exports():
     namespace importable."""
     assert cargo.CargoPackages is CargoPackages
     assert cargo.CargoPackageInfo is CargoPackageInfo
+    assert cargo.CargoConfig is CargoConfig
     assert cargo.packages.__name__ == "packages"
     assert cargo.CargoInstallCommand is CargoInstallCommand
     assert cargo.CargoRemoveCommand is CargoRemoveCommand
+    assert cargo.cache_clean.__name__ == "cache_clean"
+    assert cargo.CargoCleanCommand is CargoCleanCommand
+    assert cargo.CargoCacheRemoveCommand is CargoCacheRemoveCommand
     assert cargo.cargo.CargoPackages is CargoPackages
     import reemote
 
     assert reemote.CargoPackages is CargoPackages
     assert reemote.CargoPackageInfo is CargoPackageInfo
+    assert reemote.CargoConfig is CargoConfig
     assert reemote.CargoInstallCommand is CargoInstallCommand
     assert reemote.CargoRemoveCommand is CargoRemoveCommand
+    assert reemote.CargoCleanCommand is CargoCleanCommand
+    assert reemote.CargoCacheRemoveCommand is CargoCacheRemoveCommand
     assert reemote.cargo is cargo
     for name in (
+        "CargoCacheRemoveCommand",
+        "CargoCleanCommand",
+        "CargoConfig",
         "CargoInstallCommand",
         "CargoPackageInfo",
         "CargoPackages",
@@ -710,6 +1064,7 @@ def test_cargo_module_exports():
         "cargo",
     ):
         assert name in reemote.__all__
-    # The operation function is reached through its namespace, never the
+    # The operation functions are reached through their namespace, never the
     # top level (the dnf.packages rule).
     assert "packages" not in reemote.__all__
+    assert "cache_clean" not in reemote.__all__

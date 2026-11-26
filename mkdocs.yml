@@ -59,6 +59,7 @@ plugins:
             - examples/modules/openrc
             - examples/modules/pip
             - examples/modules/postgresql
+            - examples/modules/rustup
             - examples/modules/selinux
             - examples/modules/server
             - examples/modules/snap
@@ -145,6 +146,7 @@ nav:
           - openrc: modules/openrc.md
           - pip: modules/pip.md
           - postgresql: modules/postgresql.md
+          - rustup: modules/rustup.md
           - selinux: modules/selinux.md
           - server: modules/server.md
           - snap: modules/snap.md
@@ -207,6 +209,7 @@ nav:
 #          - openrc: examples/modules/openrc.md
 #          - pip: examples/modules/pip.md
 #          - postgresql: examples/modules/postgresql.md
+#          - rustup: examples/modules/rustup.md
 #          - selinux: examples/modules/selinux.md
 #          - server: examples/modules/server.md
 #          - snap: examples/modules/snap.md

@@ -6,14 +6,16 @@
       members:
         - CargoPackageInfo
         - CargoPackages
+        - CargoConfig
         - packages
+        - cache_clean
 
 
 
 <!---
 
 `reemote.modules.cargo.cargo` holds the cargo facts and the `cargo.packages`
-operation. `CargoPackages` reports
+and `cargo.cache_clean` operations. `CargoPackages` reports
 the crates installed globally via `cargo install` as `CargoPackageInfo`
 entries — the crate `name` plus one installed `version` — parsed from the
 `<crate> v<version>` header rows of `cargo install --list`. It mirrors the
@@ -41,6 +43,29 @@ runs the command bare, so a missing cargo exits 127 and surfaces as
 `CommandNotFoundError` — an environment without cargo is an error the
 deployer hears about, not a silently empty fact (the npm/gem precedent). A
 host with cargo but nothing installed still reads the natural `[]`.
+
+`CargoConfig` answers a different question — the configuration cargo itself
+reads — so an operation can check configured registries, build settings or
+target paths before writing changes. Like the rustup facts it comes from a
+design note rather than a pyinfra baseline. One shell resolves
+`$CARGO_HOME` (default `$HOME/.cargo`, or the caller's explicit
+`cargo_home`) and prints `config.toml` inside it, falling back to the legacy
+`config` name — each file behind an `[ -f ]` test, deliberately not the
+note's `cat ... 2>/dev/null || true` shape: a `cat` that fails on a *present
+but unreadable* config keeps its non-zero exit and its stderr, instead of the
+shell lying success about a read it did not perform. The unchecked fact read
+tolerates that failed print as empty output either way — it parses to the
+same `{}` an absent file reads — so the form records the difference rather
+than erasing it.
+The chain never invokes the `cargo` binary, so no host can answer 127 here —
+the note's `requires_command = "cargo"` gate is dropped at no cost, and a
+missing `CARGO_HOME` is just an absent file. Parsing is control-side stdlib
+`tomllib` over the whole printed document (both config names are TOML; the
+legacy file differs only in name), and the answer is the parsed mapping.
+The note is silent on malformed content; like every fact parser here
+`parse` is total, so unparseable text — like no file at all — reads the
+note's `default = dict` `{}`: an empty answer means "no readable
+configuration to compare against", never a crash mid-gather.
 
 `cargo.packages` is the operation counterpart of the baseline's `cargo.packages`.
 It installs, upgrades or removes `cargo install` crates given as bare crate names
@@ -85,5 +110,44 @@ byte-identical to the baseline's `QuoteString` output. All three baseline
 options map — `packages`, `present` and `latest` — with the
 single-package-as-string shorthand and the `packages=None` no-op kept; `cargo`
 has no further baseline options to drop.
+
+Beyond the baseline, a design note extends `cargo.packages` toward real CI and
+deployment installs, and these options are the module's first non-pyinfra
+surface. `locked`, `features` (one comma-joined `--features`), `all_features`
+and `no_default_features` ride on every install command of the request — they
+choose *how* the crate is built, so the version comparison is untouched and a
+changed feature selection on an installed crate is what `latest` re-installs.
+`git` installs from a repository (`cargo install --git <url> [crate…]`, whose
+cargo grammar takes *names*, so a pin drops to its bare name) and, like
+`latest`, is deliberately non-idempotent — with no installed-source revision
+view to compare, a git request always re-yields; it means only the install
+direction, so a `present=False` request uninstalls by name and ignores it.
+`branch`/`tag`/`rev` are cargo's mutually exclusive ref selectors for `--git`;
+a request carrying two, or a selector without a source, is a static argument
+refused up front with `ValueError` (the note's pyinfra-idiomatic
+`OperationError` mapped to the gem/npm combination-validation precedent) so
+the plan fails rather than the SSH shell. `cargo_home` scopes the whole
+request, forwarding to the `CargoPackages` read *and* both descriptors as one
+`CARGO_HOME=<quoted>` env prefix — the `gem.packages` invariant that the fact
+reads and the commands mutate one tree. The note's `latest` re-install also
+adopts cargo's own `--force`: without it cargo refuses to overwrite a current
+crate's binary, so a bare re-install could never actually update on a host
+where the crate is already present.
+
+`cargo.cache_clean` empties cargo's caches or one project's build directory.
+It is a design-note operation ported *without* the note's `min_bytes` size
+gate — the exact call `go.cache_clean` made for its `min_total_mb`: the gate
+would read a `CargoCacheSize` fact that does not exist here, so rather than
+add a fact for a threshold no caller asked for, the operation stays stateless
+like `dnf.clean`, leaving the caller to gate it in the deploy (a `gather_fact`
+of disk usage plus a `when` predicate reaches the same decision). A `path`
+requests `cargo clean --manifest-path <path>/Cargo.toml` (cargo's own verb for
+a project); with no path the selected `$CARGO_HOME` cache subdirectories are
+removed — cargo offers no cache-purge command, so the guarded `rm -rf` of
+`$CARGO_HOME/registry` and/or `$CARGO_HOME/git` (each behind an `[ -d ]` test)
+is the operation's shape, never an unqualified `rm -rf $CARGO_HOME` that would
+take the config file and `bin/` tree too. Both trees belong to the connecting
+user, so the request stays unprivileged; selecting neither cache and giving no
+path is a no-op.
 
 --->

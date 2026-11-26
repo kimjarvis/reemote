@@ -78,3 +78,51 @@ plan and log render `[skipped: when guard is_ubuntu]`.
 ::: cargo_packages
     options:
       members: []
+
+## Reading the cargo configuration
+
+The config fact: [`CargoConfig`][reemote.modules.cargo.cargo.CargoConfig]
+reads the configuration cargo itself consults — one shell resolves
+`$CARGO_HOME` (falling back to `$HOME/.cargo`, or the caller's explicit
+`cargo_home`) and prints `config.toml` inside it, or the legacy `config` name
+when no `config.toml` exists, each file behind an `[ -f ]` test rather than
+the error-swallowing `cat ... 2>/dev/null || true` shape. The printed
+document is parsed control-side with the stdlib `tomllib`, so the answer is
+the mapping of registries, build settings and target paths the host has
+configured — and because the chain never invokes the `cargo` binary, this is
+the one example on the page that needs no `provision_cargo` await: no host
+can answer 127 here, and a host whose cargo home holds no config file (the
+usual state on a machine where cargo was never configured) honestly reads
+`{}` — the same total-parser answer unparseable content gets, meaning "no
+readable configuration to compare against", never a crash mid-gather. The
+script follows the same inventory → guard → `gather_fact` → JSON-print flow
+as its siblings, leaving `cargo_home` at its default so each host answers for
+its own cargo home.
+
+::: cargo_cargo_config
+    options:
+      members: []
+
+## Cleaning the cargo caches
+
+The cache operation: `cargo.cache_clean` empties cargo's caches or one project's
+build directory. It is deliberately **stateless** — the design note wanted to gate
+the clean on a `CargoCacheSize` fact that does not exist here, so, exactly like
+`go.cache_clean` (and `dnf.clean`), it always fires when a direction is selected
+and leaves any size or schedule gate to the deploy. A `path` requests
+`cargo clean --manifest-path <path>/Cargo.toml`; with no `path` the selected
+`$CARGO_HOME` cache subdirectories are removed — cargo offers no cache-purge
+command, so the guarded `rm -rf` of `$CARGO_HOME/registry` and/or `$CARGO_HOME/git`
+(each behind an `[ -d ]` test, so the compound exits 0 even on a never-populated
+cache and never touches the config file or the `bin/` tree) is the operation's
+shape. The script cleans *both* caches, then the *registry* alone
+(`clean_git=False`), then selects *neither* — the one honest no-op, which plan and
+log both report as `[no change: no caches or project selected]`. No request is
+elevated: both trees belong to the connecting user, and a `sudo` clean would empty
+root's instead. The `path` project-clean form is exercised by the pytest suite
+rather than here. `provision_cargo.py` installs the `cargo` deb first so the
+caches have something real to hold, and every request carries `when=is_ubuntu`.
+
+::: cargo_cache_clean
+    options:
+      members: []

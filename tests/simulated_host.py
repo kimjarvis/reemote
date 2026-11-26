@@ -34,7 +34,7 @@ a real asyncssh transport is missing:
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
   / ``rpm_files`` / ``rpm_packages`` / ``rpm_gpg_keys`` / ``services`` / ``enabled_services``
-  / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_update_stamp`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cargo_packages`` / ``cpu_info`` / ``cpus`` / ``crontab_text`` / ``deb_files``
+  / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_update_stamp`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cargo_config`` / ``cargo_packages`` / ``cpu_info`` / ``cpus`` / ``crontab_text`` / ``deb_files``
   / ``date`` / ``default_ipv4_addr`` / ``disk_stats`` / ``dmi_info`` / ``os_env``
   / ``firewall_reads_denied`` / ``firewalld_default_zone``
   / ``firewalld_ipsets`` / ``firewalld_lockdown`` / ``firewalld_panic_mode``
@@ -84,6 +84,7 @@ a real asyncssh transport is missing:
   / ``postgres_replication`` / ``postgres_role_memberships`` / ``postgres_roles``
   / ``postgres_schemas`` / ``postgres_settings`` / ``postgres_subscriptions``
   / ``postgres_tables`` / ``postgres_tablespaces`` / ``python_versions``
+  / ``rustup_components`` / ``rustup_targets`` / ``rustup_toolchains``
   / ``selinux_booleans`` / ``selinux_file_contexts``
   / ``selinux_fcontext_mappings`` / ``selinux_ports`` / ``selinux_mode``
   / ``selinux_logins`` / ``selinux_users`` / ``selinux_modules``
@@ -105,7 +106,7 @@ a real asyncssh transport is missing:
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
   ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``, ``RpmGpgKeys``,
   ``SystemdServiceState``, ``SystemdServiceEnabled``, ``SystemdNeedDaemonReload``, ``SystemdStatus``, ``SystemdEnabled``, ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState``, ``SystemdDependencies``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``ApkRepositoriesFile``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpdateStamp``, ``AptUpgradable``, ``Arch``,
-  ``AuthorizedKeys``, ``AuthorizedKeysFile``, ``BlockDevices``, ``CargoPackages``, ``CpuInfo``, ``Cpus``, ``Crontab`` (reads the whole-table ``crontab_text`` seam), ``Date``, ``DebPackage``,
+  ``AuthorizedKeys``, ``AuthorizedKeysFile``, ``BlockDevices``, ``CargoConfig``, ``CargoPackages``, ``CpuInfo``, ``Cpus``, ``Crontab`` (reads the whole-table ``crontab_text`` seam), ``Date``, ``DebPackage``,
   ``DefaultIpv4Address``, ``DiskStats``, ``DmiInfo``, ``Env``, ``EtcHosts`` (parses the shared
   ``remote_files`` seam at the hosts-file path), ``FirewalldStatus``, ``FirewalldDefaultZone``,
   ``FirewalldZones``, ``FirewalldServices``, ``FirewalldIpSets``,
@@ -154,7 +155,9 @@ a real asyncssh transport is missing:
   ``PostgresqlPublications``, ``PostgresqlReplication``,
   ``PostgresqlRoleMemberships``, ``PostgresqlRoles``, ``PostgresqlSchemas``,
   ``PostgresqlSettings``, ``PostgresqlSubscriptions``, ``PostgresqlTables``,
-  ``PostgresqlTablespaces``,
+  ``PostgresqlTablespaces``, ``RustupComponents``, ``RustupDefaultToolchain``
+  (which projects the ``rustup_toolchains`` store through
+  ``RustupToolchains``), ``RustupTargets``, ``RustupToolchains``,
   ``SEBoolean``, ``Booleans``, ``FileContext``, ``FileContextMapping``,
   ``SEPorts``, ``SEPort``, ``Mode``, ``SELogin``, ``SEUser``, ``Modules``,
   ``PermissiveDomains``, ``SelinuxConfigFile`` (the selinux-local ``_Which``
@@ -237,6 +240,8 @@ from reemote.modules.apt.apt import (
     _pin_satisfied_by,
 )
 from reemote.modules.cargo.cargo import (
+    CargoCacheRemoveCommand,
+    CargoCleanCommand,
     CargoInstallCommand,
     CargoRemoveCommand,
     _cargo_split_spec,
@@ -516,6 +521,15 @@ from reemote.modules.postgresql.postgresql import (
     PostgresqlTablespace,
     PostgresqlTablespaceCommand,
     _normalize_object,
+)
+from reemote.modules.rustup.rustup import (
+    RustupComponentAddCommand,
+    RustupComponentRemoveCommand,
+    RustupDefaultCommand,
+    RustupTargetAddCommand,
+    RustupTargetRemoveCommand,
+    RustupToolchainInstallCommand,
+    RustupToolchainRemoveCommand,
 )
 from reemote.modules.selinux.selinux import (
     AUTORELABEL_PATH,
@@ -1060,6 +1074,14 @@ class SimulatedHost(Host):
     # ``remove_cargo_packages`` maintain it through ``execute_command``, and
     # a test may seed it directly too.
     cargo_packages: dict[str, list[str]] = field(default_factory=dict)
+    # The cargo configuration (the parsed TOML of the simulated host's
+    # ``config.toml``, or legacy ``config``, inside its default CARGO home) --
+    # the state store ``CargoConfig`` reads. Defaults to {} -- a simulated
+    # machine with no config file, the fact's own absent-file answer; the
+    # store models the host's single config file, so the fact's
+    # ``cargo_home`` argument does not filter it (the ``GoInstalledSDKs``
+    # rule). A read-only seam: a test seeds it directly.
+    cargo_config: dict[str, Any] = field(default_factory=dict)
     # CPU details (the parsed ``LANG=C lscpu`` rows), backing ``CpuInfo``:
     # each key maps to its stripped string value, except a ``flag``-bearing
     # key (e.g. ``Flags``) whose value is the list of whitespace-split tokens.
@@ -2069,6 +2091,34 @@ class SimulatedHost(Host):
     # non-zero exit of ``command -v nosuchcommand || true``. Defaults to {} --
     # a simulated machine resolves no commands until a test names them.
     command_paths: dict[str, str] = field(default_factory=dict)
+    # Installed rustup toolchains (toolchain name -> is the default),
+    # backing ``RustupToolchains`` -- the channel half of each entry is
+    # derived from the name, so the store cannot contradict it -- and
+    # ``RustupDefaultToolchain``, which projects the flagged entry through
+    # ``RustupToolchains.process``. Defaults to {} -- a simulated machine
+    # with rustup but no toolchains installed. The fact's ``rustup_home``
+    # argument does not filter the store (the ``GoInstalledSDKs`` rule).
+    # ``install_rustup_toolchains``/``remove_rustup_toolchains``/
+    # ``set_rustup_default`` (the ``rustup.toolchains`` mutators) maintain
+    # it; a test may also seed it directly.
+    rustup_toolchains: dict[str, bool] = field(default_factory=dict)
+    # Installed target triples (toolchain name -> target list, the empty
+    # string keying the *active* toolchain what an argument-less
+    # ``RustupTargets`` read asks for), backing ``RustupTargets``. An
+    # absent key reads as [], like a toolchain with no targets beyond its
+    # own or none installed at all. Defaults to {}.
+    # ``add_rustup_targets``/``remove_rustup_targets`` (the
+    # ``rustup.targets`` mutators) maintain it; a test may also seed it
+    # directly; the read copies and sorts the list.
+    rustup_targets: dict[str, list[str]] = field(default_factory=dict)
+    # Installed component names (the ``rustup_targets`` keying: toolchain
+    # name -> component list, the empty string keying the active
+    # toolchain), backing ``RustupComponents``. An absent key reads as [],
+    # and defaults to {}. ``add_rustup_components``/
+    # ``remove_rustup_components`` (the ``rustup.components`` mutators)
+    # maintain it; a test may also seed it directly; the read copies and
+    # sorts the list.
+    rustup_components: dict[str, list[str]] = field(default_factory=dict)
     # Simulated SELinux booleans (name -> on/off bool), backing ``Booleans``
     # (the whole map) and ``SEBoolean`` (one name projected to "on"/"off",
     # an absent name ""). ``set_selinux_boolean`` (the simulated
@@ -2908,6 +2958,28 @@ class SimulatedHost(Host):
                 self.install_cargo_packages(packages)
             case CargoRemoveCommand(packages=packages):
                 self.remove_cargo_packages(packages)
+            case CargoCleanCommand():
+                pass  # the simulation models no build artifacts to clear
+            case CargoCacheRemoveCommand():
+                pass  # the simulation models no cache contents to clear
+            case RustupToolchainInstallCommand(toolchains=toolchain_names):
+                self.install_rustup_toolchains(toolchain_names)
+            case RustupToolchainRemoveCommand(toolchains=toolchain_names):
+                self.remove_rustup_toolchains(toolchain_names)
+            case RustupDefaultCommand(toolchain=default_toolchain):
+                self.set_rustup_default(default_toolchain)
+            case RustupTargetAddCommand(targets=targets, toolchain=toolchain):
+                self.add_rustup_targets(targets, toolchain)
+            case RustupTargetRemoveCommand(targets=targets, toolchain=toolchain):
+                self.remove_rustup_targets(targets, toolchain)
+            case RustupComponentAddCommand(
+                components=components, toolchain=toolchain
+            ):
+                self.add_rustup_components(components, toolchain)
+            case RustupComponentRemoveCommand(
+                components=components, toolchain=toolchain
+            ):
+                self.remove_rustup_components(components, toolchain)
             case PipInstallCommand(packages=packages):
                 self.install_pip_packages(packages)
             case PipUpgradeCommand():
@@ -8187,6 +8259,115 @@ class SimulatedHost(Host):
                 versions.remove(version)
             if not versions:
                 self.cargo_packages.pop(name, None)
+
+    def install_rustup_toolchains(self, toolchains: tuple[str, ...]) -> None:
+        """Record a simulated ``rustup toolchain install``: mark them installed.
+
+        ``rustup.toolchains``' install mutation. Each name gains a
+        ``rustup_toolchains`` entry flagged non-default -- installing a
+        toolchain never steals the default flag, and an installed name keeps
+        whatever default state it carries (the ``install_*_packages``
+        keep-existing precedent). The store records no profile/component/
+        target install detail beyond nothing: ``rustup.targets`` and
+        ``rustup.components`` read their own per-toolchain stores, so a
+        batch's ``--component``/``--target`` flags seed no rows -- a toolchain
+        installs with only its own host triple/components, exactly what an
+        unseeded store reads.
+        """
+        for toolchain in toolchains:
+            self.rustup_toolchains.setdefault(toolchain, False)
+
+    def remove_rustup_toolchains(self, toolchains: tuple[str, ...]) -> None:
+        """Record a simulated ``rustup toolchain uninstall``: drop them.
+
+        The ``present=False`` direction of ``rustup.toolchains``. The name
+        leaves ``rustup_toolchains``, and its per-toolchain
+        ``rustup_targets``/``rustup_components`` rows go with it -- removing
+        the toolchain removes the targets and components installed for it
+        (the mutator-side store-reconciliation rule an apk removal's
+        ``remote_files`` pop follows). An absent name is tolerated (the real
+        command would exit non-zero, but the operation's fact check never
+        yields that removal in that case).
+        """
+        for toolchain in toolchains:
+            self.rustup_toolchains.pop(toolchain, None)
+            self.rustup_targets.pop(toolchain, None)
+            self.rustup_components.pop(toolchain, None)
+
+    def set_rustup_default(self, toolchain: str) -> None:
+        """Record a simulated ``rustup default``: move the default flag.
+
+        ``rustup.toolchains``' default mutation. Exactly one toolchain can be
+        the default, so every other flag drops to False before the named one
+        rises; naming an uninstalled toolchain installs it first, as the real
+        command does (it downloads and selects the toolchain). The empty
+        ``rustup_targets``/``rustup_components`` stores of the freshly named
+        toolchain stay absent -- an unlisted key reads [], the host triple's
+        targets the real install would bring.
+        """
+        for name in self.rustup_toolchains:
+            self.rustup_toolchains[name] = False
+        self.rustup_toolchains[toolchain] = True
+
+    def add_rustup_targets(self, targets: tuple[str, ...], toolchain: str | None) -> None:
+        """Record a simulated ``rustup target add``: extend the toolchain's list.
+
+        ``rustup.targets``' add mutation. The triple lands in the
+        ``rustup_targets`` row keyed by the toolchain (the empty string
+        keying the active toolchain, the fact's own rule); an absent row
+        starts empty and a repeat add collapses, so a second deploy
+        converges. Names stay sorted -- the shape the fact read promises.
+        """
+        row = self.rustup_targets.setdefault(toolchain or "", [])
+        for target in targets:
+            if target not in row:
+                row.append(target)
+        row.sort()
+
+    def remove_rustup_targets(self, targets: tuple[str, ...], toolchain: str | None) -> None:
+        """Record a simulated ``rustup target remove``: shrink the list.
+
+        The ``present=False`` direction of ``rustup.targets``. Each named
+        triple leaves the toolchain's row; an absent one is tolerated (the
+        real command would exit non-zero, but the operation's fact check
+        never yields that removal in that case). The row itself stays, empty
+        or not -- removing a toolchain's last target does not drop its
+        listing row, an unseeded and an emptied row both read [].
+        """
+        row = self.rustup_targets.get(toolchain or "", [])
+        for target in targets:
+            if target in row:
+                row.remove(target)
+
+    def add_rustup_components(
+        self, components: tuple[str, ...], toolchain: str | None
+    ) -> None:
+        """Record a simulated ``rustup component add``: extend the toolchain's list.
+
+        ``rustup.components``' add mutation, the ``add_rustup_targets``
+        shape: the name lands in the ``rustup_components`` row keyed by the
+        toolchain (empty string = active), repeats collapse, names stay
+        sorted.
+        """
+        row = self.rustup_components.setdefault(toolchain or "", [])
+        for component in components:
+            if component not in row:
+                row.append(component)
+        row.sort()
+
+    def remove_rustup_components(
+        self, components: tuple[str, ...], toolchain: str | None
+    ) -> None:
+        """Record a simulated ``rustup component remove``: shrink the list.
+
+        The ``present=False`` direction of ``rustup.components``, the
+        ``remove_rustup_targets`` shape: each named component leaves the
+        toolchain's row, an absent one tolerated.
+        """
+        row = self.rustup_components.get(toolchain or "", [])
+        for component in components:
+            if component in row:
+                row.remove(component)
 
     def install_snap_packages(self, packages: tuple[str, ...], channel: str) -> None:
         """Record a simulated ``snap install``: mark the snaps installed.

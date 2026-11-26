@@ -7,7 +7,7 @@ through the public API only, never part of the library. The tree is split in
 three: `examples/modules/<namespace>/` holds one script per fact or operation
 of a library module (currently `apk`, `apt`, `cargo`, `dnf`, `files`, `firewalld`,
 `flatpak`, `gem`, `git`, `go`, `gpg`, `hardware`, `iptables`, `lxd`, `mysql`, `npm`,
-`openrc`, `pip`, `postgresql`, `selinux`,
+`openrc`, `pip`, `postgresql`, `rustup`, `selinux`,
 `server`, `snap`, `sysctl`, `systemd` and `ufw`), plus the cross-module `dnf_put_get`
 health-check scenario under `files/`,
 `examples/actions/` holds [action](actions.md) demonstrations (bespoke shell,
@@ -43,6 +43,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 | `examples/modules/openrc/` | [Module examples: openrc](examples/modules/openrc.md) |
 | `examples/modules/pip/` | [Module examples: pip](examples/modules/pip.md) |
 | `examples/modules/postgresql/` | [Module examples: postgresql](examples/modules/postgresql.md) |
+| `examples/modules/rustup/` | [Module examples: rustup](examples/modules/rustup.md) |
 | `examples/modules/selinux/` | [Module examples: selinux](examples/modules/selinux.md) |
 | `examples/modules/server/` | [Module examples: server](examples/modules/server.md) |
 | `examples/modules/snap/` | [Module examples: snap](examples/modules/snap.md) |
@@ -80,6 +81,10 @@ sub-directory. Pick a page from the navigation, or start from this table:
     (their provisioning helper installs the `golang-go` deb there first),
     the `cargo` examples likewise on `is_ubuntu`
     (their provisioning helper installs the `cargo` deb there first),
+    the `rustup` examples likewise on `is_ubuntu`
+    (their provisioning helper installs the `rustup` deb there first, and the
+    `cargo` page's `cargo_cargo_config` example guards on it too even though
+    its file read needs no provisioning),
     and the `server_op_locale.py` example on the
     [server page](examples/modules/server.md) likewise on `is_ubuntu`
     because `/etc/locale.gen` + `locale-gen` are Debian-family only. The

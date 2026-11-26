@@ -11,8 +11,9 @@ single source, so ``modules/apk/apk.py`` holds the apk fact classes
 command descriptors they yield,
 ``modules/apt/apt.py`` holds the apt fact classes (``AptKeys``,
 ``AptPackages``, ``AptUpgradable``, ``AptAutoremovable``),
-``modules/cargo/cargo.py`` holds the ``CargoPackages`` fact (with its
-``CargoPackageInfo`` entry type) beside the ``packages`` operation and the
+``modules/cargo/cargo.py`` holds the ``CargoPackages`` (with its
+``CargoPackageInfo`` entry type) and ``CargoConfig`` facts beside the
+``packages`` operation and the
 ``CargoInstallCommand``/``CargoRemoveCommand`` descriptors it yields,
 ``modules/crontab/crontab.py`` holds the ``Crontab`` whole-table fact and
 its structured ``CrontabEntries`` companion beside the ``crontab``
@@ -107,6 +108,9 @@ descriptors they yield,
 ``extension``, ``index``, ``setting``, ``tablespace``, ``publication``
 and ``subscription`` operations and the typed command descriptors they
 yield,
+``modules/rustup/rustup.py`` holds the ``RustupToolchains`` (with its
+``RustupToolchainInfo`` entry type), ``RustupDefaultToolchain``,
+``RustupTargets`` and ``RustupComponents`` facts,
 ``modules/selinux/selinux.py`` holds the ``SEBoolean``, ``Booleans``,
 ``FileContext``, ``FileContextMapping``, ``SEPorts``, ``SEPort``, ``Mode``,
 ``SELogin``, ``SEUser``, ``Modules`` and ``PermissiveDomains`` facts beside
@@ -134,10 +138,10 @@ descriptors it yields, and
 ``modules/server/server.py`` holds the ``wait_service`` operation (which
 polls the relocated ``systemd.SystemdServiceState`` fact). The subpackages
 are re-exported here, so a deploy can keep writing
-``from reemote.modules import apk, apt, cargo, dnf, files, firewalld, flatpak, gem, git, go, gpg, hardware, iptables, lxd, mysql, npm, openrc, pip, postgresql, selinux, snap, sysctl, systemd, ufw, server``
+``from reemote.modules import apk, apt, cargo, dnf, files, firewalld, flatpak, gem, git, go, gpg, hardware, iptables, lxd, mysql, npm, openrc, pip, postgresql, rustup, selinux, snap, sysctl, systemd, ufw, server``
 and read ``apk.ApkInstalledPackages`` / ``apt.AptKeys`` / ``cargo.CargoPackages`` / ``cargo.packages`` / ``dnf.packages`` /
 ``files.link`` / ``firewalld.FirewalldZones`` / ``gem.GemPackages`` / ``git.GitBranch`` / ``go.GoPackages`` / ``gpg.GpgKeys`` / ``hardware.BlockDevices`` /
-``iptables.IptablesChains`` / ``lxd.LxdInstances`` / ``mysql.MysqlDatabases`` / ``npm.NpmPackages`` / ``openrc.OpenrcStatus`` / ``postgresql.PostgresqlRoles`` /
+``iptables.IptablesChains`` / ``lxd.LxdInstances`` / ``mysql.MysqlDatabases`` / ``npm.NpmPackages`` / ``openrc.OpenrcStatus`` / ``postgresql.PostgresqlRoles`` / ``rustup.RustupToolchains`` /
 ``selinux.Mode`` / ``sysctl.setting`` / ``systemd.service`` / ``ufw.UfwRules`` / ``server.wait_service``.
 """
 
@@ -162,6 +166,7 @@ from . import (
     openrc,
     pip,
     postgresql,
+    rustup,
     selinux,
     server,
     snap,
@@ -191,6 +196,7 @@ __all__ = [
     "openrc",
     "pip",
     "postgresql",
+    "rustup",
     "selinux",
     "server",
     "snap",
