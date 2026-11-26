@@ -41,6 +41,7 @@ stays in lockstep with the role modules on disk.
 """
 
 from .apache import ApacheOutputs, ApacheVars, apache
+from .certbot import Cert, CertbotVars, certbot
 from .composer import ComposerVars, composer
 from .datadog import DatadogVars, datadog
 from .docker import DockerVars, docker
@@ -62,6 +63,8 @@ from .security import SecurityVars, security
 __all__: list[str] = [
     "ApacheOutputs",
     "ApacheVars",
+    "Cert",
+    "CertbotVars",
     "ComposerVars",
     "DatadogVars",
     "DockerVars",
@@ -83,6 +86,7 @@ __all__: list[str] = [
     "PostgresqlVars",
     "SecurityVars",
     "apache",
+    "certbot",
     "composer",
     "datadog",
     "docker",

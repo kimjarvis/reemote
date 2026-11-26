@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships eighteen configuration roles as **library code**. Each one is the
+reemote ships nineteen configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -50,6 +50,7 @@ driver that understands barriers; `run()` is not.
 | [pip](pip.md) | [`geerlingguy.pip`](https://github.com/geerlingguy/ansible-role-pip) | Ubuntu | 2 | none | no | 1 |
 | [git](git.md) | [`geerlingguy.git`](https://github.com/geerlingguy/ansible-role-git) | Ubuntu | 1 | none | no | 1 |
 | [security](security.md) | [`geerlingguy.security`](https://github.com/geerlingguy/ansible-role-security) | Ubuntu | 2 changed / 1 converged | none | no | 1 |
+| [certbot](certbot.md) | [`geerlingguy.certbot`](https://github.com/geerlingguy/ansible-role-certbot) | Ubuntu | `2 + 2C` (`C` certs); 2 install-only | none | no | 1 |
 
 ## Reading the columns
 
@@ -134,6 +135,10 @@ driver that understands barriers; `run()` is not.
   `reload systemd`, `restart ssh` and `reload fail2ban`. The one-checkpoint, three
   channel case: a single `changed_hosts` report read three times, and ten edits of
   one file composing inside a single wave.
+- **[certbot](certbot.md)** — the release-dispatched package, the configured
+  certificates (standalone with its `systemctl` pre/post hooks, or webroot) and
+  the renewal cron entry. The most barrier-dense role without a checkpoint: a
+  `stat` gate and probe/create action gates per cert, all in one stream.
 
 ## Running one
 
@@ -157,10 +162,11 @@ The inventory entry's `family` decides what happens. Each role's body opens with
 the OS guard — `if host.family != "Ubuntu": return …` — so a host on another
 family emits no requests, no barriers and no report lines at all rather than
 failing on the first `apt` call. The `family` field is a declaration the role
-trusts. Six roles read `fact(LinuxDistribution)` for their own reasons —
-`docker`, `java`, `ntp`, `php`, `postgresql`, `repo_epel` — and `java`, `ntp`,
-`postgresql` and `repo_epel` treat that read as the check that the machine matches
-the declaration, raising before any request is built when it does not.
+trusts. Seven roles read `fact(LinuxDistribution)` for their own reasons —
+`certbot`, `docker`, `java`, `ntp`, `php`, `postgresql`, `repo_epel` — and
+`certbot`, `java`, `ntp`, `postgresql` and `repo_epel` treat that read as the check
+that the machine matches the declaration, raising before any request is built
+when it does not.
 
 ## Using a role inside your own deploy
 

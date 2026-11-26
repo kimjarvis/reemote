@@ -177,6 +177,7 @@ nav:
           - pip: roles/pip.md
           - git: roles/git.md
           - security: roles/security.md
+          - certbot: roles/certbot.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md
