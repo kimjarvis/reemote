@@ -16,10 +16,11 @@ consumes them -- an outputs dataclass (§17.2). This ``__init__`` re-exports
 those public names explicitly. It is **never** star-imported into
 ``reemote/__init__.py``: a role name would otherwise shadow a module namespace.
 
-The one collision is handled deliberately. ``reemote.postgresql`` already names
-the operation-module namespace re-exported at the top level, so roles live only
-under ``reemote.roles`` and ``reemote.postgresql`` stays the module namespace;
-inside ``roles/postgresql.py`` the module is aliased (``from reemote.modules
+The collisions are handled deliberately. ``reemote.postgresql`` already names
+the operation-module namespace re-exported at the top level (and ``reemote.git``
+the git-repository module), so roles live only under ``reemote.roles`` and the
+top-level names stay the module namespaces; inside ``roles/postgresql.py`` the
+module is aliased (``from reemote.modules
 import postgresql as pg``). ``tests/roles/test_exports.py`` pins both facts.
 
 The template-rendering roles (``apache``, ``datadog``, ``memcached``, ``nginx``,
@@ -43,6 +44,7 @@ from .composer import ComposerVars, composer
 from .datadog import DatadogVars, datadog
 from .docker import DockerVars, docker
 from .drush import DrushVars, drush
+from .git import GitVars, git
 from .java import JavaVars, java
 from .memcached import MemcachedVars, memcached
 from .nfs import NfsVars, nfs
@@ -63,6 +65,7 @@ __all__: list[str] = [
     "DockerVars",
     "DrushVars",
     "EpelVars",
+    "GitVars",
     "JavaVars",
     "MemcachedVars",
     "NfsVars",
@@ -81,6 +84,7 @@ __all__: list[str] = [
     "datadog",
     "docker",
     "drush",
+    "git",
     "java",
     "memcached",
     "nfs",

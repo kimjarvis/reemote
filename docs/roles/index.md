@@ -46,6 +46,7 @@ driver that understands barriers; `run()` is not.
 | [java](java.md) | [`geerlingguy.java`](https://github.com/geerlingguy/ansible-role-java) | Ubuntu | 2 | none | no | 1 |
 | [memcached](memcached.md) | [`geerlingguy.memcached`](https://github.com/geerlingguy/ansible-role-memcached) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
 | [nfs](nfs.md) | [`geerlingguy.nfs`](https://github.com/geerlingguy/ansible-role-nfs) | Ubuntu | 2 changed / 1 converged | none | no | 1 |
+| [git](git.md) | [`geerlingguy.git`](https://github.com/geerlingguy/ansible-role-git) | Ubuntu | 1 | none | no | 1 |
 
 ## Reading the columns
 
@@ -115,6 +116,9 @@ driver that understands barriers; `run()` is not.
   the gated service, and `reload nfs`. The command-handler role: its handler is an
   `act(Shell, ...)` barrier running `exportfs -ra`, and the body raises its own
   `CommandError`.
+- **[git](git.md)** — the apt-cache refresh and the `git_packages` install, as one
+  request. The cheapest shape in the corpus: zero barriers, one wave, one
+  operation, so a dry pass plans the whole wave rather than parking.
 
 ## Running one
 

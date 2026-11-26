@@ -175,6 +175,7 @@ nav:
           - nfs: roles/nfs.md
           - nodejs: roles/nodejs.md
           - pip: roles/pip.md
+          - git: roles/git.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md
