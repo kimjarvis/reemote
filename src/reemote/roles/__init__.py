@@ -51,6 +51,7 @@ from .nodejs import NodejsVars, NpmGlobalPackage, nodejs
 from .ntp import NtpVars, ntp
 from .php import PhpOutputs, PhpVars, php
 from .php_xdebug import PhpXdebugVars, php_xdebug
+from .pip import PipPackage, PipVars, pip
 from .postgresql import PostgresqlVars, postgresql, postgresql_data
 from .repo_epel import EpelVars, repo_epel
 
@@ -72,6 +73,8 @@ __all__: list[str] = [
     "PhpOutputs",
     "PhpVars",
     "PhpXdebugVars",
+    "PipPackage",
+    "PipVars",
     "PostgresqlVars",
     "apache",
     "composer",
@@ -86,6 +89,7 @@ __all__: list[str] = [
     "ntp",
     "php",
     "php_xdebug",
+    "pip",
     "postgresql",
     "postgresql_data",
     "repo_epel",
