@@ -67,6 +67,17 @@ membership, its key pair and authorized key are in place, the profile block
 is byte-identical between its markers, and the deleted account is already
 gone.
 
+On a *live* Ubuntu host, however, the second pass currently fails instead
+(exit 1): ``useradd -m`` creates the home as ``0750`` (Ubuntu's
+``login.defs`` ``HOME_MODE``) and the login user is not in that group, so the
+unprivileged idempotence probes cannot traverse into it -- the existing
+``.ssh`` directory, key pair and authorized keys all read as *absent*, and
+the re-planned ``ssh-keygen`` then collides with the private key that is
+really there. The profile half of the same blindness is rewrite churn rather
+than a failure. See GitHub issues #71 (``server.ssh_keypair`` and
+``server.user_authorized_keys``) and #70 (``files.transform``); live
+convergence lands with those library fixes, not with a change to the role.
+
 Hosts outside the ``"Ubuntu"`` family emit nothing at all -- the role's
 family guard is its body's opening ``if``, so such a host returns before its
 first ``yield`` and appears in no wave.

@@ -53,12 +53,25 @@ shape change), **deviation** (a deliberate difference).
 | `user: name={{ item.username }} state=absent remove={{ item.remove \| default(omit) }} force={{ item.force \| default(omit) }}` over `users_deleted` | `op(server.user, name="Deleted user removal (X)", present=False, remove_home=…, force=…)` | covered (`userdel -r/-f`, issue #61) |
 | `group: name={{ item.username }} state=absent` over `users_deleted`, `when: users_create_per_user_group` | `op(server.group, name="Deleted per-user group removal (X)", present=False)` | covered |
 
-No library gap blocked this migration, so none was filed. The audit of this
+No library gap blocked the migration itself. The audit of this
 role is exactly what grew the four `server`-namespace additions the mapping
 above cites — issues #59–#62, all merged — and the two remaining constructs
 (`blockinfile`, the key-file path split) already have documented recipes:
 `files.transform` with a pure block fixpoint, and
 `server.user_authorized_keys`' explicit directory/filename pair.
+
+The first *live* two-pass run of `examples/roles/users.py` against the demo
+Ubuntu host did, however, expose a probe gap. `useradd -m` creates the home as
+`0750` (Ubuntu's `login.defs` `HOME_MODE`) and the login user is not in that
+group, so every unprivileged idempotence read under it sees a present file as
+*absent*: the key pair is re-planned and the fresh `ssh-keygen` collides with
+the private key that is really there, exits 1 and fails the run, while the
+profile block is rewritten every pass. Filed as
+[issue #71](https://github.com/kimjarvis/reemote/issues/71) for the `server`
+reads; the `files` half of the same blindness is
+[issue #70](https://github.com/kimjarvis/reemote/issues/70). The offline suite
+passes because `SimulatedHost` serves those seams whatever the home's mode —
+it does not model traversal denial.
 
 ## 2. Install
 
@@ -185,6 +198,13 @@ groups exist with their gids, the account carries its shell, comment, home and
 membership, the key pair and authorized key are in place, the profile block is
 byte-identical between its markers, and the deleted account is already gone.
 That is the migration's idempotence claim, and the offline suite asserts it.
+On a *live* Ubuntu host the second pass currently fails instead — the locked
+`0750` home hides the key pair from the unprivileged probe, so `ssh_keypair`
+re-plans a generate that collides with the existing key and exits 1, and the
+profile re-writes as churn: see
+[issue #71](https://github.com/kimjarvis/reemote/issues/71) and
+[issue #70](https://github.com/kimjarvis/reemote/issues/70); live convergence
+lands with those library fixes, not with a change to the role.
 
 ## 6. What it does
 

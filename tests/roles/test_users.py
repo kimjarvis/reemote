@@ -25,6 +25,15 @@ every request reads back exactly the state it asked for -- including the
 password, which the simulation stores in its ``os_users`` row (on a real
 host the shadow read-back that makes an explicit hash converge needs
 ``/etc/shadow`` readable by the login user -- deviation D1's caveat).
+
+The home contents carry the same offline/live asymmetry, in the other
+direction: the simulation serves the ``.ssh`` stat, the key-pair
+fingerprint and the authorized-keys/profile seams whatever the home's mode,
+so the pinned second-pass tree is a clean no-op here -- while a *live*
+Ubuntu home (created ``0750`` by ``useradd -m``) hides exactly those paths
+from the unprivileged probes, so the rerun re-plans and the regenerated
+``ssh-keygen`` collides with the existing key. That is GitHub issue #71
+(with #70 for the profile half), a library gap rather than a role bug.
 """
 
 import pytest

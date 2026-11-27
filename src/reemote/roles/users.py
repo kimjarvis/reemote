@@ -96,6 +96,18 @@
 #   request, and the role's implicit gates become pydantic validation: a
 #   blank username or group name raises ``ValidationError`` (a ``ValueError``)
 #   during ``resolve_vars``, before any host is contacted.
+#
+# Known live limitation (a library gap, not a deviation from the role): on a
+# real Ubuntu host the second pass does not converge. ``useradd -m`` writes the
+# new home as ``0750`` (Ubuntu's ``login.defs`` ``HOME_MODE``) and the login
+# user is not in that group, so the unprivileged idempotence reads under it --
+# the ``.ssh``/``authorized_keys`` stat, the ``SshKeyPair`` fingerprint, the
+# profile's contents -- see a present file as *absent*. The re-planned
+# :func:`~reemote.server.ssh_keypair` then reaches ``ssh-keygen``'s "already
+# exists / Overwrite (y/n)?" prompt, which reads EOF and exits 1, and the
+# profile transform re-writes on every pass. Tracked as GitHub issue #71 (the
+# ``server`` reads) alongside #70 (the ``files`` reads); the offline suite
+# passes because ``SimulatedHost`` serves those seams whatever the home's mode.
 # """
 
 from collections.abc import Callable, Generator
