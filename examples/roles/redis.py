@@ -69,12 +69,13 @@ Convergence is what the offline pytest suite pins: on a rerun against a
 converged host every request reports no change, the notification set is empty,
 and the handler wave never appears -- the package is installed, the config
 directory is redis:redis ``02770``, the config is byte-identical with
-redis:redis ``0640`` metadata, and the service is running and enabled. On a
-*live* host the second pass currently still re-writes the config (and so
-restarts the service, which succeeds): ``dpkg`` re-owns ``/etc/redis`` to
-``redis:redis 02770``, and the unprivileged idempotence probe cannot traverse
-into that directory, so it reads the managed file as absent -- see GitHub
-issue #70; live convergence lands with that library fix.
+redis:redis ``0640`` metadata, and the service is running and enabled. The
+rerun converges on a *live* host too: ``dpkg`` re-owns ``/etc/redis`` to
+``redis:redis 02770``, so the unprivileged idempotence probe cannot traverse
+into that directory and reads the managed file as absent -- GitHub issue #70's
+traversal gate answers that with an elevated re-probe, which sees the file and
+reports no change. The elevated rerun is pinned offline by
+``tests/roles/test_redis.py``.
 
 Hosts outside the ``"Ubuntu"`` family emit nothing at all -- the role's family
 guard is its body's opening ``if``, so such a host returns before its first

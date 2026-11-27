@@ -61,8 +61,12 @@ barrier to place and the checkpoint is the entire barrier surface. The first
 *live* two-pass run did, however, expose one probe gap — a managed file behind
 a non-traversable `02770` service directory reads as absent to the unprivileged
 idempotence probe, so the config re-installs on every real-host run — filed as
-[issue #70](https://github.com/kimjarvis/reemote/issues/70); the offline suite
-passes because `SimulatedHost` does not model traversal denial.
+[issue #70](https://github.com/kimjarvis/reemote/issues/70) and now closed: an
+existence read that comes back absent to the login user is checked against the
+nearest existing ancestor directory's search bit, and a directory the login
+cannot traverse turns the answer into an elevated re-probe — only a negative
+*elevated* answer reads as absent. `SimulatedHost` models the same denial
+(`login_path_visible`), so the offline suite pins it.
 
 ## 2. Install
 
@@ -183,12 +187,12 @@ package is installed, the config directory is `02770`, the config is
 byte-identical with redis:redis `0640` metadata, the service is running and
 enabled — and the checkpoint notifies nobody, so the handler wave never
 appears. That is the migration's idempotence claim, and the offline suite
-asserts it. On a *live* host the second pass currently still re-writes the
-config (and so restarts the service, which now succeeds): `dpkg` re-owns
-`/etc/redis` to `redis:redis 02770`, and the unprivileged idempotence probe
-cannot traverse into the directory, so it reads the managed file as absent —
-see [issue #70](https://github.com/kimjarvis/reemote/issues/70); live
-convergence lands with that library fix.
+asserts it. On a *live* host the second pass converges for the same reason:
+`dpkg` re-owns `/etc/redis` to `redis:redis 02770`, so the unprivileged
+idempotence probe cannot traverse into the directory and reads the managed file
+as absent — issue #70's gate catches that and re-probes elevated, where the file
+is visible. The elevated re-probe is pinned offline by
+`tests/roles/test_redis.py`, not by a live run.
 
 ## 6. What it does
 

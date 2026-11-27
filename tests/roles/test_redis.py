@@ -24,8 +24,10 @@ every seam the second pass reads -- ``install_apt_packages`` records the
 package, ``make_directory``/``chmod_path`` the ``02770`` config-directory row,
 ``install_file`` the config content and its full stat row, the ``SystemctlCommand``
 arms the service state and enablement. The ``0640`` service-owned config is
-unreadable to the login user, so the second pass rides ``FileContents``' two-tier
-elevated read-back -- the shipped #12 fallback, exercised here offline.
+unreadable -- and, inside the ``02770`` directory, invisible -- to the login
+user, so the second pass rides
+``FileContents``' two-tier elevated read-back: the shipped #12 unreadable
+fallback and issue #70's traversal gate, exercised here offline.
 
 The config file needs no pre-seed: ``files.install``'s spool-and-install
 lands the content and the content-idempotent write converges on the second
@@ -369,6 +371,32 @@ async def test_second_pass_is_a_noop_with_no_handler_wave():
     assert changed_entries(second) == []
     assert HANDLER_NAME not in ubuntu_names(second)
     assert hosts["ubuntu"].ran_shells == []
+
+
+async def test_the_hidden_config_stays_converged_through_the_elevated_probe():
+    """Issue #70's live churn, pinned offline.
+
+    The role's own ``02770 redis:redis`` directory hides ``/etc/redis/redis.conf``
+    from the ``supervisor`` login's probe -- not merely from its reads: without the
+    directory's ``x`` bit no name inside resolves, so ``test -e`` fails with
+    ``EACCES`` and prints the shell's "no such file". A fact that trusted that
+    answer would plan the write again on every pass, which is exactly what the
+    live run did. The traversal gate turns the absence into an elevated re-probe,
+    so the second pass still converges.
+    """
+    inventory = make_inventory()
+    hosts = make_hosts(inventory)
+    await run_role(inventory, hosts)
+    host = hosts["ubuntu"]
+
+    # The converged state is there and the login cannot see it.
+    assert host.remote_files[CONF_PATH] == DEFAULT_CONFIG.encode()
+    assert host.directory_stats[CONF_DIR]["mode"] == 2770
+    assert not host.login_path_visible(CONF_PATH)
+
+    second = await run_role(inventory, hosts)
+    assert changed_entries(second) == []
+    assert HANDLER_NAME not in ubuntu_names(second)
 
 
 async def test_non_ubuntu_host_is_never_touched():

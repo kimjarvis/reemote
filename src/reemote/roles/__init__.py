@@ -24,9 +24,9 @@ module is aliased (``from reemote.modules
 import postgresql as pg``). ``tests/roles/test_exports.py`` pins both facts.
 
 The template-rendering roles (``apache``, ``datadog``, ``memcached``, ``nginx``,
-``ntp``, ``postgresql``, ``redis``) import jinja2 and PyYAML only through
-:mod:`reemote.roles._render`, the single import site for them, which needs the
-``reemote[templates]`` extra (§17.4). Nothing in this package pulls that module
+``ntp``, ``postgresql``, ``redis``, ``systemd``) import jinja2 and PyYAML only
+through :mod:`reemote.roles._render`, the single import site for them, which needs
+the ``reemote[templates]`` extra (§17.4). Nothing in this package pulls that module
 in at import time, so ``import reemote.roles`` stays clean without the extra.
 ``php`` renders its four templates as plain f-strings, so it never needs the
 extra even though it templates files -- and ``php_xdebug`` inherits that, since
@@ -47,7 +47,9 @@ from .datadog import DatadogVars, datadog
 from .docker import DockerVars, docker
 from .drush import DrushVars, drush
 from .git import GitVars, git
+from .hosts import HostsEntry, HostsVars, hosts
 from .java import JavaVars, java
+from .kubectl import KubectlChecksum, KubectlVars, kubectl
 from .memcached import MemcachedVars, memcached
 from .nfs import NfsVars, nfs
 from .nginx import NginxVars, nginx
@@ -60,6 +62,7 @@ from .postgresql import PostgresqlVars, postgresql, postgresql_data
 from .redis import RedisVars, redis
 from .repo_epel import EpelVars, repo_epel
 from .security import SecurityVars, security
+from .systemd import SystemdVars, UnitSpec, systemd
 from .users import DeletedUserSpec, GroupSpec, UserSpec, UsersVars, users
 
 __all__: list[str] = [
@@ -75,7 +78,11 @@ __all__: list[str] = [
     "EpelVars",
     "GitVars",
     "GroupSpec",
+    "HostsEntry",
+    "HostsVars",
     "JavaVars",
+    "KubectlChecksum",
+    "KubectlVars",
     "MemcachedVars",
     "NfsVars",
     "NginxVars",
@@ -90,6 +97,8 @@ __all__: list[str] = [
     "PostgresqlVars",
     "RedisVars",
     "SecurityVars",
+    "SystemdVars",
+    "UnitSpec",
     "UserSpec",
     "UsersVars",
     "apache",
@@ -99,7 +108,9 @@ __all__: list[str] = [
     "docker",
     "drush",
     "git",
+    "hosts",
     "java",
+    "kubectl",
     "memcached",
     "nfs",
     "nginx",
@@ -113,5 +124,6 @@ __all__: list[str] = [
     "redis",
     "repo_epel",
     "security",
+    "systemd",
     "users",
 ]

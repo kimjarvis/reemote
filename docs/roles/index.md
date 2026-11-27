@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships twenty-one configuration roles as **library code**. Each one is the
+reemote ships twenty-four configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -30,7 +30,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The twenty-one roles group by what they configure. The [catalogue](#the-catalogue)
+The twenty-four roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -67,6 +67,7 @@ and outputs.
 | [composer](composer.md) | Composer — the signature-verified installer, the phar move, an optional `auth.json`, global packages, the `$PATH` entry |
 | [drush](drush.md) | Drush — the launcher phar and its executable bit |
 | [git](git.md) | Git — the apt-cache refresh and the `git_packages` install, as one request |
+| [kubectl](kubectl.md) | kubectl — the checksum-pinned release binary, installed version-suffixed with the bare name symlinked beside it |
 
 ### Vendor repositories and platforms
 
@@ -75,6 +76,13 @@ and outputs.
 | [repo_epel](repo_epel.md) | EPEL — installs the repository package and flips `enabled=` in the `[epel]` section alone |
 | [docker](docker.md) | Docker CE — the vendor repository with its URL-signed keyring, the edition packages, `daemon.json`, the service, the `docker_users` memberships |
 | [datadog](datadog.md) | Datadog agent — the signing keys and repository, the package, `/etc/datadog-agent`, `conf.d` checks, two restart handlers |
+
+### Base system
+
+| Role | Purpose |
+| --- | --- |
+| [hosts](hosts.md) | Hostname and hosts file — the rendered `/etc/hostname` and `/etc/hosts` (loopback, default-route, additional entries, the IPv6 block), each with its metadata companion |
+| [systemd](systemd.md) | systemd units — the load path, the rendered unit or drop-in file, the two reload handlers, each unit's running and enabled state, and the opt-in uninstall |
 
 ### Security and certificates
 
@@ -120,6 +128,9 @@ and outputs.
 | [certbot](certbot.md) | [`geerlingguy.certbot`](https://github.com/geerlingguy/ansible-role-certbot) | Ubuntu | `2 + 2C` (`C` certs); 2 install-only | none | no | 1 |
 | [redis](redis.md) | [`geerlingguy.redis`](https://github.com/geerlingguy/ansible-role-redis) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
 | [users](users.md) | [`singleplatform-eng/ansible-users`](https://github.com/singleplatform-eng/ansible-users) | Ubuntu | exactly 1 (`2` under the `on_create` gate) | none | no | 1 |
+| [hosts](hosts.md) | [`ajsalminen/ansible-role-hosts`](https://github.com/ajsalminen/ansible-role-hosts) | Ubuntu | 2 (1 with a content override) | none | no | 1 |
+| [kubectl](kubectl.md) | [`andrewrothstein.kubectl`](https://github.com/andrewrothstein/ansible-kubectl) | Ubuntu | exactly 2 | none | no | 1 |
+| [systemd](systemd.md) | [`0x0I/systemd`](https://github.com/0x0I/ansible-role-systemd) | Ubuntu | 2 (3 with a per-user unit) | none | **yes** | 1 |
 
 ## Reading the columns
 
@@ -134,9 +145,10 @@ and outputs.
   `PhpOutputs` — the PHP version and extension paths it used to carry as a copied
   constant. Every other role returns `None`, and does so on its family-guard's
   early return too.
-- **`reemote[templates]`** is needed by the seven roles that render configuration
+- **`reemote[templates]`** is needed by the eight roles that render configuration
   through Jinja2 or PyYAML — `apache`, `datadog`, `memcached`, `nginx`, `ntp`,
-  `postgresql` and `redis`, the list [`reemote.roles._render`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/_render.py)
+  `postgresql`, `redis` and `systemd`, the list
+  [`reemote.roles._render`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/_render.py)
   exists to carry. The others render in plain Python — `json.dumps`, an f-string, a
   `str.join` — and need nothing beyond the library.
 - **`run_waves` passes** is `1` for every role but `postgresql`, which cannot be
@@ -219,6 +231,25 @@ and outputs.
   task list is one wave with zero barriers on the default path — even a dry
   pass plans it entire — and the one `fact(Users)` snapshot appears only under
   the `update_password: on_create` gate.
+- **[hosts](hosts.md)** — renders `/etc/hostname` and `/etc/hosts` from the vars
+  and one `DefaultIpv4Address` barrier, installing each file with a metadata
+  companion. The template role without Jinja2: the render is plain Python,
+  verified byte-identical to an Ansible-defaults render of the upstream
+  templates, so no extra is needed — one barrier, one request wave, no
+  checkpoint.
+- **[kubectl](kubectl.md)** — the checksum-pinned release binary download, the
+  version-suffixed install and the bare-name symlink. The single-gate role: one
+  `fact(server.Arch)` barrier closes the first wave, the three tasks follow in
+  the second, and both the architecture map and the checksum table fail fast
+  before a byte is fetched.
+- **[systemd](systemd.md)** — the load-path directory, the rendered unit or
+  drop-in file, `Reload systemd units` and `Reload systemd daemon`, each unit's
+  running and enabled state, and the opt-in uninstall. The per-request
+  notification case: the checkpoint's report is sliced by request *name* as well
+  as by host, because both upstream handlers loop over registered results and
+  gate on each item's own `changed`. Its one `fact(Users)` read — the unit
+  owner's home and uid — appears only under a per-user unit, so two hosts on the
+  same variables can run two and three waves.
 
 ## Running one
 

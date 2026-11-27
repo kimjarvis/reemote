@@ -188,6 +188,9 @@ nav:
           - certbot: roles/certbot.md
           - redis: roles/redis.md
           - users: roles/users.md
+          - hosts: roles/hosts.md
+          - kubectl: roles/kubectl.md
+          - systemd: roles/systemd.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md
