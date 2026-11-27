@@ -28,6 +28,67 @@ probe, a `stat` loop, a notification check — live inside the deploy instead of
 forcing a plan-then-apply split. [`run_waves`](../drivers.md#wave-loop) is the
 driver that understands barriers; `run()` is not.
 
+## Roles by type
+
+The twenty roles group by what they configure. The [catalogue](#the-catalogue)
+below is the full reference, with each role's source, target family, wave count
+and outputs.
+
+### Web servers
+
+| Role | Purpose |
+| --- | --- |
+| [apache](apache.md) | Apache httpd — ports, module and conf symlinks, rendered vhosts and enable links, service state, one restart handler |
+| [nginx](nginx.md) | nginx — the optional official PPA, vhosts, a `nginx -t`-validated `nginx.conf`, service state, two handler channels |
+| [php](php.md) | PHP — packages, `php.ini` in every conf path, FPM pools, the `restart webserver` → `restart php-fpm` handler chain |
+| [php_xdebug](php_xdebug.md) | Xdebug — built from source and loaded into PHP, composing the `php` role inside its own body |
+
+### Databases
+
+| Role | Purpose |
+| --- | --- |
+| [postgresql](postgresql.md) | PostgreSQL — packages, cluster init, `postgresql.conf` and `pg_hba.conf`, then users, databases and privileges; the two-pass role |
+
+### Caches and shared storage
+
+| Role | Purpose |
+| --- | --- |
+| [memcached](memcached.md) | memcached — the package, `/etc/memcached.conf`, the service, one restart handler |
+| [redis](redis.md) | Redis — the setgid `/etc/redis` directory, the rendered `redis.conf`, the package, the service, one restart handler |
+| [nfs](nfs.md) | NFS — the packages, the export directories, `/etc/exports`, the gated service and an `exportfs -ra` command handler |
+
+### Language runtimes and tooling
+
+| Role | Purpose |
+| --- | --- |
+| [java](java.md) | Java — the distribution's default OpenJDK packages and an optional `JAVA_HOME` profile script |
+| [nodejs](nodejs.md) | Node.js — the NodeSource key and deb822 repository, the version-pinned `nodejs` package, npm's global prefix and packages |
+| [pip](pip.md) | pip — the distro's pip package, the PEP 668 `EXTERNALLY-MANAGED` marker removed, then the package list |
+| [composer](composer.md) | Composer — the signature-verified installer, the phar move, an optional `auth.json`, global packages, the `$PATH` entry |
+| [drush](drush.md) | Drush — the launcher phar and its executable bit |
+| [git](git.md) | Git — the apt-cache refresh and the `git_packages` install, as one request |
+
+### Vendor repositories and platforms
+
+| Role | Purpose |
+| --- | --- |
+| [repo_epel](repo_epel.md) | EPEL — installs the repository package and flips `enabled=` in the `[epel]` section alone |
+| [docker](docker.md) | Docker CE — the vendor repository with its URL-signed keyring, the edition packages, `daemon.json`, the service, the `docker_users` memberships |
+| [datadog](datadog.md) | Datadog agent — the signing keys and repository, the package, `/etc/datadog-agent`, `conf.d` checks, two restart handlers |
+
+### Security and certificates
+
+| Role | Purpose |
+| --- | --- |
+| [security](security.md) | SSH and host hardening — the `sshd_config` directives and access lists, the sudoers loops, Fail2Ban and unattended-upgrades |
+| [certbot](certbot.md) | Certbot — the release-dispatched package, the configured certificates (standalone or webroot) and the renewal cron entry |
+
+### Time synchronisation
+
+| Role | Purpose |
+| --- | --- |
+| [ntp](ntp.md) | NTP — the daemon, `tzdata`, the system timezone, the templated config, the `restart ntp` and `restart cron` handlers |
+
 ## The catalogue
 
 | Role | Migrates | Target | Waves | Outputs | `reemote[templates]` | `run_waves` passes |
