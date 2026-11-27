@@ -40,8 +40,8 @@ A **fact** reads state; an **operation** requests a change. They live together i
 
 On each page, the **names tell you which is which**:
 
-- A **capitalised class** is a fact or a returned-data type — `FileContents`, `AptPackages`, `SystemdServiceState`, `Hostname`. You rarely name these directly; operations read them for you.
-- A **lowercase function** is an operation — `install`, `packages`, `service`, `file`. These are what you `yield` in a deploy.
+- A **capitalised class** is a fact or a returned-data type — `FileContents`, `AptPackages`, `SystemdServiceState`, `Hostname`. A fact is passed around as the class itself, never an instance, and you rarely name one directly; operations read them for you.
+- A **lowercase function** is an operation — `install`, `packages`, `service`, `file`. In a deploy you name that function inside `op(...)` and yield the request it returns; the function is never yielded and never called by your code.
 - A `SomeCommand` **class** is the command descriptor an operation produces. You almost never construct one yourself.
 
 Each entry documents its arguments, what it returns, the exceptions it raises, and a pointer to a runnable script under `examples/`. When you want to see a fact or operation used end to end, follow that `examples/...` path — every example is a complete, runnable program that loads an inventory, builds requests and prints the plan and the run log.
@@ -58,11 +58,11 @@ Each entry documents its arguments, what it returns, the exceptions it raises, a
 Four words carry almost the whole model. Learn them once and the rest of the guide is detail.
 
 - **Inventory** — a list of dictionaries naming the servers and how to reach them. This is what you hand to the runner. A minimal entry needs a `host` label, a `family` (the OS family: `RedHat`, `Ubuntu` or `Alpine`) and a `connection` mapping; groups, tags and privilege settings are optional and covered later in [Hosts and the inventory](#hosts-and-the-inventory).
-- **Fact** — a read of some server state: a hostname, the set of installed packages, a file's current text. Facts are gathered over the connection and are cached during a run. You usually do not call them yourself; operations read the facts they need.
-- **Operation** — a request to converge the server toward a described state: "ensure these packages are installed", "make this file contain this text", "ensure this service is running". An operation reads facts, decides whether anything must change, and produces the commands to make the change. Operations are **idempotent** wherever that is meaningful: running one twice leaves the same state and reports *no change* the second time.
-- **Action** — something that runs *immediately*, outside a deployment, and hands back its result. Actions are the escape hatch for one-off commands reemote has no operation for, and for connectivity itself. They come last in this guide because they are defined by contrast with the deploy model — see [Actions](#actions).
+- **Fact** — a read of some server state: a hostname, the set of installed packages, a file's current text. In Python a fact is a class with an async `process` classmethod, and the class is what gets passed around. Facts are gathered over the connection and are cached during a run. You usually do not call them yourself; operations read the facts they need.
+- **Operation** — a request to converge the server toward a described state: "ensure these packages are installed", "make this file contain this text", "ensure this service is running". An operation reads facts, decides whether anything must change, and produces the commands to make the change. In Python an operation is an async generator *function* that the driver calls; what your deploy carries is the `OperationRequest` value that `op()` builds for it. Operations are **idempotent** wherever that is meaningful: running one twice leaves the same state and reports *no change* the second time.
+- **Action** — something that runs *immediately*, when you call it, and hands back its result: nothing plans it, no fact decides whether it runs, and it is never replayed. Actions are the escape hatch for one-off commands reemote has no operation for, and for connectivity itself. Structurally an action is the same kind of object as a fact — a class with an async `process` classmethod — and it need not change anything either, so what defines one is the immediate execution and the returned outcome, not mutation. They come last in this guide because they are defined by contrast with the deploy model — see [Actions](#actions).
 
-A **deploy** ties these together. It is a Python generator function that takes one host and *yields* operation requests in order:
+A **deploy** ties these together. It is a generator function: called with one host, it returns a generator that *yields* operation requests in order:
 
 ```python
 def deploy(host: Host) -> Generator[OperationRequest, None, None]:
@@ -70,7 +70,7 @@ def deploy(host: Host) -> Generator[OperationRequest, None, None]:
     yield op(...)   # second step
 ```
 
-The runner calls your deploy once per host, collects the requests, and drives them. You describe *what state you want*; the runner works out *what to do about it*.
+The runner pulls requests off that generator and drives them; it is the only code that runs an operation. You describe *what state you want*; the runner works out *what to do about it*. The body itself stays synchronous and does no IO — [Roles are resumable deploys](#roles-are-resumable-deploys) covers the one case where the generator also *receives* values back.
 
 ## Your first deployment
 
@@ -374,7 +374,7 @@ A `sudo_password` is delivered through an askpass helper and never appears in th
 
 ### Deploy scripts
 
-A deploy is a generator function that takes a `Host` and yields `OperationRequest` objects. You build a request with `op`: the operation function comes first, then a display `name`, the three privilege flags (`sudo`, `su`, `doas`), an optional `env` mapping and `when` guard, and finally the operation's own keyword arguments.
+A deploy is a generator function that takes a `Host` and yields `OperationRequest` objects — frozen values, not calls. You build a request with `op`: the operation function comes first, then a display `name`, the three privilege flags (`sudo`, `su`, `doas`), an optional `env` mapping and `when` guard, and finally the operation's own keyword arguments. The `OpContext` the operation's signature asks for is supplied later, by the runner, so a deploy body can never invoke an operation itself.
 
 ```python
 def deploy(host: Host) -> Generator[OperationRequest, None, None]:
@@ -449,7 +449,9 @@ With `dedupe=True`, `compose` drops requests that repeat an earlier one. Dedupe 
 
 ### Roles are resumable deploys
 
-A **role** is a deploy factory: an ordinary function that closes over resolved [variables](rolevars.md) and returns a per-host generator. Where a plain deploy yields only [`OperationRequest`][reemote.core.OperationRequest]s and runs under [`run`][reemote.drivers.run], a role may also yield a **barrier** — a value that parks the generator until the driver executes it and resumes the body with the result via `gen.send(value)`. Roles run under [`run_waves`][reemote.drivers.run_waves], the wave-loop driver, which runs **one pass per request** (materialize and apply in the same step), so the body is never re-invoked and there is no determinism comparison.
+A **role** is a deploy factory: a function that closes over resolved [variables](rolevars.md) and returns a per-host deploy — the `Deploy` type, a callable taking a host and returning a generator. Most factories are ordinary synchronous functions; a role whose setup needs control-side IO that is identical for the whole inventory (fetching five signing keys once, say) is an `async def` factory instead, and the caller awaits it to get the deploy.
+
+The deploy a role returns yields a widened stream. Where a plain deploy yields only [`OperationRequest`][reemote.core.OperationRequest]s and runs under [`run`][reemote.drivers.run], a role may also yield a **barrier** — a value that parks the generator until the driver executes it and resumes the body with the result via `gen.send(value)`. That makes the generator two-way: it hands work out and takes results back in, and its `return` value is the role's own outputs, which a composing parent captures with `yield from`. Roles run under [`run_waves`][reemote.drivers.run_waves], the wave-loop driver, which runs **one pass per request** (materialize and apply in the same step), so the body is never re-invoked and there is no determinism comparison.
 
 There are four barriers, because they are the four things a *synchronous* generator body cannot do for itself:
 
@@ -617,7 +619,7 @@ Under a [`run_waves`][reemote.drivers.run_waves] role the split is not needed at
 
 ## Facts
 
-A **fact** reads state from a host. It is any class with an async `process` classmethod — there is no base class to subclass. You rarely call a fact directly: operations read the facts they need through a `FactCache`, which awaits each fact once per host and caches the result, so a fact used by several operations in one step runs once.
+A **fact** reads state from a host. It is any class with an async `process` classmethod — there is no base class to subclass, and nothing to instantiate: the class itself is what you hand to `gather_fact`, what a role hands to the `fact` barrier, and what an operation hands to its cache. You rarely call a fact directly: operations read the facts they need through a `FactCache`, which keys on the fact class plus its arguments and awaits it once per host, so a fact used by several operations in one step runs once.
 
 Apply **recreates the cache before each request**, which is what lets a later operation see the effect of an earlier one: install a package in step 1, and step 2's `AptPackages` fact reads the newly-installed set rather than a stale cache.
 
@@ -643,7 +645,7 @@ hostnames = await gather_fact(hosts, server.Hostname)
 
 ## Operations
 
-An **operation** is an async generator that takes an `OpContext` and yields command descriptors. It reads facts to decide whether anything must change, and yields commands only when it does — that is what makes it idempotent.
+An **operation** is an *async generator function*: its first argument is an `OpContext` and it yields command descriptors. It reads facts to decide whether anything must change, and yields commands only when it does — that is what makes it idempotent. The driver checks that shape literally, so passing anything else (an action class, for instance) raises `OperationError` instead of running.
 
 ```python
 async def install(ctx: OpContext, content: str, dest: str, mode: str = "0644", ...) -> AsyncGenerator[Command]:
@@ -654,9 +656,9 @@ async def install(ctx: OpContext, content: str, dest: str, mode: str = "0644", .
     yield InstallCommand(...)       # elevated: cp spool dest && chmod && rm spool
 ```
 
-You never call an operation yourself. You reference it in `op`, which records the call; the runner materialises it during prepare (to see what it *would* yield) and again during apply (to actually send). An operation's parameters are the `**kwargs` you pass to `op`.
+You never call an operation yourself: `op()` records the function and its arguments into an `OperationRequest`, and that request — never a generator — is what your deploy yields. The runner holds the `OpContext` the operation needs, materialises the async generator into commands during prepare (to see what it *would* yield) and again during apply (to actually send); under `run_waves` it materialises once, in the same step that applies. An operation's parameters are the `**kwargs` you pass to `op`.
 
-The `OpContext` an operation receives carries the host, its `FactCache`, and the resolved privilege decision for this request. Operations are **phase-unaware**: the same code runs in prepare and apply; the context is what differs.
+The `OpContext` an operation receives carries the host, this step's `FactCache`, and the two fields the operation writes back: `changed` and `reason`. Privilege is not in it — the driver resolves the `sudo`/`su`/`doas` flags when it renders each command, from inventory data the operation never sees. Operations are **phase-unaware**: the same code runs in prepare and apply; the context is what differs.
 
 Operations return a *declared result*. A `changed` flag means the operation did the work it set out to do; for the built-in operations that converge a described state, that is a genuine convergence. Avoid assuming an arbitrary custom operation's `changed` flag proves every postcondition you care about — it proves what the operation checked.
 
@@ -680,7 +682,7 @@ A handful of invariants hold across the whole library. They are the reason the m
 1. **Deploys are pure.** A deploy is a pure function of its host yielding the same requests in both phases. The determinism guard enforces the request sequence.
 2. **Facts and operations are phase-unaware.** The same fact and operation code runs in prepare and apply; only the `OpContext` differs. Nothing in a fact or operation asks "which phase am I in?".
 3. **Phase awareness lives in the driver.** Only the drivers know about prepare vs apply. They set a context flag that makes the in-deploy guard work; facts, operations and actions stay oblivious.
-4. **Actions cannot run inside a deploy.** `gather_action` raises `ActionInDeployError` the moment it is *called* during a deploy — the check is synchronous, so even an un-awaited call in a sync generator fails immediately.
+4. **A deploy body may not call `gather_action`.** It raises `ActionInDeployError` the moment it is *called* during a deploy — the check is synchronous, so even an un-awaited call in a sync generator fails immediately — and the guard is installed on both drivers: for each of `run`'s phases, and around every `run_waves` pull. A role still reaches an action in stream, because the driver runs the `act` barrier *between* pulls with the guard released.
 5. **Privilege data comes from the inventory.** An operation requests elevation with a bool; it never chooses a run-as user or supplies a password.
 6. **No controller-filesystem awareness.** Content crosses as data (strings, IO streams), never as a local path the library resolves. Every remote path refers to the target.
 7. **Requests are compared by value.** Every argument is hashable; streams must keep object identity across phases.
@@ -689,7 +691,9 @@ These invariants are what let the runner execute a deploy twice, concurrently ac
 
 ## Actions
 
-An **action** runs *immediately*, outside the deploy model, and returns what happened. Actions exist for the cases the library deliberately does not model: software reemote knows nothing about, a script already staged on the host, and connectivity itself.
+An **action** runs *immediately*, outside the plan/apply model, and returns what happened. Actions exist for the cases the library deliberately does not model: software reemote knows nothing about, a script already staged on the host, and connectivity itself.
+
+Structurally an action is indistinguishable from a fact — a class with an async `process` classmethod that runs on one host — and the two are not separated by mutation either: a `Shell` may only run `df -h`, and `WaitForConnection` changes nothing on the target and returns `None`. What makes an action an action is that it executes when you call it and hands the raw outcome back, with no fact consulted to decide whether to run and no second pass to replay it.
 
 You call an action with `await gather_action(...)`:
 
@@ -700,7 +704,7 @@ results = await gather_action(hosts, Shell, command="df -h /")
 # {"web1": Result(exit_status=0, stdout="...", stderr=""), ...}
 ```
 
-`gather_action` is a *synchronous* function that returns a coroutine, so the in-deploy guard fires at the call site even before you await it. It selects hosts by `group`/`tags` (combined with AND), runs concurrently, and closes the selected hosts when it finishes.
+`gather_action` is a *synchronous* function that returns a coroutine (`gather_fact`, by contrast, is a coroutine itself), so the in-deploy guard fires at the call site even before you await it. It selects hosts by `group`/`tags` (combined with AND), runs concurrently, and closes the selected hosts when it finishes.
 
 Three actions ship with the library:
 
@@ -715,7 +719,7 @@ Three actions ship with the library:
     healthy. For readiness, poll the thing you care about — a `Shell` action
     checking a health endpoint, or a fact — in a loop of your own.
 
-Actions are the pragmatic edge of the model. Everything inside a deploy is pure, planned and idempotent; an action is none of those things, which is exactly why it lives outside the deploy and why the runner refuses to let one slip into a generator.
+Actions are the pragmatic edge of the model. Everything inside a deploy is pure, planned and idempotent; an action is none of those things, which is exactly why a body cannot call one directly and why the wave driver offers the barrier form instead.
 
 Under a [`run_waves`][reemote.drivers.run_waves] role, though, an action has an **in-stream** form: `yield act(Shell, command=...)` parks the generator and the driver runs the action between waves, sending the [`Result`][reemote.actions.Result] back. That is not a direct `gather_action` call — the guard still raises on `gather_action` written inside any deploy body, the wave path included — it is the sanctioned way for a role to run a bespoke command and branch on its outcome. See [Stages](stages.md).
 
