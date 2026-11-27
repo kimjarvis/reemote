@@ -66,12 +66,16 @@ Ubuntu host did, however, expose a probe gap. `useradd -m` creates the home as
 group, so every unprivileged idempotence read under it sees a present file as
 *absent*: the key pair is re-planned and the fresh `ssh-keygen` collides with
 the private key that is really there, exits 1 and fails the run, while the
-profile block is rewritten every pass. Filed as
+profile block is rewritten every pass. Two issues cover that one blindness:
 [issue #71](https://github.com/kimjarvis/reemote/issues/71) for the `server`
-reads; the `files` half of the same blindness is
-[issue #70](https://github.com/kimjarvis/reemote/issues/70). The offline suite
-passes because `SimulatedHost` serves those seams whatever the home's mode —
-it does not model traversal denial.
+reads, now fixed, and
+[issue #70](https://github.com/kimjarvis/reemote/issues/70) for the `files`
+half — the profile block's `FileContents`/`File` reads — now closed: an
+unprivileged read that answers *absent* is checked against the search bit of
+the nearest existing ancestor directory, and a directory the login cannot
+traverse turns the answer into an elevated re-probe. `SimulatedHost` models the
+denial (`login_path_visible`), so the offline suite pins the gate instead of
+happening to skip it.
 
 ## 2. Install
 
@@ -198,13 +202,16 @@ groups exist with their gids, the account carries its shell, comment, home and
 membership, the key pair and authorized key are in place, the profile block is
 byte-identical between its markers, and the deleted account is already gone.
 That is the migration's idempotence claim, and the offline suite asserts it.
-On a *live* Ubuntu host the second pass currently fails instead — the locked
-`0750` home hides the key pair from the unprivileged probe, so `ssh_keypair`
-re-plans a generate that collides with the existing key and exits 1, and the
-profile re-writes as churn: see
-[issue #71](https://github.com/kimjarvis/reemote/issues/71) and
-[issue #70](https://github.com/kimjarvis/reemote/issues/70); live convergence
-lands with those library fixes, not with a change to the role.
+On a *live* Ubuntu host the second pass used to fail on the `server` half: the
+locked `0750` home hid the key pair from the unprivileged probe, so
+`ssh_keypair` re-planned a generate that collided with the existing key and
+exited 1 — fixed by [issue #71](https://github.com/kimjarvis/reemote/issues/71),
+whose elevated re-probe now sees a pair hidden under a locked home.
+The `files` half of the same churn, the profile block's rewrite, is closed by
+[issue #70](https://github.com/kimjarvis/reemote/issues/70): an absent answer
+from under an untraversable directory now earns an elevated re-probe, so the
+block reads as already in place. Live convergence for the key pair landed with
+the #71 fix, not with a change to the role.
 
 ## 6. What it does
 
