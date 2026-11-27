@@ -96,7 +96,7 @@ a real asyncssh transport is missing:
   / ``tcp_endpoints`` / ``os_timezone`` / ``os_user`` / ``os_users``
   / ``ufw_applications`` / ``ufw_rules`` / ``ufw_status``
   / ``uptime_seconds`` / ``uv_install`` / ``uv_packages`` / ``uv_pythons``
-  / ``uv_tools`` / ``virtualenv_python_versions`` / ``command_paths``:
+  / ``uv_tools`` / ``uv_venvs`` / ``virtualenv_python_versions`` / ``command_paths``:
   the state the library's facts (``DnfPackages``, ``FileLink``, ``FileExists``,
   ``File``, ``Directory``, ``Link``, ``Socket``, ``SameFile``, ``FileFlags``,
   ``FindFiles``, ``FindDirectories``, ``FindLinks``, ``FindInFile``,
@@ -148,7 +148,9 @@ a real asyncssh transport is missing:
   ``NpmPackages``,
   ``OpenrcConfigFile``, ``OpenrcEnabled``,
   ``OpenrcRunlevels``, ``OpenrcServices``, ``OpenrcStatus``, ``OpenrcVersion``,
-  ``Packages`` (the uv-local fact reads the ``uv_packages`` seam),
+  ``Packages`` (the uv-local fact reads the ``uv_packages`` seam, and the
+  uv-local ``_VenvExists`` probe behind ``uv.venv`` reads the ``uv_venvs``
+  seam),
   ``PipPackages`` (the pip-local ``_VirtualenvPython`` probe reads the
   ``virtualenv_python_versions`` seam), ``Port``, ``Processes``,
   ``PythonVersion``,
@@ -645,6 +647,20 @@ from reemote.modules.ufw.ufw import (
 from reemote.modules.uv.uv import (
     PythonInfo,
     ToolInfo,
+    UvPipInstallCommand,
+    UvPipRemoveCommand,
+    UvPipRequirementsCommand,
+    UvPipUpgradeCommand,
+    UvPythonInstallCommand,
+    UvPythonRemoveCommand,
+    UvToolInstallCommand,
+    UvToolRemoveCommand,
+    UvToolUpdateShellCommand,
+    UvToolUpgradeAllCommand,
+    UvToolUpgradeCommand,
+    UvVenvCreateCommand,
+    UvVenvRemoveCommand,
+    _version_requested_matches,
 )
 
 
@@ -1385,13 +1401,17 @@ class SimulatedHost(Host):
     # mutated-dict-store precedent). Keys are verbatim -- uv prints the
     # canonical name of each distribution and neither ``Packages.parse`` nor
     # the seam normalizes, so simulated state must use the printed spelling
-    # too; one store models one environment, whatever uv resolves it to.
+    # too; one store models one environment, whether uv resolved it itself or
+    # ``uv.packages(venv=...)`` named it -- the ``pip_packages`` precedent, which
+    # likewise ignores the ``pip=`` executable. A venv-scoped store (the
+    # ``npm_packages`` per-scope mapping) would be the alternative; the seam
+    # stays flat, so a simulated host cannot hold two environments that differ.
     # Named with the uv_ prefix (like ``pip_packages``) so the uv-side state
     # never mixes with the pip-side store. Defaults to {} -- a simulated
     # machine with no uv environment, or an empty one, so the fact answers
-    # ``[]``. A read-only seam: pyinfra's ``uv.packages`` operation is not
-    # ported yet, so no ``execute_command`` mutator maintains it and a test
-    # seeds it directly.
+    # ``[]``. ``install_uv_packages``/``remove_uv_packages``/
+    # ``apply_uv_requirements`` (the simulated ``uv pip`` operations) mutate
+    # it through ``execute_command``, and a test may seed it directly too.
     uv_packages: dict[str, str] = field(default_factory=dict)
     # The resolved uv installation -- the state store ``Info`` reads, kept as
     # one mapping of field name -> resolved string (``version`` ->
@@ -1401,9 +1421,10 @@ class SimulatedHost(Host):
     # unseeded field answers ``None`` exactly like a line the chained shell
     # never printed -- an empty store is the all-None record. Named with the
     # uv_ prefix (like ``uv_packages``) so the uv-side state never mixes with
-    # the pip-side stores. A read-only seam: no operation writes uv's own
-    # install layout, so no ``execute_command`` mutator maintains it and a test
-    # seeds it directly.
+    # the pip-side stores. The ``update_uv_shell`` mutator (the simulated
+    # ``uv tool update-shell``) reads ``tool_bin_dir`` out of it to extend
+    # ``os_env``'s PATH, but no operation installs uv itself, so a test seeds
+    # the install layout directly.
     uv_install: dict[str, str] = field(default_factory=dict)
     # Installed ``uv tool install`` tools -- the state store ``Tools`` reads,
     # keyed by the printed tool name -> its ``ToolInfo`` record (version plus
@@ -1413,8 +1434,9 @@ class SimulatedHost(Host):
     # record may carry ``version=None`` (a local or git source) or an empty
     # ``entrypoints`` list; ``Tools.process`` rebuilds each entry so callers
     # never mutate simulated state. Defaults to {} -- no tools installed, so the
-    # fact answers ``[]``. A read-only seam: pyinfra's tool operations are not
-    # ported yet, so no mutator maintains it and a test seeds it directly.
+    # fact answers ``[]``. ``install_uv_tool``/``remove_uv_tool`` (the simulated
+    # ``uv tool`` operations) mutate it through ``execute_command``, and a test
+    # may seed it directly too.
     uv_tools: dict[str, ToolInfo] = field(default_factory=dict)
     # Interpreters present on the host -- the state store ``Pythons`` reads,
     # keyed by the interpreter path -> its ``PythonInfo`` record. The path is
@@ -1424,10 +1446,19 @@ class SimulatedHost(Host):
     # uv-downloaded interpreter under ``uv python dir`` from a system one.
     # ``Pythons.process`` copies every record and fills the fields an
     # incompletely seeded one omits. Defaults to {} -- a host with no
-    # interpreter uv knows about, so the fact answers ``[]``. A read-only seam:
-    # no ``uv python install`` operation is ported yet, so a test seeds it
-    # directly.
+    # interpreter uv knows about, so the fact answers ``[]``.
+    # ``install_uv_python``/``remove_uv_python`` (the simulated ``uv python
+    # install``/``uv python uninstall`` operations) mutate it through
+    # ``execute_command``, and a test may seed it directly too.
     uv_pythons: dict[str, PythonInfo] = field(default_factory=dict)
+    # The paths holding a ``uv venv`` virtualenv -- the state store the
+    # uv-local ``_VenvExists`` probe reads, backing ``uv.venv`` idempotence.
+    # Membership is the answer; an absent path reads as False (no venv, the
+    # normal first run), the counterpart of pip's ``virtualenv_python_versions``
+    # store. Named with the uv_ prefix so it never mixes with the pip-side
+    # virtualenv store. ``create_uv_venv``/``remove_uv_venv`` (the simulated
+    # ``uv venv``) add/discard the path so a repeat ``uv.venv`` is a no-op.
+    uv_venvs: set[str] = field(default_factory=set)
     # Interpreter command -> the version it reports (the ``PythonVersionInfo``
     # entry ``server.PythonVersion`` returns), backing that fact: the key is
     # exactly how the caller names the interpreter (``python3``,
@@ -3091,6 +3122,32 @@ class SimulatedHost(Host):
                 self.create_virtualenv(cmd)
             case PipVenvRemoveCommand(path=path):
                 self.remove_virtualenv(path)
+            case UvPipInstallCommand(packages=packages):
+                self.install_uv_packages(packages)
+            case UvPipUpgradeCommand():
+                pass  # the simulation tracks no newer versions to upgrade to
+            case UvPipRemoveCommand(packages=packages):
+                self.remove_uv_packages(packages)
+            case UvPipRequirementsCommand(path=path, present=present):
+                self.apply_uv_requirements(path, present)
+            case UvPythonInstallCommand(version=version):
+                self.install_uv_python(version)
+            case UvPythonRemoveCommand(version=version):
+                self.remove_uv_python(version)
+            case UvToolInstallCommand(tool=tool):
+                self.install_uv_tool(tool)
+            case UvToolUpgradeCommand():
+                pass  # the simulation tracks no newer versions to upgrade to
+            case UvToolRemoveCommand(name=name):
+                self.remove_uv_tool(name)
+            case UvToolUpgradeAllCommand():
+                pass  # the simulation tracks no newer versions to upgrade to
+            case UvToolUpdateShellCommand():
+                self.update_uv_shell()
+            case UvVenvCreateCommand(path=path):
+                self.create_uv_venv(path)
+            case UvVenvRemoveCommand(path=path):
+                self.remove_uv_venv(path)
             case NpmInstallCommand(
                 packages=packages, directory=directory, prefix=prefix
             ):
@@ -8084,6 +8141,175 @@ class SimulatedHost(Host):
         way).
         """
         self.virtualenv_python_versions.pop(path, None)
+
+    def install_uv_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``uv pip install``: mark the packages installed.
+
+        ``uv.packages``' install mutation, the counterpart of
+        ``install_pip_packages``. A ``<pkg>==<version>`` pin (split with the
+        shared ``_split_pin``) records exactly that version in ``uv_packages``
+        (the printed-name -> version store ``Packages`` reads), OVERWRITING any
+        version already there -- uv replaces the distribution on a re-pin -- so
+        a repeat pinned install is a no-op; an unpinned name carries no index
+        metadata to resolve a version from, so a new name gets the empty-string
+        placeholder (pip's/apk's precedent) and an installed name keeps its
+        recorded version. Unlike pip, names are stored verbatim (uv prints the
+        canonical name and neither the fact nor ``uv.packages`` normalizes); the
+        operation compares case-insensitively, so a request in any case meets
+        the stored spelling.
+        """
+        for package in packages:
+            name, version = _split_pin(package)
+            if version is None:
+                self.uv_packages.setdefault(name, "")
+            else:
+                self.uv_packages[name] = version
+
+    def remove_uv_packages(self, packages: tuple[str, ...]) -> None:
+        """Record a simulated ``uv pip uninstall``: drop the packages.
+
+        The ``present=False`` direction of ``uv.packages``. Each name (which
+        the operation feeds bare) pops its entry from ``uv_packages`` case-
+        insensitively -- the shared rule with ``uv.packages``, which lowercases
+        both sides -- so ``Packages`` no longer reports it. An absent name is
+        tolerated (the real command would exit non-zero, but the operation's
+        fact check never yields that removal).
+        """
+        wanted = {package.lower() for package in packages}
+        for key in [key for key in self.uv_packages if key.lower() in wanted]:
+            self.uv_packages.pop(key, None)
+
+    def apply_uv_requirements(self, path: str, present: bool) -> None:
+        """Record a simulated ``uv pip install -r`` / ``uv pip uninstall -r``.
+
+        ``uv.packages``' requirements mutation, the counterpart of
+        ``apply_pip_requirements``. The file's text is read from the shared
+        ``remote_files`` store, so a ``files.put`` earlier in the deploy is
+        visible here; a path the simulation does not hold applies nothing.
+        Each line is one requirement: blank lines and ``#`` comments are
+        skipped; a pinned line records exactly that version and a bare name
+        the empty-string placeholder, while ``present=False`` drops the line's
+        name.
+        """
+        data = self.remote_files.get(path)
+        if data is None:
+            return
+        for raw in data.decode("utf-8").splitlines():
+            line = raw.split("#", 1)[0].strip()
+            if not line:
+                continue
+            if present:
+                self.install_uv_packages((line,))
+            else:
+                self.remove_uv_packages((_split_pin(line)[0],))
+
+    def install_uv_python(self, version: str) -> None:
+        """Record a simulated ``uv python install``: add a managed interpreter.
+
+        ``uv.pythons``' install mutation. uv downloads a managed build under
+        ``uv python dir``, so the entry lands in ``uv_pythons`` keyed by a
+        deterministic path under the seeded ``python_dir`` (a fixed stand-in
+        when unseeded) and flagged ``managed=True`` -- what the ``Pythons``
+        fact's ``managed`` split reports and what ``uv.pythons`` counts as
+        installed by default. The requested token is recorded verbatim as the
+        version; the operation matches a request against installed versions
+        dotted-component-wise (``_version_requested_matches``), so re-material
+        ing the same request sees it satisfied and converges.
+        """
+        base = self.uv_install.get("python_dir") or "~/.local/share/uv/python"
+        self.uv_pythons[f"{base}/cpython-{version}/bin/python3"] = {
+            "key": f"cpython-{version}",
+            "implementation": "cpython",
+            "version": version,
+            "managed": True,
+        }
+
+    def remove_uv_python(self, version: str) -> None:
+        """Record a simulated ``uv python uninstall``: drop matching interpreters.
+
+        The ``present=False`` direction of ``uv.pythons``. Every ``uv_pythons``
+        entry whose version the request satisfies -- judged with the
+        operation's own ``_version_requested_matches`` so a partial ``"3.13"``
+        drops every ``3.13.*`` -- leaves the store, mirroring uv uninstalling
+        every interpreter matching the request. The simulation only ever
+        records managed installs here, but uv would also drop a matching system
+        interpreter, so every entry is considered. No matching entry is
+        tolerated (the operation's fact check never yields the removal then).
+        """
+        for path, record in list(self.uv_pythons.items()):
+            have = record.get("version", "")
+            if have and _version_requested_matches(version, have):
+                self.uv_pythons.pop(path, None)
+
+    def install_uv_tool(self, tool: str) -> None:
+        """Record a simulated ``uv tool install``: mark the tool installed.
+
+        ``uv.tools``' install mutation. The token is split with the shared
+        ``_split_pin`` -- a ``<pkg>==<version>`` pin records exactly that
+        version, a bare (or otherwise-specifier) token the ``None`` version a
+        versionless ``tool list`` header would report -- keyed verbatim in
+        ``uv_tools`` (uv prints the distribution name and neither the fact nor
+        the operation normalizes). The entrypoints a fresh tool links are not
+        modeled (the simulation tracks presence, not the exposed commands), nor
+        is the ``--python``/``--with`` environment the descriptor asked for --
+        ``uv tool list`` reports neither, so the operation keys idempotence on
+        name and version alone and the mutator binds the same.
+        """
+        name, version = _split_pin(tool)
+        self.uv_tools[name] = {"name": name, "version": version, "entrypoints": []}
+
+    def remove_uv_tool(self, name: str) -> None:
+        """Record a simulated ``uv tool uninstall``: drop the tool.
+
+        The ``present=False`` direction of ``uv.tools``. The bare name pops its
+        entry from ``uv_tools`` case-insensitively -- the shared rule with
+        ``uv.tools``, which lowercases both sides -- so ``Tools`` no longer
+        reports it. An absent name is tolerated (the operation's fact check
+        never yields that removal).
+        """
+        lowered = name.lower()
+        for key in [key for key in self.uv_tools if key.lower() == lowered]:
+            self.uv_tools.pop(key, None)
+
+    def update_uv_shell(self) -> None:
+        """Record a simulated ``uv tool update-shell``: put the bin dir on PATH.
+
+        ``uv.tools_update_shell``'s mutation. uv appends its own tool
+        executable directory -- the ``Info`` fact's ``tool_bin_dir`` read out
+        of the seeded ``uv_install`` store -- to the login environment's
+        ``PATH`` (``os_env``), which the operation colon-splits and tests for
+        membership. An unknown ``tool_bin_dir`` (uv not installed, the store
+        unseeded) changes nothing; an already-present directory is not
+        duplicated, so re-materializing ``uv.tools_update_shell`` reads the
+        directory on the PATH and converges to a no-op.
+        """
+        tool_bin_dir = self.uv_install.get("tool_bin_dir")
+        if not tool_bin_dir:
+            return
+        current = self.os_env.get("PATH", "")
+        parts = current.split(":") if current else []
+        if tool_bin_dir not in parts:
+            parts.append(tool_bin_dir)
+        self.os_env["PATH"] = ":".join(parts)
+
+    def create_uv_venv(self, path: str) -> None:
+        """Record a simulated ``uv venv``: mark the path as holding a venv.
+
+        ``uv.venv``'s create mutation, so the uv-local ``_VenvExists`` probe
+        (which reads the ``uv_venvs`` set) reports the venv present and a
+        repeat ``uv.venv`` is a no-op. The simulation models only that the
+        venv exists, not its interpreter or contents.
+        """
+        self.uv_venvs.add(path)
+
+    def remove_uv_venv(self, path: str) -> None:
+        """Record a simulated ``rm -rf`` of a uv venv tree.
+
+        The ``present=False`` direction of ``uv.venv``. The path leaves
+        ``uv_venvs`` so ``_VenvExists`` reports no venv there afterwards. An
+        absent path is tolerated (the real ``rm -rf`` exits 0 either way).
+        """
+        self.uv_venvs.discard(path)
 
     def install_npm_packages(
         self, packages: tuple[str, ...], directory: str | None, prefix: str | None

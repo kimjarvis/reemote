@@ -91,6 +91,8 @@ sub-directory. Pick a page from the navigation, or start from this table:
     Ubuntu's `noble` apt suite ships no `uv`, and the module deliberately
     drops pyinfra's `requires_command` gating, so a host without uv exits 127
     and raises `CommandNotFoundError` rather than answering an empty listing),
+    except `uv_packages_venv.py`, whose inline inventory holds a single local
+    container and needs no family guard at all,
     and the `server_op_locale.py` example on the
     [server page](examples/modules/server.md) likewise on `is_ubuntu`
     because `/etc/locale.gen` + `locale-gen` are Debian-family only. The
@@ -133,7 +135,13 @@ sub-directory. Pick a page from the navigation, or start from this table:
     the shared `inventory.json`, and starts a real local container, so it
     needs a `docker` (or `podman`) CLI
     with a reachable daemon on the control machine, and each run commits a
-    new image (the dry run included).
+    new image (the dry run included). The
+    [`uv_packages_venv`](examples/modules/uv.md#managing-one-virtualenv-inside-a-container)
+    script works the same way for its `uv.packages(venv=...)` demo — one
+    inline `ubuntu:24.04` container entry, no SSH host, an image committed per
+    run — but drives it through `run_waves` and skips the dry pass, because
+    planning the scoped `Packages` read against the pristine image would fail
+    on the venv that no earlier step has created yet.
 
 Each real-host script also owns its *error reporting*, because the library is
 CLI-free and only raises: `main` catches the typed errors a run can produce —

@@ -6,9 +6,10 @@
 Re-exports everything from ``uv.py`` so the facts -- ``uv.Info`` (returning its
 ``uv.InstallInfo`` record), ``uv.Packages`` (with its ``uv.PackageInfo`` entry
 type), ``uv.Pythons`` (with ``uv.PythonInfo``) and ``uv.Tools`` (with
-``uv.ToolInfo``) -- are reachable through the package name alone. pyinfra's
-``uv.packages`` operation is not ported yet, so the namespace currently ships
-the four facts alone.
+``uv.ToolInfo``) -- and the six pyinfra operations -- ``uv.packages``,
+``uv.pythons``, ``uv.tools``, ``uv.tools_upgrade_all``, ``uv.tools_update_shell``
+and ``uv.venv`` -- plus their command descriptors are reachable through the
+package name alone.
 """
 
 from . import uv
@@ -21,6 +22,25 @@ from .uv import (
     Pythons,
     ToolInfo,
     Tools,
+    UvPipInstallCommand,
+    UvPipRemoveCommand,
+    UvPipRequirementsCommand,
+    UvPipUpgradeCommand,
+    UvPythonInstallCommand,
+    UvPythonRemoveCommand,
+    UvToolInstallCommand,
+    UvToolRemoveCommand,
+    UvToolUpdateShellCommand,
+    UvToolUpgradeAllCommand,
+    UvToolUpgradeCommand,
+    UvVenvCreateCommand,
+    UvVenvRemoveCommand,
+    packages,
+    pythons,
+    tools,
+    tools_update_shell,
+    tools_upgrade_all,
+    venv,
 )
 
 __all__ = [
@@ -32,5 +52,24 @@ __all__ = [
     "Pythons",
     "ToolInfo",
     "Tools",
+    "UvPipInstallCommand",
+    "UvPipRemoveCommand",
+    "UvPipRequirementsCommand",
+    "UvPipUpgradeCommand",
+    "UvPythonInstallCommand",
+    "UvPythonRemoveCommand",
+    "UvToolInstallCommand",
+    "UvToolRemoveCommand",
+    "UvToolUpdateShellCommand",
+    "UvToolUpgradeAllCommand",
+    "UvToolUpgradeCommand",
+    "UvVenvCreateCommand",
+    "UvVenvRemoveCommand",
+    "packages",
+    "pythons",
+    "tools",
+    "tools_update_shell",
+    "tools_upgrade_all",
     "uv",
+    "venv",
 ]

@@ -39,7 +39,13 @@ verbatim -- uv prints the canonical name, so unlike the pip fact there is no
 PEP 503 normalization -- and the entries come out sorted by name, unique per
 name. Which environment is listed -- an active or discovered ``.venv``, or the
 interpreter uv falls back to -- is uv's own resolution rule, exactly as
-pyinfra leaves it to the tool; the fact takes no arguments at all.
+pyinfra leaves it to the tool when no environment is named: ``process`` takes an
+optional ``venv`` (a virtual environment's root directory, an interpreter path or
+a version request) and issues ``uv pip list --format json --python <venv>``
+instead, so ``gather_fact(hosts, Packages, "/srv/app/.venv")`` reads one named
+environment. This script gathers the unscoped listing, since a scoped read of a
+venv that does not exist yet exits 2 on the target; the sibling
+``uv_packages_venv.py`` creates one and reads it through ``venv=``.
 
 pyinfra's ``requires_command = "uv"`` gate is deliberately dropped, and the
 fact command is bare: on a host without uv it exits 127 and the gather raises
