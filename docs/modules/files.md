@@ -83,6 +83,15 @@ symlink, socket, ...) reads as `False` — `Directory`, `Link` and `Socket`
 are the directory-, link- and socket-accepting siblings, and only `Link`'s
 dict carries the `link_target` key. Like
 the baseline, a leading `~/` stays unquoted so the remote shell expands it. Where
+the baseline reads once, reemote reads twice: a path that comes back empty is
+re-probed elevated with `sudo`, because `test -e` cannot tell "absent" from
+"hidden by a parent directory the login user may not search" — a `02770`
+`redis:redis` `/etc/redis` refuses the lookup and the shell reports the `EACCES`
+as "no such file" (issue #70). A separate unprivileged compound walks the
+path's directories outward to the nearest existing one and asks its `-x` bit, so
+only a genuinely invisible path costs the elevation and only a negative
+*elevated* answer reads as absent. `Directory`, `Link` and `Socket` inherit the
+same two-tier read. Where
 `FileExists` is the cheap `test -e` probe for existence-only checks, `File`
 is the richer stat-level read — the one `files.file` consumes to compare the
 mode and owner it is asked for, and the right fact for auditing ownership,
@@ -337,7 +346,10 @@ stays intact. The text read-back is two-tier: `FileContents` cats unprivileged
 first and, when the login user cannot read the file (a `0640` service-account
 config), re-reads it elevated with `sudo` — so content idempotence holds for
 restrictive modes too, and the re-read's run-as user and any password come
-from the inventory `privilege` data.
+from the inventory `privilege` data. The absent arm is two-tier too (issue #70):
+a file inside a directory the login user may not search prints nothing at all,
+so the traversal gate turns that absence into one elevated re-probe before the
+operation plans a write.
 There is no `present=False` branch — `files.file(present=False)` owns removal.
 Installing under `/etc` needs root, so flag the request `sudo=True`; the
 transfer stays unprivileged regardless.

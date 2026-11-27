@@ -5246,6 +5246,55 @@ class SimulatedHost(Host):
         # state ``SystemdNeedDaemonReload`` gates the idempotent reload on.
         self.mark_systemd_unit_reload_pending(dest)
 
+    def _login_identity(self) -> tuple[str, set[str]]:
+        """The login user's name and the groups its ``os_users`` row lists.
+
+        The name is the inventory's ``connection.username``/``user`` (absent
+        means root); the groups are the primary ``group`` plus the
+        supplementary ``groups`` of the ``os_users`` row, which together are
+        what the POSIX group bit is checked against. An unseeded user has no
+        groups at all, so only the owner and other bits can ever grant it
+        access -- the conservative reading of a host whose accounts were never
+        described.
+        """
+        login = (
+            self.connection.get("username") or self.connection.get("user") or "root"
+        )
+        info = self.os_users.get(login, {})
+        groups = set(info.get("groups") or [])
+        if info.get("group"):
+            groups.add(info["group"])
+        return login, groups
+
+    def _bits_allow(self, stats: Any, bits: tuple[int, int, int]) -> bool:
+        """Whether one seeded metadata row grants the login user ``bits``.
+
+        ``bits`` is the ``(owner, group, other)`` triple for the permission in
+        question (read, or the directory search bit). The mode is stored as the
+        decimal int of the octal digits, so ``640`` means ``0o640``; it is
+        decoded with ``int(str(mode), 8)`` exactly as the facts' parsers encode
+        it. Root bypasses the check. A path with no row -- or a non-dict row
+        (``False``: exists but the wrong type) or a non-int mode (a symbolic
+        request the simulation does not fold) -- allows: the legacy seams store
+        content and metadata without a usable mode, and those tests model an
+        accessible path rather than a hidden one.
+        """
+        if not isinstance(stats, dict):
+            return True
+        mode = stats.get("mode")
+        if not isinstance(mode, int):
+            return True
+        login, groups = self._login_identity()
+        if login == "root":
+            return True
+        perm = int(str(mode), 8)
+        owner, group, other = bits
+        if login == stats.get("user"):
+            return bool(perm & owner)
+        if stats.get("group") in groups:
+            return bool(perm & group)
+        return bool(perm & other)
+
     def login_can_read(self, path: str) -> bool:
         """Whether the login user can read the file at ``path`` (POSIX bits).
 
@@ -5253,37 +5302,53 @@ class SimulatedHost(Host):
         unprivileged seam read consults this before decoding, so a file the
         login user cannot read returns the same unreadable sentinel the real
         transport's failed ``cat`` produces and the elevated fallback runs
-        offline too. The login name is the inventory's
-        ``connection.username``/``user`` (absent means root, which bypasses
-        the check); the mode comes from the ``file_stats`` row, stored as
-        the decimal int of the octal digits (640 means 0o640). Owner, group
-        (the primary ``group`` plus supplementary ``groups`` of the
-        ``os_users`` row) and other read bits are checked in POSIX order. A
-        path with no row -- or a non-dict row/non-int mode -- reads as
-        readable: the legacy seam stored content without metadata, and those
-        tests model a login-readable file.
+        offline too. The name/group/mode lookup is ``_login_identity`` and
+        ``_bits_allow``; the checked bits are the three read bits of the
+        ``file_stats`` row.
         """
-        stats = self.file_stats.get(path)
-        if not isinstance(stats, dict):
-            return True
-        mode = stats.get("mode")
-        if not isinstance(mode, int):
-            return True
-        login = (
-            self.connection.get("username") or self.connection.get("user") or "root"
-        )
-        if login == "root":
-            return True
-        perm = int(str(mode), 8)
-        if login == stats.get("user"):
-            return bool(perm & 0o400)
-        info = self.os_users.get(login, {})
-        groups = set(info.get("groups") or [])
-        if info.get("group"):
-            groups.add(info["group"])
-        if stats.get("group") in groups:
-            return bool(perm & 0o040)
-        return bool(perm & 0o004)
+        return self._bits_allow(self.file_stats.get(path), (0o400, 0o040, 0o004))
+
+    def login_can_traverse(self, path: str) -> bool:
+        """Whether the login user may search (``x``) the directory at ``path``.
+
+        The single permission question behind ``login_path_visible``: on a
+        directory the execute bit *is* the search permission, and without it no
+        name inside it resolves at all -- ``test -e``, ``cat`` and ``stat``
+        report the ``EACCES`` as "no such file". The row comes from
+        ``directory_stats`` (the seam ``Directory`` reads and ``make_directory``
+        writes), falling back to ``file_stats`` for a path only the file store
+        describes; an unseeded directory allows, permissive like every other
+        seam lookup.
+        """
+        stats = self.directory_stats.get(path)
+        if stats is None:
+            stats = self.file_stats.get(path)
+        return self._bits_allow(stats, (0o100, 0o010, 0o001))
+
+    def login_path_visible(self, path: str) -> bool:
+        """Whether the login user's own probe can see an entry at ``path``.
+
+        The traversal model (issue #70) the facts' elevated re-probe consults
+        before trusting an absent answer. The directories above ``path`` are
+        walked outward to the nearest seeded one and that one decides: reaching
+        *it* needed only its own parent's search bit, so a traversable nearest
+        ancestor makes everything below it nameable and a deeper miss is genuine
+        absence rather than invisibility. The walk stops at the filesystem root
+        and at the two non-slash anchors a path can carry (``~``, ``.``). A path
+        with no seeded ancestor directory is visible: most seams store content
+        and metadata without describing the directories around them, and those
+        tests model a reachable path.
+        """
+        directory = posixpath.dirname(path)
+        seen: set[str] = set()
+        while directory and directory not in seen:
+            seen.add(directory)
+            if directory in self.directory_stats or directory in self.file_stats:
+                return self.login_can_traverse(directory)
+            if directory in ("/", "~", "."):
+                break
+            directory = posixpath.dirname(directory)
+        return True
 
     def move_path(self, src: str, dest: str) -> None:
         """Record a simulated ``mv``: relocate ``src`` to ``dest``.

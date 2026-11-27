@@ -72,6 +72,101 @@ from ...hosts import Host
 # --- Facts -------------------------------------------------------------------
 
 
+class _HiddenPath:
+    """Sentinel type: absence an unprivileged probe has no right to report."""
+
+
+#: The single sentinel instance the two-tier facts' first-tier reads return when
+#: a path came back absent but the absence was never observable: a directory
+#: above the path denies the login user traversal, so ``test -e``, ``cat`` and
+#: ``stat`` fail with ``EACCES`` and the shell squashes that into a plain "does
+#: not exist". ``process`` turns it into one elevated re-probe (issue #70). A
+#: private object, so no parsed value can ever compare equal to it.
+_HIDDEN = _HiddenPath()
+
+#: Marker the traversal probe prints when the nearest existing directory above a
+#: path denies the login user traversal, which is what makes a probe of the path
+#: itself meaningless. Printed on stdout only; the probe always exits zero.
+_PATH_HIDDEN = "#reemote-path-hidden"
+
+
+def _ancestor_dirs(path: str) -> list[str]:
+    """The path's directories, nearest first: ``/a/b/c`` -> ``["/a/b", "/a", "/"]``.
+
+    ``posixpath``, not ``os.path``: the remote is always *nix while the
+    controller might be Windows (the operations' own reasoning). The walk stops
+    at the filesystem root and at the two non-slash anchors a caller-supplied
+    path can carry (``~``, ``.``), so a bare relative name contributes no
+    directory to ask about at all.
+    """
+    dirs: list[str] = []
+    directory = posixpath.dirname(path)
+    while directory and directory not in dirs:
+        dirs.append(directory)
+        if directory in ("/", "~", "."):
+            break
+        directory = posixpath.dirname(directory)
+    return dirs
+
+
+def _quote_ancestor(directory: str) -> str:
+    """Quote one ancestor for the probe, leaving a leading ``~`` for the shell.
+
+    The ``File`` family's tilde rule: ``~`` and a ``~/`` prefix stay unquoted so
+    the shell expands them into the login user's home, while a later segment is
+    quoted normally.
+    """
+    if directory == "~":
+        return "~"
+    if directory.startswith("~/"):
+        return "~/" + shlex.quote(directory[2:])
+    return shlex.quote(directory)
+
+
+def _hidden_parent_command(path: str) -> str:
+    """Shell printing ``_PATH_HIDDEN`` when a directory above ``path`` hides it.
+
+    The ancestors are chained ``if``/``elif``, so the search stops at the first
+    directory the login user can ``test -e``: reaching *it* needed only its own
+    parent's traversal, and a traversable one makes everything below it
+    nameable, so a deeper miss is genuine rather than hidden. Only that nearest
+    existing directory's ``-x`` is consulted -- on a directory the execute bit
+    *is* the search permission. The probe is never elevated (the question is
+    what the login user can see), so it needs no ``sh -c`` wrapper, and each
+    branch ends in a successful ``[ -x ]``/``printf``, so it exits zero.
+    """
+    dirs = _ancestor_dirs(path)
+    if not dirs:
+        # Nothing above the path to blame: a bare relative name is exactly as
+        # visible as the working directory allows, which the probe cannot judge.
+        return "true"
+    branches: list[str] = []
+    for index, directory in enumerate(dirs):
+        quoted = _quote_ancestor(directory)
+        opener = "if" if index == 0 else "elif"
+        branches.append(
+            f'{opener} [ -e {quoted} ]; then [ -x {quoted} ] '
+            f'|| printf "{_PATH_HIDDEN}\\n";'
+        )
+    return " ".join(branches) + " fi"
+
+
+async def _path_hidden_from_login(host: Host, path: str) -> bool:
+    """Whether the login user's probe cannot see an entry at ``path`` at all.
+
+    The gate in front of every elevated re-probe: an absent answer is only
+    trusted when the login user was actually in a position to observe it.
+    """
+    visible = getattr(host, "login_path_visible", None)
+    if visible is not None:
+        # SimulatedHost seam: the directory-mode model answers the question
+        # offline (seam-first, so the simulated shell never sees a probe).
+        return not visible(path)
+    # Real transport: one unprivileged compound per absent answer.
+    stdout = await host.run_shell(_hidden_parent_command(path))
+    return _PATH_HIDDEN in stdout.splitlines()
+
+
 class FileLink:
     """The target of a symlink, or None if the link does not exist.
 
@@ -114,11 +209,20 @@ class FileLink:
 class FileExists:
     """Whether a regular file exists at the path.
 
+    A path the login user cannot see -- because a directory above it denies
+    traversal -- is re-probed elevated with ``sudo``, so a hidden file is never
+    reported as missing; the run-as user and any password come from the
+    inventory ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
     test -e <path> && echo yes
+    if [ -e <dir> ]; then [ -x <dir> ] || printf "#reemote-path-hidden\\n"; elif [ -e <parent> ]; then [ -x <parent> ] || printf "#reemote-path-hidden\\n"; fi
     ```
+
+    The second command runs only when the first stayed silent, and walks the
+    path's directories outward to the nearest existing one.
 
     **Returns:**
 
@@ -129,24 +233,66 @@ class FileExists:
     **Raises:**
 
     ```python
-    HostConnectionError
+    HostConnectionError, PrivilegeError
     ```
 
     Examples:
         Examples can be found in ``examples/modules/files/files_file.py``.
     """
 
+    # Mirrors the baseline's ``files.FileExists``: the bare ``test -e`` probe,
+    # whose non-zero exit ``run_shell`` leaves unraised and whose empty stdout
+    # reads as False. Like the ``File`` family (and for the same reason, issue
+    # #70), a silent probe is re-asked elevated when a directory above the path
+    # denies the login user traversal -- ``test -e`` reports that ``EACCES`` as
+    # "no such file", which would otherwise re-fire every gated create. The
+    # probe is never elevated, so it needs no ``sh -c`` wrapper; the elevated
+    # ``test -e`` does, and masks its own exit status (``|| true``, the hash
+    # family's idiom) because ``run_shell_privileged`` raises on a non-zero.
+
+    @classmethod
+    def command(cls, path: str) -> str:
+        """Shell printing ``yes`` only if ``path`` is visible to the caller."""
+        return f"test -e {shlex.quote(path)} && echo yes"
+
     @classmethod
     async def process(cls, host: Host, path: str) -> bool:
+        answer = await cls._read(host, path, privileged=False)
+        if answer is _HIDDEN:
+            # The probe was refused, not answered: ask again as root, whose
+            # traversal of any directory is unrestricted (issue #70).
+            answer = await cls._read(host, path, privileged=True)
+        return answer is True
+
+    @classmethod
+    async def _read(
+        cls, host: Host, path: str, *, privileged: bool
+    ) -> bool | _HiddenPath:
         existing = getattr(host, "existing_files", None)
         if existing is not None:
-            # SimulatedHost seam: read the in-memory state directly.
-            return path in existing
+            # SimulatedHost seam: read the in-memory state directly. A path no
+            # store marks is absent for root too, so only a present row needs
+            # the traversal model at all.
+            if path not in existing:
+                return False
+            if not privileged and await _path_hidden_from_login(host, path):
+                return _HIDDEN
+            return True
         # Real transport: `test -e` over asyncssh. A missing file exits
         # non-zero with empty stdout (check is off in run_shell), which maps
         # to False just like the simulated absent-file case.
-        stdout = await host.run_shell(f"test -e {shlex.quote(path)} && echo yes")
-        return stdout.strip() == "yes"
+        command = cls.command(path)
+        if privileged:
+            stdout = await host.run_shell_privileged(
+                f"sh -c {shlex.quote(f'{command} || true')}", sudo=True
+            )
+        else:
+            stdout = await host.run_shell(command)
+        if stdout.strip() == "yes":
+            return True
+        if not privileged and await _path_hidden_from_login(host, path):
+            return _HIDDEN
+        return False
 
 
 def read_source_bytes(src: IO[Any]) -> bytes:
@@ -428,13 +574,20 @@ class FileContents:
     A file the login user cannot read (eg a ``0640`` service-account config)
     is re-read elevated with ``sudo``, so restrictive modes keep content
     idempotence; the run-as user and any password come from the inventory
-    ``privilege`` data, never from an operation.
+    ``privilege`` data, never from an operation. A file the login user cannot
+    even *see* -- because a directory above it denies traversal -- is
+    re-probed the same way, so an ``EACCES`` that the shell reports as "no such
+    file" never reads as absence.
 
     **Commands:**
 
     ```bash
-    sh -c 'test -e <path> && { printf "#reemote-filecontents\\n"; cat -- <path> || printf "#reemote-filecontents-unreadable\\n"; }'
+    sh -c 'test -e <path> && { printf "#reemote-filecontents\\n"; cat -- <path> || printf "#reemote-filecontents-unreadable\\n"; } || true'
+    if [ -e <dir> ]; then [ -x <dir> ] || printf "#reemote-path-hidden\\n"; elif [ -e <parent> ]; then [ -x <parent> ] || printf "#reemote-path-hidden\\n"; fi
     ```
+
+    The second command runs only when the first reported absence, and walks the
+    path's directories outward to the nearest existing one.
 
     **Returns:**
 
@@ -468,6 +621,16 @@ class FileContents:
     # operation's signature. A readable file whose content is exactly the
     # ``UNREADABLE`` marker line also triggers the elevated re-read, which
     # returns the same content -- a spurious elevation, never a wrong answer.
+    #
+    # The absent arm gets the same treatment (issue #70): a file inside a
+    # ``0770``/``02770`` service directory is invisible to the unprivileged
+    # ``test -e``, which reports ``EACCES`` as "no such file", so an absent
+    # answer is only trusted behind the traversal gate. Both tiers end in
+    # ``|| true`` so the elevated probe of a genuinely missing file exits zero
+    # instead of raising ``CommandError`` (the hash family's idiom), and the
+    # marker is detected on whichever tier printed it -- a run-as user who is
+    # not root can be refused the elevated read too, and the fact's contract is
+    # then content-or-None.
 
     #: Marker printed before the ``cat``'d content, only when ``test -e``
     #: passes, so ``process`` can tell an existing (possibly empty) file from
@@ -487,7 +650,10 @@ class FileContents:
         (not even the marker), while an existing one -- empty or not -- always
         leads with the marker line. A ``cat`` that fails (the login user
         cannot read the file) prints ``UNREADABLE`` instead of content, so an
-        unreadable file stays distinguishable from an empty one.
+        unreadable file stays distinguishable from an empty one. The trailing
+        ``|| true`` keeps the whole compound exit-zero, so the elevated tier's
+        ``run_shell_privileged`` reports a missing file as absence rather than
+        raising ``CommandError`` on the guard's failing ``test -e``.
 
         The read-back is carried by an explicit ``sh -c`` composite (the
         firewalld fact idiom). ``process`` re-reads an unreadable file through
@@ -503,7 +669,7 @@ class FileContents:
         quoted = shlex.quote(path)
         inner = (
             f'test -e {quoted} && {{ printf "{cls.MARKER}\\n"; '
-            f'cat -- {quoted} || printf "{cls.UNREADABLE}\\n"; }}'
+            f'cat -- {quoted} || printf "{cls.UNREADABLE}\\n"; }} || true'
         )
         return f"sh -c {shlex.quote(inner)}"
 
@@ -515,6 +681,18 @@ class FileContents:
             # run-as user and any password come from the inventory privilege
             # data (run_shell_privileged), never from an operation.
             content = await cls._read(host, path, privileged=True)
+        elif content is None and await _path_hidden_from_login(host, path):
+            # Absent, but never observable as the login user: a directory above
+            # the path denies traversal, so the probe's ``test -e`` failed with
+            # ``EACCES`` and the shell reported that as "no such file". Only a
+            # negative *elevated* read is trusted as absence (issue #70).
+            content = await cls._read(host, path, privileged=True)
+        if content is _UNREADABLE:
+            # The elevated tier can print the marker too -- a run-as user who is
+            # not root is refused exactly what the login user was. The fact
+            # returns content or None, so an unreadable file reports as absent
+            # rather than leaking the sentinel to callers.
+            content = None
         return content
 
     @classmethod
@@ -528,6 +706,13 @@ class FileContents:
             # backs files.put/files.get and RemoteFileSha1, so a simulated
             # upload -- which stores its bytes here -- reads back through this
             # fact, and an ``edit`` sees the content a prior ``edit`` wrote.
+            if not privileged and await _path_hidden_from_login(host, path):
+                # The seam models traversal denial too: an entry inside a
+                # directory the login user cannot search is the one answer the
+                # real probe can give, and it is "no output at all" -- so the
+                # seam withholds the content and ``process``'s elevated tier
+                # reads the same store as root.
+                return None
             data = remote_files.get(path)
             if data is None:
                 return None
@@ -550,7 +735,9 @@ class FileContents:
         prefix = f"{cls.MARKER}\n"
         if not stdout.startswith(prefix):
             return None
-        if not privileged and stdout == prefix + f"{cls.UNREADABLE}\n":
+        # The marker is detected on either tier: the compound prints it under
+        # ``sudo`` too when the run-as user cannot read the file either.
+        if stdout == prefix + f"{cls.UNREADABLE}\n":
             return _UNREADABLE
         return stdout[len(prefix) :]
 
@@ -722,11 +909,21 @@ def _parse_ls_line(line: str) -> tuple[dict[str, Any], str] | None:
 class File:
     """Metadata for a regular file, False for a non-file path, None if absent.
 
+    A path the login user cannot see -- because a directory above it denies
+    traversal -- is re-probed elevated with ``sudo``, so an ``EACCES`` that the
+    shell reports as "no such file" never reads as absence; the run-as user and
+    any password come from the inventory ``privilege`` data, never from an
+    operation.
+
     **Commands:**
 
     ```bash
     ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || ls -ld <path> )
+    if [ -e <dir> ]; then [ -x <dir> ] || printf "#reemote-path-hidden\\n"; elif [ -e <parent> ]; then [ -x <parent> ] || printf "#reemote-path-hidden\\n"; fi
     ```
+
+    The second command runs only when the first produced no row, and walks the
+    path's directories outward to the nearest existing one.
 
     **Returns:**
 
@@ -737,7 +934,7 @@ class File:
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -762,10 +959,22 @@ class File:
     # and only ``Link``'s dict carries the ``link_target`` key. Like the baseline,
     # a leading ``~/`` stays unquoted so the remote shell expands it; the
     # rest of the path is quoted.
+    #
+    # Unlike the baseline, the read is two-tier: an empty answer is re-probed
+    # elevated behind the traversal gate, because ``test -e`` cannot tell "absent"
+    # from "hidden by a parent directory the login user may not search" (issue
+    # #70, the sibling of ``FileContents``' unreadable fallback). The gate costs
+    # one extra unprivileged compound per missing path and never changes the
+    # baseline's own command, which stays verbatim for parity.
 
     #: The baseline's ``type`` field: only a regular file is accepted; every other
     #: path type (directory, link, socket, ...) reads as False.
     TYPE = "file"
+
+    #: The ``SimulatedHost`` store backing the seam read. Each sibling points at
+    #: its own typed store, because one undiscriminated metadata dict cannot
+    #: answer two different type questions for the same path.
+    _SEAM = "file_stats"
 
     @classmethod
     def command(cls, path: str) -> str:
@@ -832,27 +1041,80 @@ class File:
     async def process(
         cls, host: Host, path: str
     ) -> dict[str, Any] | Literal[False] | None:
-        stats = getattr(host, "file_stats", None)
+        value = await cls._read(host, path, privileged=False)
+        if value is _HIDDEN:
+            # Not proven absent: a directory above the path denies the login user
+            # traversal, so the guard's ``test -e`` failed with ``EACCES`` and
+            # printed nothing at all. Only the elevated probe can answer, and it
+            # reads the path as root (issue #70).
+            value = await cls._read(host, path, privileged=True)
+        return value
+
+    @classmethod
+    async def _read(
+        cls, host: Host, path: str, *, privileged: bool
+    ) -> dict[str, Any] | Literal[False] | None | _HiddenPath:
+        # The sentinel is a first-tier answer only: the traversal gate asks what
+        # the *login user* can see, which is settled once and never re-asked of
+        # the elevated tier.
+        stats = getattr(host, cls._SEAM, None)
         if stats is not None:
             # SimulatedHost seam: metadata keyed by the caller-supplied path
             # string (any ~/ prefix included, since the shell resolves it).
             # Return a copy so callers never mutate simulated state; the
             # False (non-file) and None (absent) answers pass through.
             value = stats.get(path)
-            return dict(value) if isinstance(value, dict) else value
-        # Real transport: stat/ls over asyncssh. A missing path produces
-        # empty stdout (the guard short-circuits), which parses to None.
-        stdout = await host.run_shell(cls.command(path))
-        return cls.parse(stdout.splitlines())
+            result = dict(value) if isinstance(value, dict) else value
+            if (
+                result is not None
+                and not privileged
+                and await _path_hidden_from_login(host, path)
+            ):
+                # The seam models traversal denial too: the row exists, but the
+                # login user's probe could never have reached it, so the
+                # unprivileged tier withholds it and the elevated tier reads the
+                # same store as root.
+                return _HIDDEN
+            return result
+        command = cls.command(path)
+        if privileged:
+            # ``sudo`` execs its argument directly rather than through a shell,
+            # so the compound chain needs the ``sh -c`` wrapper to be elevated
+            # whole (the ``FileContents`` precedent). The chain always exits
+            # zero -- the leading ``!`` guard short-circuits on a missing path,
+            # and ``stat`` falls back to ``ls`` -- so an elevated probe of a
+            # genuinely absent path reads as absent instead of raising
+            # ``CommandError``.
+            stdout = await host.run_shell_privileged(
+                f"sh -c {shlex.quote(command)}", sudo=True
+            )
+        else:
+            # Real transport: stat/ls over asyncssh. A missing path produces
+            # empty stdout (the guard short-circuits), which parses to None.
+            stdout = await host.run_shell(command)
+        parsed = cls.parse(stdout.splitlines())
+        if (
+            parsed is None
+            and not privileged
+            and await _path_hidden_from_login(host, path)
+        ):
+            # No row is either absence or invisibility; the gate says which
+            # before the answer is trusted.
+            return _HIDDEN
+        return parsed
 
 
 class Directory(File):
     """Metadata for a directory, False for a non-directory path, None if absent.
 
+    Inherited from ``File`` unchanged -- including the elevated re-probe for a
+    path a non-traversable directory above it hides.
+
     **Commands:**
 
     ```bash
     ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || ls -ld <path> )
+    if [ -e <dir> ]; then [ -x <dir> ] || printf "#reemote-path-hidden\\n"; elif [ -e <parent> ]; then [ -x <parent> ] || printf "#reemote-path-hidden\\n"; fi
     ```
 
     **Returns:**
@@ -864,7 +1126,7 @@ class Directory(File):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -873,48 +1135,36 @@ class Directory(File):
 
     # Mirrors the baseline's ``files.Directory`` -- its ``File`` subclass with
     # ``type = "directory"``: the same ``test -e``/``test -L`` guard and
-    # stat/ls chain (``command`` and ``parse`` are inherited), but the type
-    # flag must be ``d``, so a regular file, symlink, socket, ... reads as
-    # ``False`` instead. The dict shape, *naive UTC* timestamps and
-    # octal-looking ``mode`` int are exactly ``File``'s, and a leading ``~/``
-    # likewise stays unquoted for the remote shell to expand. This fact
-    # describes the directory *itself*, never the names inside it -- for
-    # the listing see ``DirectoryEntries`` (shallow, with types) or
+    # stat/ls chain (``command``, ``parse`` and the two-tier ``process`` are
+    # inherited), but the type flag must be ``d``, so a regular file, symlink,
+    # socket, ... reads as ``False`` instead. The dict shape, *naive UTC*
+    # timestamps and octal-looking ``mode`` int are exactly ``File``'s, and a
+    # leading ``~/`` likewise stays unquoted for the remote shell to expand.
+    # This fact describes the directory *itself*, never the names inside it --
+    # for the listing see ``DirectoryEntries`` (shallow, with types) or
     # ``FindDirectories`` (recursive paths).
 
     #: The baseline's ``type`` field: only a directory is accepted; every other
     #: path type (file, link, socket, ...) reads as False.
     TYPE = "directory"
 
-    @classmethod
-    async def process(
-        cls, host: Host, path: str
-    ) -> dict[str, Any] | Literal[False] | None:
-        stats = getattr(host, "directory_stats", None)
-        if stats is not None:
-            # SimulatedHost seam: the file_stats shape in a separate store,
-            # because a metadata dict carries no type flag -- file_stats
-            # alone cannot say whether its path is a directory. Keys are
-            # the caller-supplied path strings verbatim (any ~/ prefix
-            # included); a dict is a directory's metadata, False an
-            # existing non-directory, an absent key None. Return a copy so
-            # callers never mutate simulated state.
-            value = stats.get(path)
-            return dict(value) if isinstance(value, dict) else value
-        # Real transport: the inherited stat/ls chain over asyncssh, parsed
-        # against TYPE = "directory". A missing path produces empty stdout
-        # (the guard short-circuits), which parses to None.
-        stdout = await host.run_shell(cls.command(path))
-        return cls.parse(stdout.splitlines())
+    # The seam override is all: a metadata dict carries no type flag, so
+    # ``file_stats`` alone cannot say whether its path is a directory, and the
+    # two-tier read is inherited from ``File``.
+    _SEAM = "directory_stats"
 
 
 class Link(File):
     """Metadata for a symlink plus its target, False for non-link, None if absent.
 
+    Inherited from ``File`` unchanged -- including the elevated re-probe for a
+    link a non-traversable directory above it hides.
+
     **Commands:**
 
     ```bash
     ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || ls -ld <path> )
+    if [ -e <dir> ]; then [ -x <dir> ] || printf "#reemote-path-hidden\\n"; elif [ -e <parent> ]; then [ -x <parent> ] || printf "#reemote-path-hidden\\n"; fi
     ```
 
     **Returns:**
@@ -926,7 +1176,7 @@ class Link(File):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -935,11 +1185,12 @@ class Link(File):
 
     # Mirrors the baseline's ``files.Link`` -- its ``File`` subclass with
     # ``type = "link"``: the same ``test -e``/``test -L`` guard and stat/ls
-    # chain (``command`` and ``parse`` are inherited), but the type flag must
-    # be ``l``, so a regular file, directory, socket, ... reads as ``False``
-    # instead. The dict is ``File``'s shape plus a ``link_target`` key -- the
-    # target path with the stat/ls quoting stripped, exactly as the link
-    # records it (a relative target stays relative), for example::
+    # chain (``command``, ``parse`` and the two-tier ``process`` are inherited),
+    # but the type flag must be ``l``, so a regular file, directory, socket,
+    # ... reads as ``False`` instead. The dict is ``File``'s shape plus a
+    # ``link_target`` key -- the target path with the stat/ls quoting stripped,
+    # exactly as the link records it (a relative target stays relative), for
+    # example::
     #
     #     {"user": "reemote", "group": "reemote", "link_target": "/path/to/link/target"}
     #
@@ -955,35 +1206,23 @@ class Link(File):
     #: path type (file, directory, socket, ...) reads as False.
     TYPE = "link"
 
-    @classmethod
-    async def process(
-        cls, host: Host, path: str
-    ) -> dict[str, Any] | Literal[False] | None:
-        stats = getattr(host, "link_stats", None)
-        if stats is not None:
-            # SimulatedHost seam: the file_stats shape (plus link_target) in
-            # a separate store, because a metadata dict carries no type flag
-            # -- file_stats alone cannot say whether its path is a symlink.
-            # Keys are the caller-supplied path strings verbatim (any ~/
-            # prefix included); a dict is a symlink's metadata, False an
-            # existing non-link, an absent key None. Return a copy so
-            # callers never mutate simulated state.
-            value = stats.get(path)
-            return dict(value) if isinstance(value, dict) else value
-        # Real transport: the inherited stat/ls chain over asyncssh, parsed
-        # against TYPE = "link". A missing path produces empty stdout (the
-        # guard short-circuits), which parses to None.
-        stdout = await host.run_shell(cls.command(path))
-        return cls.parse(stdout.splitlines())
+    # The seam override is all: a metadata dict carries no type flag, so
+    # ``file_stats`` alone cannot say whether its path is a symlink, and the
+    # two-tier read is inherited from ``File``.
+    _SEAM = "link_stats"
 
 
 class Socket(File):
     """Metadata for a socket, False for a non-socket path, None if absent.
 
+    Inherited from ``File`` unchanged -- including the elevated re-probe for a
+    socket a non-traversable directory above it hides.
+
     **Commands:**
 
     ```bash
     ! (test -e <path> || test -L <path> ) || ( stat -c 'user=%U group=%G mode=%A atime=%X mtime=%Y ctime=%Z size=%s %N' <path> 2> /dev/null || ls -ld <path> )
+    if [ -e <dir> ]; then [ -x <dir> ] || printf "#reemote-path-hidden\\n"; elif [ -e <parent> ]; then [ -x <parent> ] || printf "#reemote-path-hidden\\n"; fi
     ```
 
     **Returns:**
@@ -995,7 +1234,7 @@ class Socket(File):
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    CommandNotFoundError, HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -1004,43 +1243,26 @@ class Socket(File):
 
     # Mirrors the baseline's ``files.Socket`` -- its ``File`` subclass with
     # ``type = "socket"``: pure inheritance, the same ``test -e``/``test -L``
-    # guard and stat/ls chain (``command`` and ``parse`` are inherited
-    # unchanged -- the shared parse already maps the ``s`` type flag), so a
-    # regular file, directory, symlink, ... reads as ``False`` instead. The
-    # dict shape, *naive UTC* timestamps and octal-looking ``mode`` int are
-    # exactly ``File``'s, and a leading ``~/`` likewise stays unquoted for
-    # the remote shell to expand. The one override is ``process``, reading
-    # the dedicated ``socket_stats`` seam: ``file_stats`` stores
-    # undiscriminated metadata payloads and can never answer the
-    # socket-typed question for the same path (the Directory/Link
-    # precedent). Use it to audit a daemon's listening socket --
-    # ``/var/run/docker.sock``, a database or agent IPC socket -- owner and
-    # mode decide which users may talk to the daemon.
+    # guard and stat/ls chain (``command``, ``parse`` and the two-tier
+    # ``process`` are inherited unchanged -- the shared parse already maps the
+    # ``s`` type flag), so a regular file, directory, symlink, ... reads as
+    # ``False`` instead. The dict shape, *naive UTC* timestamps and
+    # octal-looking ``mode`` int are exactly ``File``'s, and a leading ``~/``
+    # likewise stays unquoted for the remote shell to expand. The one override
+    # is the ``socket_stats`` seam: ``file_stats`` stores undiscriminated
+    # metadata payloads and can never answer the socket-typed question for the
+    # same path (the Directory/Link precedent). Use it to audit a daemon's
+    # listening socket -- ``/var/run/docker.sock``, a database or agent IPC
+    # socket -- owner and mode decide which users may talk to the daemon.
 
     #: The baseline's ``type`` field: only a socket is accepted; every other
     #: path type (file, directory, link, ...) reads as False.
     TYPE = "socket"
 
-    @classmethod
-    async def process(
-        cls, host: Host, path: str
-    ) -> dict[str, Any] | Literal[False] | None:
-        stats = getattr(host, "socket_stats", None)
-        if stats is not None:
-            # SimulatedHost seam: the file_stats shape in a separate store,
-            # because a metadata dict carries no type flag -- file_stats
-            # alone cannot say whether its path is a socket. Keys are the
-            # caller-supplied path strings verbatim (any ~/ prefix
-            # included); a dict is a socket's metadata, False an existing
-            # non-socket, an absent key None. Return a copy so callers
-            # never mutate simulated state.
-            value = stats.get(path)
-            return dict(value) if isinstance(value, dict) else value
-        # Real transport: the inherited stat/ls chain over asyncssh, parsed
-        # against TYPE = "socket". A missing path produces empty stdout
-        # (the guard short-circuits), which parses to None.
-        stdout = await host.run_shell(cls.command(path))
-        return cls.parse(stdout.splitlines())
+    # The seam override is all: a metadata dict carries no type flag, so
+    # ``file_stats`` alone cannot say whether its path is a socket, and the
+    # two-tier read is inherited from ``File``.
+    _SEAM = "socket_stats"
 
 
 class SameFile:

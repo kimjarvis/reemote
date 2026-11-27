@@ -312,9 +312,13 @@ unprivileged regardless), plus a demo **binary** at
 launcher shape — and runs the same deploy again to show every
 request reporting no change. The owned variant uses the login-readable
 `0644` mode; a restrictive `0640` service-account mode stays idempotent too —
-`FileContents` re-reads a file the login user cannot read elevated with `sudo`.
-The binary install's `RemoteFileSha1` read-back has no elevated fallback, so
-it needs a login-readable mode (the `0755` here) to stay a no-op on rerun.
+`FileContents` re-reads a file the login user cannot read elevated with `sudo`,
+and (issue #70) re-probes elevated a file first reported absent because the
+login user cannot traverse one of its parent directories, so a config kept in a
+`02770` service directory is a no-op on rerun as well. The binary install's
+`RemoteFileSha1` read-back has no elevated fallback, so it needs a
+login-readable mode (the `0755` here) under a traversable directory to stay a
+no-op on rerun.
 
 ::: files_install
     options:
