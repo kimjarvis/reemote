@@ -134,7 +134,14 @@ machine's architecture string (e.g. `x86_64`), mirroring the baseline's
 lines and `#` comments; a missing file reads as `[]`. The default path
 resolves the home through shell tilde expansion (`~user`), which cannot be
 quoted, so an unsafe username raises `ValueError` instead of reaching the
-shell — mirroring the baseline's `server.AuthorizedKeys`. `AuthorizedKeysFile`
+shell — mirroring the baseline's `server.AuthorizedKeys`. Both this fact and
+the `AuthorizedKeysFile` below read twice when a directory above the path
+withholds its search bit: a home created `0750` (Ubuntu's `login.defs`
+`HOME_MODE`) makes `test -e` answer "no such file" for everything under it,
+so the probe's own gate walks the path's directories outward, and only the
+marker it prints re-runs the shell elevated
+(issue [#71](https://github.com/kimjarvis/reemote/issues/71)).
+`AuthorizedKeysFile`
 takes an explicit key-file `path` and returns that file's raw text as a
 `str`, or `None` when it is absent — the namespace's raw-content fact (the
 `AptSourcesFile`/`DnfRepoFile` pattern) behind the spool-and-install writes
@@ -391,7 +398,14 @@ present one, and the read is two-tier (the `files.FileContents` precedent):
 a key inside another user's `700` `.ssh` is unreadable as the login user,
 so the fact re-reads it elevated through `run_shell_privileged` and only
 then reports a fingerprint — restrictive `.ssh` modes therefore keep key
-idempotence rather than forcing a regeneration. A pair still unreadable
+idempotence rather than forcing a regeneration. The guard failing for a
+different reason is the second signal (issue
+[#71](https://github.com/kimjarvis/reemote/issues/71)): under a home that
+withholds its search bit every path below answers "no such file", so the
+gate beside the guard names that case and the same shell is re-run elevated
+— without it `server.ssh_keypair` planned a generation over the key that was
+really there, and `ssh-keygen` prompted for an overwrite it could only get
+EOF for. A pair still unreadable
 elevated reads as `None`: in practice no `ssh-keygen` on the host, which
 the guarded shell masks into the unreadable arm instead of raising
 `CommandNotFoundError`, so an operation can only plan a generation that
@@ -737,7 +751,11 @@ operation refuses it rather than building a literal `None/.ssh` path — the
 baseline would create the junk directory and only fail later at `chown`.
 An explicit `authorized_key_directory` bypasses the `Home` read entirely.
 These state verbs stay in-place shell commands — only the key file's *text*
-is spooled.
+is spooled. Both reads are two-tier ([#71](https://github.com/kimjarvis/reemote/issues/71)):
+when the guard finds nothing, the fact's traversal gate walks the path's own
+directories and the read is re-run elevated only when one of them withheld its
+search bit, so a key file under a home the login cannot enter is never planned
+as a key file to create.
 
 Key idempotence then rides the `AuthorizedKeys` fact read with an explicit
 `path` (never tilde-resolved). With `delete_keys=False` (the default) every
@@ -860,7 +878,10 @@ that the ansible-users migration flagged as a gap (issue #60): for `user`,
 ensures the key directory and
 generates the pair wherever the public half has no fingerprint yet.
 Idempotent, it gates on the `SshKeyPair` fact — a pair with a fingerprint
-needs nothing, and only `force=True` regenerates one — and the directory half
+needs nothing, and only `force=True` regenerates one — and the fact answers a
+pair hidden by an unsearchable directory elevated rather than as absent, so no
+generation is planned for a key that is already there
+([#71](https://github.com/kimjarvis/reemote/issues/71)). The directory half
 is the `server.user_authorized_keys` ensure block verbatim (the private
 `_KeysPathStat` probe plus `_HomeMkdirCommand`, `_KeysChmodCommand` mode `700`
 and `_HomeChownCommand`, a path that exists as the wrong type raising

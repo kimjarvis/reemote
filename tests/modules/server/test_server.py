@@ -242,8 +242,11 @@ from reemote.modules.server.server import (
     WaitForFactCommand,
     Which,
     _add_keys,
+    _ancestor_dirs,
+    _answer_hidden,
     _fstab_content,
     _fstab_spool_path,
+    _hidden_parent_clause,
     _HomeChownCommand,
     _HomeDirectory,
     _HomeIsLink,
@@ -252,6 +255,7 @@ from reemote.modules.server.server import (
     _hosts_spool_path,
     _keys_spool_path,
     _KeysChmodCommand,
+    _KeysPathStat,
     _KeysTouchCommand,
     _locale_edit,
     _locale_spool_path,
@@ -330,6 +334,144 @@ async def materialize(host: Host, request: OperationRequest):
     return ctx, commands
 
 
+# --- Issue #71: the traversal gate -------------------------------------------
+#
+# Ubuntu's ``login.defs`` ``HOME_MODE 0750`` hides a fresh home, and everything
+# under it, from a login that is neither the owner nor a member of the private
+# group: ``test -e`` answers "no such file" for the whole subtree, so a fact that
+# trusts that answer reports a real file as absent and the operation behind it
+# plans its write again on every pass. Each probe therefore carries its own gate:
+# when its guard finds nothing, it asks whether a directory above the path
+# withheld its ``x`` bit and prints this marker if it did. Only the marker buys
+# the elevated re-probe -- emptiness stays genuine absence.
+
+#: The marker the facts' traversal gate prints; mirrors ``_PATH_HIDDEN``.
+HIDDEN = "#reemote-path-hidden"
+
+
+def hidden_gate(*directories: str) -> str:
+    """The traversal shell expected for a path under ``directories``.
+
+    Restated here rather than imported from the module, so a change of shape --
+    the ``if``/``elif`` chain, the ``-e`` before the ``-x``, the quoted marker --
+    fails these tests. The nearest directory comes first: the chain stops at the
+    first one the login user can name.
+    """
+    branches = []
+    for index, directory in enumerate(directories):
+        opener = "if" if index == 0 else "elif"
+        branches.append(
+            f'{opener} [ -e {directory} ]; then [ -x {directory} ] '
+            f'|| printf "{HIDDEN}\\n";'
+        )
+    return " ".join(branches) + " fi"
+
+
+def probe(guard: str, answer: str, *directories: str) -> str:
+    """One #71 probe as a whole: its guard, its answer, and the gate behind it.
+
+    Assumes none of the three parts needs single-quote escaping, which holds for
+    every tilde form and every space-free path; the quoting cases recover the
+    inner script with ``shlex.split`` instead.
+    """
+    inner = f"if {guard}; then {answer}; else {hidden_gate(*directories)}; fi"
+    return f"sh -c '{inner}'"
+
+
+class TieredShellHost(Host):
+    """Answers the unprivileged shell one way and every elevated shell another.
+
+    The ``files`` suite's stand-in for the ``FileContents`` two-tier read,
+    generalised to every #71 fact: it records each unprivileged shell, and each
+    privileged shell with its ``sudo`` flag, so a test can say exactly which tier
+    ran -- including that a plainly absent path never triggers the elevated one.
+    """
+
+    def __init__(self, unprivileged: str, privileged: str):
+        super().__init__(name="tiered")
+        self._unprivileged = unprivileged
+        self._privileged = privileged
+        self.shells: list[str] = []
+        self.privileged_calls: list[tuple[str, bool]] = []
+
+    async def run_shell(self, shell: str, *, check: bool = False) -> str:
+        self.shells.append(shell)
+        return self._unprivileged
+
+    async def run_shell_privileged(
+        self, shell: str, *, sudo: bool = False, su: bool = False, doas: bool = False
+    ) -> str:
+        self.privileged_calls.append((shell, sudo))
+        return self._privileged
+
+
+@dataclass
+class UntraversableHomeHost(SimulatedHost):
+    """A simulated machine that hides path prefixes from its own login user.
+
+    The #71 facts ask the host ``login_path_visible(path)`` before trusting an
+    absent answer. This double supplies that model itself instead of depending on
+    the shared one: a path under one of ``hidden_paths`` cannot even be named, so
+    the unprivileged read refuses it, while the elevated read falls through to the
+    seeded state -- which is exactly the Ubuntu ``0750`` home of the issue.
+    """
+
+    hidden_paths: tuple[str, ...] = ()
+
+    def login_path_visible(self, path: str) -> bool:
+        return not any(
+            path == hidden or path.startswith(f"{hidden}/")
+            for hidden in self.hidden_paths
+        )
+
+
+def test_ancestor_dirs_walks_to_the_anchor():
+    # Nearest first, and the walk stops at the root: nothing above ``/`` is ever
+    # asked about, and a bare relative name has nothing above it to blame.
+    assert _ancestor_dirs("/srv/k/id_ed25519.pub") == ["/srv/k", "/srv", "/"]
+    assert _ancestor_dirs("/srv") == ["/"]
+    assert _ancestor_dirs("Makefile") == []
+    # A ``~user`` word is its own anchor -- the home is what the shell expands to,
+    # and the probe has no round-trip with which to ask what sits above it.
+    assert _ancestor_dirs("~alice/.ssh/authorized_keys") == ["~alice/.ssh", "~alice"]
+    assert _ancestor_dirs("~alice") == []
+
+
+def test_hidden_parent_clause_chains_nearest_first():
+    assert _hidden_parent_clause("/srv/k") == hidden_gate("/srv", "/")
+    assert _hidden_parent_clause("/srv/k").startswith("if [ -e /srv ]; then")
+    # The tilde head stays unquoted so the remote shell expands it into the home
+    # the probe was addressed to, while a later segment is quoted normally.
+    assert _hidden_parent_clause("~alice/My Docs/key") == hidden_gate(
+        "~alice/'My Docs'", "~alice"
+    )
+    # Nothing above a bare name: the clause is a no-op, never a wrong answer.
+    assert _hidden_parent_clause("Makefile") == "true"
+
+
+def test_hidden_parent_clause_only_asks_the_search_bit():
+    clause = _hidden_parent_clause("/home/alice/.ssh/id_rsa.pub")
+    # On a directory the execute bit *is* the search permission, so each of the
+    # four ancestors is named and then searched, never read.
+    assert clause.count("[ -e ") == clause.count("[ -x ") == 4
+    assert "-r " not in clause
+    # The chain stops at the first nameable directory, so its last branch is an
+    # ``elif`` -- and every branch ends in a successful ``[ -x ]`` or ``printf``,
+    # because the elevated tier turns any non-zero exit into ``CommandError``.
+    assert clause.count("elif") == 3
+    assert " else " not in clause
+    assert clause.endswith("fi")
+
+
+def test_answer_hidden_matches_a_whole_line():
+    assert _answer_hidden(f"{HIDDEN}\n")
+    assert _answer_hidden(f"4096 SHA256:abc a@h (RSA)\n{HIDDEN}\n")
+    # Text that merely mentions the marker -- a key comment, a file's own content
+    # -- is an answer and not a refusal, and cannot buy a sudo round-trip.
+    assert not _answer_hidden(f"ssh-rsa {HIDDEN} bob\n")
+    assert not _answer_hidden("")
+
+
 # --- Arch --------------------------------------------------------------------
 
 
@@ -371,14 +513,23 @@ async def test_authorized_keys_parses_the_default_path():
     # lines are skipped; the file's order is preserved.
     host = CannedShellHost(f"# some comment\n\n{KEY1}\n   \n{KEY2}\n")
     assert await AuthorizedKeys.process(host, "alice") == [KEY1, KEY2]
-    assert host.shells == ["cat ~alice/.ssh/authorized_keys 2>/dev/null || true"]
+    assert host.shells == [
+        probe(
+            "test -e ~alice/.ssh/authorized_keys",
+            "cat -- ~alice/.ssh/authorized_keys || true",
+            "~alice/.ssh",
+            "~alice",
+        )
+    ]
 
 
 async def test_authorized_keys_custom_path_with_empty_output():
     # The baseline's custom_path.json fixture: output [] -> fact [].
     host = CannedShellHost("")
     assert await AuthorizedKeys.process(host, "alice", path="/etc/ssh/keys/alice") == []
-    assert host.shells == ["cat /etc/ssh/keys/alice 2>/dev/null || true"]
+    # The command itself is pinned below; what matters here is that ``process``
+    # ran exactly one shell, the fact's own.
+    assert host.shells == [AuthorizedKeys.command("alice", path="/etc/ssh/keys/alice")]
 
 
 def test_authorized_keys_parse_strips_and_preserves_order():
@@ -390,15 +541,25 @@ def test_authorized_keys_parse_strips_and_preserves_order():
 
 
 def test_authorized_keys_command_quotes_an_explicit_path():
-    assert (
-        AuthorizedKeys.command("alice", path="/etc/ssh/my keys")
-        == "cat '/etc/ssh/my keys' 2>/dev/null || true"
+    # Quoting proof: the inner script is recovered with ``shlex.split``, never cut
+    # out of the quoted text by hand. The path is quoted in both the guard and the
+    # ``cat``, while its directories are quoted for the gate beside it.
+    inner = shlex.split(AuthorizedKeys.command("alice", path="/etc/ssh/my keys"))[2]
+    assert inner == (
+        "if test -e '/etc/ssh/my keys'; then "
+        "cat -- '/etc/ssh/my keys' || true; "
+        f"else {hidden_gate('/etc/ssh', '/etc', '/')}; fi"
     )
 
 
 def test_authorized_keys_empty_user_means_the_login_user():
-    assert (
-        AuthorizedKeys.command("") == "cat ~/.ssh/authorized_keys 2>/dev/null || true"
+    # An empty user is the login's own ``~``, which stays unquoted so the remote
+    # shell expands it -- in the gate's ancestors exactly as in the guard.
+    assert AuthorizedKeys.command("") == probe(
+        "test -e ~/.ssh/authorized_keys",
+        "cat -- ~/.ssh/authorized_keys || true",
+        "~/.ssh",
+        "~",
     )
 
 
@@ -415,7 +576,7 @@ async def test_authorized_keys_rejects_unsafe_tilde_usernames():
     # consulted (the baseline only validates in the tilde branch).
     host = CannedShellHost("")
     assert await AuthorizedKeys.process(host, "bad;rm", path="/keys") == []
-    assert host.shells == ["cat /keys 2>/dev/null || true"]
+    assert host.shells == [AuthorizedKeys.command("bad;rm", path="/keys")]
 
 
 async def test_authorized_keys_reads_the_simulated_seam():
@@ -447,6 +608,62 @@ async def test_authorized_keys_gather_fact_forwards_the_user():
         "web1": [KEY1],
         "web2": [KEY2],
     }
+
+
+async def test_authorized_keys_reprobes_elevated_when_hidden():
+    # The issue, over the real transport: a home that denies traversal hides a
+    # file full of keys, and the marker -- not the empty stdout -- is what says the
+    # file was never looked at. It buys exactly one elevated retry of the shell.
+    command = AuthorizedKeys.command("alice")
+    host = TieredShellHost(unprivileged=f"{HIDDEN}\n", privileged=f"{KEY1}\n{KEY2}\n")
+    assert await AuthorizedKeys.process(host, "alice") == [KEY1, KEY2]
+    assert host.shells == [command]
+    assert host.privileged_calls == [(command, True)]
+
+
+async def test_authorized_keys_absent_file_never_elevates():
+    # The guard failed and every directory above answered for itself: that is
+    # genuine absence, which reads as no keys without spending a sudo -- a host
+    # whose login has none at all must keep working.
+    host = TieredShellHost(unprivileged="", privileged=f"{KEY1}\n")
+    assert await AuthorizedKeys.process(host, "alice") == []
+    assert host.shells == [AuthorizedKeys.command("alice")]
+    assert host.privileged_calls == []
+
+
+async def test_authorized_keys_hidden_when_elevated_reports_no_keys():
+    # Elevated, the same marker means the run-as user is not root and was refused
+    # the identical lookup. The fact's contract is a key list, so a file nobody was
+    # allowed to see reports as one with no keys: the operation plans its write and
+    # fails loudly at apply rather than the fact guessing at content.
+    host = TieredShellHost(unprivileged=f"{HIDDEN}\n", privileged=f"{HIDDEN}\n")
+    assert await AuthorizedKeys.process(host, "alice") == []
+    assert len(host.privileged_calls) == 1
+
+
+async def test_authorized_keys_seam_answers_from_the_state_behind_a_denied_home():
+    # The offline version of the issue: the seeded home withholds its ``x`` bit,
+    # so the unprivileged seam refuses the path as the real guard would, and the
+    # elevated tier falls through to the state instead of reporting no keys.
+    host = UntraversableHomeHost(
+        name="h",
+        hidden_paths=("/home/alice",),
+        home_directories={"alice": "/home/alice"},
+        authorized_keys={"alice": [KEY1, KEY2]},
+    )
+    assert await AuthorizedKeys.process(host, "alice") == [KEY1, KEY2]
+
+
+async def test_authorized_keys_seam_stays_single_tier_when_the_home_is_visible():
+    # The other half of the seam contract: nothing hidden means nothing re-probed,
+    # so the gate costs a simulated run nothing.
+    host = UntraversableHomeHost(
+        name="h",
+        hidden_paths=("/home/bob",),
+        home_directories={"alice": "/home/alice"},
+        authorized_keys={"alice": [KEY1]},
+    )
+    assert await AuthorizedKeys.process(host, "alice") == [KEY1]
 
 
 # --- Date --------------------------------------------------------------------
@@ -6437,14 +6654,29 @@ def test_keys_spool_path_is_dest_derived_and_deterministic():
 
 
 def test_authorized_keys_file_command_quotes_the_path():
-    assert AuthorizedKeysFile.command(UA_KEYS_FILE) == (
-        f"test -e {UA_KEYS_FILE} && "
-        f"{{ printf '#reemote-authorizedkeysfile\\n'; cat -- {UA_KEYS_FILE}; }}"
+    # The guard, the ``cat`` and every directory the gate walks all carry the same
+    # quoting, and the composite needs no escaping of its own here.
+    assert AuthorizedKeysFile.command(UA_KEYS_FILE) == probe(
+        f"test -e {UA_KEYS_FILE}",
+        f'printf "{AuthorizedKeysFile.MARKER}\\n"; cat -- {UA_KEYS_FILE} || true',
+        UA_SSH_DIR,
+        UA_HOME,
+        "/home",
+        "/",
     )
-    quoted = shlex.quote("/home/some user/.ssh/authorized keys")
-    assert AuthorizedKeysFile.command("/home/some user/.ssh/authorized keys") == (
-        f"test -e {quoted} && "
-        f"{{ printf '#reemote-authorizedkeysfile\\n'; cat -- {quoted}; }}"
+    # Quoting proof: the inner script is recovered with ``shlex.split``, never a
+    # raw substring of the quoted text.
+    path = "/home/some user/.ssh/authorized keys"
+    quoted = shlex.quote(path)
+    inner = shlex.split(AuthorizedKeysFile.command(path))[2]
+    assert inner.startswith(
+        f"if test -e {quoted}; then "
+        f'printf "{AuthorizedKeysFile.MARKER}\\n"; '
+        f"cat -- {quoted} || true; else "
+    )
+    assert "[ -e '/home/some user/.ssh' ]" in inner
+    assert inner.endswith(
+        f"{hidden_gate(shlex.quote('/home/some user'), '/home', '/')}; fi"
     )
 
 
@@ -6481,6 +6713,108 @@ async def test_authorized_keys_file_parses_the_marker_over_real_transport():
     assert (
         await AuthorizedKeysFile.process(CannedShellHost(""), UA_KEYS_FILE) is None
     )
+
+
+async def test_authorized_keys_file_reprobes_elevated_when_hidden():
+    # The issue #71 shape for the raw-content read: a file that exists behind a
+    # directory the login user may not search answers "no such file", and only the
+    # gate's marker says the guard was never allowed to answer. One elevated retry
+    # of the same shell gets the real content.
+    command = AuthorizedKeysFile.command(UA_KEYS_FILE)
+    host = TieredShellHost(
+        unprivileged=f"{HIDDEN}\n",
+        privileged=f"{AuthorizedKeysFile.MARKER}\n{UA_KEY_A}\n",
+    )
+    assert await AuthorizedKeysFile.process(host, UA_KEYS_FILE) == f"{UA_KEY_A}\n"
+    assert host.shells == [command]
+    assert host.privileged_calls == [(command, True)]
+
+
+async def test_authorized_keys_file_absent_never_elevates():
+    # No marker and no gate line is genuine absence, which must not cost a sudo on
+    # a host whose login has none -- the ordinary first run of every operation that
+    # reads this fact.
+    host = TieredShellHost(
+        unprivileged="", privileged=f"{AuthorizedKeysFile.MARKER}\n{UA_KEY_A}\n"
+    )
+    assert await AuthorizedKeysFile.process(host, UA_KEYS_FILE) is None
+    assert host.privileged_calls == []
+
+
+async def test_authorized_keys_file_hidden_when_elevated_reads_absent():
+    # Elevated, the marker means the run-as user was refused the same lookup: the
+    # fact's contract is content or None, so an unseen file reports as an absent
+    # one and the operation's own write fails loudly at apply rather than the fact
+    # guessing at text nobody was allowed to read.
+    host = TieredShellHost(unprivileged=f"{HIDDEN}\n", privileged=f"{HIDDEN}\n")
+    assert await AuthorizedKeysFile.process(host, UA_KEYS_FILE) is None
+    assert len(host.privileged_calls) == 1
+
+
+async def test_authorized_keys_file_seam_reports_content_behind_a_denied_home():
+    # Offline: the seeded home mode shuts the login out, so the unprivileged seam
+    # refuses the path exactly as the real guard would, and the elevated tier falls
+    # through to the seeded content instead of reporting an absent file.
+    host = UntraversableHomeHost(
+        name="h",
+        hidden_paths=(UA_HOME,),
+        remote_files={UA_KEYS_FILE: f"{UA_KEY_A}\n".encode()},
+    )
+    assert await AuthorizedKeysFile.process(host, UA_KEYS_FILE) == f"{UA_KEY_A}\n"
+
+
+# --- _KeysPathStat: the ``user_authorized_keys`` path probe -------------------
+
+
+def test_keys_path_stat_command_places_the_gate_behind_the_guard():
+    # The gate runs only when the type guard failed *and* the path is not so much
+    # as nameable: a wrong-typed path is an answer the guard already gave, and a
+    # bare ``test`` cannot report the refusal a directory above the path caused.
+    assert shlex.split(_KeysPathStat.command(UA_SSH_DIR, True))[2] == (
+        f'if test -d {UA_SSH_DIR}; then stat -c "user=%U group=%G mode=%a" '
+        f"{UA_SSH_DIR}; elif ! test -e {UA_SSH_DIR}; then "
+        f"{hidden_gate(UA_HOME, '/home', '/')}; fi"
+    )
+    # ``directory=False`` is the file twin, guarding with ``-f``.
+    assert shlex.split(_KeysPathStat.command(UA_KEYS_FILE, False))[2].startswith(
+        f"if test -f {UA_KEYS_FILE}; then "
+    )
+
+
+async def test_keys_path_stat_reprobes_elevated_when_hidden():
+    command = _KeysPathStat.command(UA_SSH_DIR, True)
+    host = TieredShellHost(
+        unprivileged=f"{HIDDEN}\n",
+        privileged=f"user={UA_USER} group={UA_USER} mode=700\n",
+    )
+    assert await _KeysPathStat.process(host, UA_SSH_DIR, True) == {
+        "user": UA_USER,
+        "group": UA_USER,
+        "mode": 700,
+    }
+    assert host.shells == [command]
+    assert host.privileged_calls == [(command, True)]
+
+
+async def test_keys_path_stat_absent_never_elevates():
+    # A missing ``.ssh`` on the first run is the ordinary case, and it must stay a
+    # single shell: an elevated probe would raise on a host whose login has no sudo.
+    host = TieredShellHost(
+        unprivileged="", privileged=f"user={UA_USER} group={UA_USER} mode=700\n"
+    )
+    assert await _KeysPathStat.process(host, UA_SSH_DIR, True) is None
+    assert host.shells == [_KeysPathStat.command(UA_SSH_DIR, True)]
+    assert host.privileged_calls == []
+
+
+async def test_keys_path_stat_hidden_when_elevated_reads_absent():
+    # Elevated the marker means the run-as user is not root. Reporting the path as
+    # absent is the honest answer of a probe nobody was allowed to make: the
+    # operation's own mkdir/chmod then fails loudly at apply instead of the fact
+    # guessing a mode it never saw -- and never churns on a path it cannot see.
+    host = TieredShellHost(unprivileged=f"{HIDDEN}\n", privileged=f"{HIDDEN}\n")
+    assert await _KeysPathStat.process(host, UA_SSH_DIR, True) is None
+    assert len(host.privileged_calls) == 1
 
 
 def test_add_keys_transform_purity_and_fixpoint():
@@ -6632,6 +6966,33 @@ async def test_user_authorized_keys_noop_when_everything_matches():
         f"directory {UA_SSH_DIR} already exists; file {UA_KEYS_FILE} already exists"
     )
     assert commands == []
+
+
+async def test_user_authorized_keys_converges_behind_an_untraversable_home():
+    # Issue #71's symptom, offline: everything is already correct, but the login
+    # user may not search the home, so every unprivileged read answers "no such
+    # file". Trusting that answer planned the mkdir, both chmods, both chowns and a
+    # whole-file rewrite on every pass; the elevated re-probe sees the real state
+    # and plans nothing -- which is what let the ``users`` role fail to converge.
+    host = UntraversableHomeHost(
+        name="h",
+        hidden_paths=(UA_HOME,),
+        home_directories={UA_USER: UA_HOME},
+        directory_stats={UA_SSH_DIR: {"user": UA_USER, "group": UA_USER, "mode": 700}},
+        file_stats={UA_KEYS_FILE: {"user": UA_USER, "group": UA_USER, "mode": 600}},
+        authorized_keys={UA_KEYS_FILE: [UA_KEY_A, UA_KEY_B]},
+        remote_files={UA_KEYS_FILE: f"{UA_KEY_A}\n{UA_KEY_B}\n".encode()},
+    )
+    ctx, commands = await materialize(
+        host,
+        op(
+            server.user_authorized_keys,
+            user=UA_USER,
+            public_keys=(UA_KEY_A, UA_KEY_B),
+        ),
+    )
+    assert commands == []
+    assert not ctx.changed
 
 
 async def test_user_authorized_keys_fixes_directory_mode_only():
@@ -7233,52 +7594,42 @@ KP_GEN = SshKeyPairGenerateCommand(
 )
 
 
-class KeyPairFallbackHost(Host):
-    """Answers the unprivileged fingerprint read as unreadable, then elevated.
-
-    The stand-in the ``files`` suite uses for the ``FileContents`` two-tier
-    read: it records every unprivileged shell and every privileged shell with
-    its ``sudo`` flag, so a test can assert exactly which tier ran (and that a
-    missing file never triggers the elevated one).
-    """
-
-    def __init__(self, unprivileged: str, privileged: str):
-        super().__init__(name="fallback")
-        self._unprivileged = unprivileged
-        self._privileged = privileged
-        self.shells: list[str] = []
-        self.privileged_calls: list[tuple[str, bool]] = []
-
-    async def run_shell(self, shell: str, *, check: bool = False) -> str:
-        self.shells.append(shell)
-        return self._unprivileged
-
-    async def run_shell_privileged(
-        self, shell: str, *, sudo: bool = False, su: bool = False, doas: bool = False
-    ) -> str:
-        self.privileged_calls.append((shell, sudo))
-        return self._privileged
-
-
 def test_ssh_keypair_command_forms():
     # The default path rides tilde expansion of the conventional id_rsa.pub,
     # so the username is validated rather than quoted; an explicit path (what
     # the operation always passes, since it knows the key type) is quoted
-    # normally. Both print the existence MARKER first and turn a failing read
-    # into the UNREADABLE line.
+    # normally. Both print the existence MARKER first, turn a failing read into
+    # the UNREADABLE line, and carry the issue #71 traversal gate behind the
+    # guard -- the tilde ancestors unquoted, so they expand like the target.
     marker = SshKeyPair.MARKER
     unreadable = SshKeyPair.UNREADABLE
-    assert SshKeyPair.command(KP_USER) == (
-        f"test -e ~{KP_USER}/.ssh/id_rsa.pub && "
-        f"{{ printf '{marker}\\n'; ssh-keygen -lf ~{KP_USER}/.ssh/id_rsa.pub "
-        f"2>/dev/null || printf '{unreadable}\\n'; }}"
+    tilde = f"~{KP_USER}/.ssh/id_rsa.pub"
+    assert SshKeyPair.command(KP_USER) == probe(
+        f"test -e {tilde}",
+        f'printf "{marker}\\n"; ssh-keygen -lf {tilde} 2>/dev/null '
+        f'|| printf "{unreadable}\\n"',
+        f"~{KP_USER}/.ssh",
+        f"~{KP_USER}",
     )
-    quoted = shlex.quote("/srv/keys/my key.pub")
-    assert SshKeyPair.command(KP_USER, path="/srv/keys/my key.pub") == (
-        f"test -e {quoted} && "
-        f"{{ printf '{marker}\\n'; ssh-keygen -lf {quoted} "
-        f"2>/dev/null || printf '{unreadable}\\n'; }}"
+    assert SshKeyPair.command(KP_USER, path=KP_PUB) == probe(
+        f"test -e {KP_PUB}",
+        f'printf "{marker}\\n"; ssh-keygen -lf {KP_PUB} 2>/dev/null '
+        f'|| printf "{unreadable}\\n"',
+        KP_DIR,
+        KP_HOME,
+        "/home",
+        "/",
     )
+    # Quoting proof, for a path that needs it: the inner script comes back out
+    # through shlex.split.
+    path = "/srv/keys/my key.pub"
+    quoted = shlex.quote(path)
+    inner = shlex.split(SshKeyPair.command(KP_USER, path=path))[2]
+    assert inner.startswith(
+        f'if test -e {quoted}; then printf "{marker}\\n"; '
+        f'ssh-keygen -lf {quoted} 2>/dev/null || printf "{unreadable}\\n"; else '
+    )
+    assert inner.endswith(f"{hidden_gate('/srv/keys', '/srv', '/')}; fi")
     # The stderr redirect is what keeps a missing ssh-keygen (exit 127 lands on
     # the UNREADABLE arm) from raising CommandNotFoundError through the fact.
     assert "2>/dev/null" in SshKeyPair.command(KP_USER)
@@ -7361,7 +7712,7 @@ async def test_ssh_keypair_rereads_elevated_when_unreadable():
     # the normal case under sudo -- is the FileContents two-tier read: one
     # unprivileged shell, then exactly one elevated retry.
     command = SshKeyPair.command(KP_USER, path=KP_PUB)
-    host = KeyPairFallbackHost(
+    host = TieredShellHost(
         unprivileged=f"{SshKeyPair.MARKER}\n{SshKeyPair.UNREADABLE}\n",
         privileged=f"{SshKeyPair.MARKER}\n4096 {KP_FINGERPRINT} {KP_USER}@h (RSA)\n",
     )
@@ -7373,7 +7724,7 @@ async def test_ssh_keypair_rereads_elevated_when_unreadable():
 async def test_ssh_keypair_absent_file_never_elevates():
     # No MARKER line: the ``test -e`` guard failed, so the pair is simply
     # absent and there is nothing to re-read elevated.
-    host = KeyPairFallbackHost(unprivileged="", privileged="")
+    host = TieredShellHost(unprivileged="", privileged="")
     assert await SshKeyPair.process(host, KP_USER, path=KP_PUB) is None
     assert host.shells == [SshKeyPair.command(KP_USER, path=KP_PUB)]
     assert host.privileged_calls == []
@@ -7384,12 +7735,48 @@ async def test_ssh_keypair_unreadable_when_elevated_reads_absent():
     # the host, which the guarded shell masks into the UNREADABLE arm. The fact
     # reports None rather than guessing: an operation can only plan a
     # generation, which then fails loudly at apply.
-    host = KeyPairFallbackHost(
+    host = TieredShellHost(
         unprivileged=f"{SshKeyPair.MARKER}\n{SshKeyPair.UNREADABLE}\n",
         privileged=f"{SshKeyPair.MARKER}\n{SshKeyPair.UNREADABLE}\n",
     )
     assert await SshKeyPair.process(host, KP_USER, path=KP_PUB) is None
     assert len(host.privileged_calls) == 1
+
+
+async def test_ssh_keypair_reprobes_elevated_when_hidden():
+    # The issue's own shape, over the real transport: an Ubuntu ``0750`` home hid
+    # the whole ``.ssh`` subtree, so the guard answered "no such file" for a pair
+    # that was there. The gate's marker -- not the empty stdout -- is what says the
+    # lookup was never allowed, and one elevated retry gets the real fingerprint.
+    command = SshKeyPair.command(KP_USER, path=KP_PUB)
+    host = TieredShellHost(
+        unprivileged=f"{HIDDEN}\n",
+        privileged=f"{SshKeyPair.MARKER}\n4096 {KP_FINGERPRINT} {KP_USER}@h (RSA)\n",
+    )
+    assert await SshKeyPair.process(host, KP_USER, path=KP_PUB) == KP_FINGERPRINT
+    assert host.shells == [command]
+    assert host.privileged_calls == [(command, True)]
+
+
+async def test_ssh_keypair_hidden_when_elevated_reads_absent():
+    # Elevated, the same marker means the run-as user is not root. The pair reads
+    # as absent, so the operation can only plan a generation -- which fails loudly
+    # at apply rather than the fact inventing a fingerprint nobody was shown.
+    host = TieredShellHost(unprivileged=f"{HIDDEN}\n", privileged=f"{HIDDEN}\n")
+    assert await SshKeyPair.process(host, KP_USER, path=KP_PUB) is None
+    assert len(host.privileged_calls) == 1
+
+
+async def test_ssh_keypair_seam_reports_the_pair_behind_a_denied_home():
+    # Offline: the seeded home withholds traversal, the unprivileged seam refuses the
+    # path as the real guard would, and the elevated tier answers from the state.
+    host = UntraversableHomeHost(
+        name="h",
+        hidden_paths=(KP_HOME,),
+        home_directories={KP_USER: KP_HOME},
+        ssh_key_pairs={KP_USER: KP_FINGERPRINT},
+    )
+    assert await SshKeyPair.process(host, KP_USER) == KP_FINGERPRINT
 
 
 def test_ssh_keypair_generate_command_shell_rendering():
@@ -7612,6 +7999,23 @@ async def test_ssh_keypair_noop_when_the_pair_exists():
     assert ctx.reason == (
         f"directory {KP_DIR} already exists; key pair {KP_PUB} already exists"
     )
+
+
+async def test_ssh_keypair_converges_behind_an_untraversable_home():
+    # The issue's second symptom, offline: the hidden ``.ssh`` and pair read as
+    # absent, so the operation planned a directory it already had and a generation
+    # whose ``ssh-keygen`` would hit the real key, prompt for an overwrite, take the
+    # EOF on stdin and exit 1. Seeing past the home's mode leaves the plan empty.
+    host = UntraversableHomeHost(
+        name="h",
+        hidden_paths=(KP_HOME,),
+        home_directories={KP_USER: KP_HOME},
+        directory_stats=KP_DIR_OK,
+        ssh_key_pairs={KP_PUB: KP_FINGERPRINT},
+    )
+    ctx, commands = await materialize(host, op(server.ssh_keypair, user=KP_USER))
+    assert commands == []
+    assert not ctx.changed
 
 
 async def test_ssh_keypair_force_regenerates_an_existing_pair():

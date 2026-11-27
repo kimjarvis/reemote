@@ -251,14 +251,173 @@ def _check_tilde_username(user: str) -> None:
         raise ValueError(f"Unsafe username for shell tilde expansion: {user!r}")
 
 
+# --- Elevated re-probe (issue #71) -------------------------------------------
+#
+# ``useradd -m`` creates a home as ``0750`` group-owned by the new user's private
+# group (Ubuntu's ``login.defs`` ``HOME_MODE``), so a login that is neither the
+# owner nor a member of that group is refused every path *under* it: a directory
+# needs its ``x`` bit before its entries can be resolved at all, so ``test
+# -e``/``-d``/``-f`` answer "no such file" and a key pair that is really there
+# reads as absent. The reader then plans the write again on every pass, and
+# ``server.ssh_keypair`` runs ``ssh-keygen`` over the existing key -- which
+# prompts, gets EOF and exits 1. The path reads below therefore carry their own
+# traversal gate: when the probe's guard finds nothing, the *same* shell walks the
+# path's directories outward to the nearest one the login can see and, if that one
+# withholds its ``x`` bit, prints the hidden marker. A hidden answer is never
+# trusted as absence -- the shell re-runs elevated with ``sudo``, where traversal
+# is unrestricted; the run-as user and any password come from the inventory
+# ``privilege`` data, never from a fact or an operation.
+#
+# This is the gate ``files`` established for the same bug in issue #70, inlined
+# into the probe instead of issued as a follow-up shell: the answer then arrives
+# on stdout rather than being parsed out of a tool's English error text, which is
+# locale-dependent and absent altogether when the lookup merely succeeded. The
+# zero-cross-module-import invariant (see ``_KeysChmodCommand``) keeps this a
+# server-local twin of that helper rather than an import from ``files``.
+# Emptiness alone never elevates -- an absent path is real state that legitimately
+# prints nothing, and a ``sudo`` round-trip on every ordinary first run would fail
+# outright on a host whose login has no sudo at all.
+
+#: Marker the traversal gate prints when the nearest existing directory above a
+#: probed path denies the login user search, which is what makes a probe of the
+#: path itself meaningless. Printed on stdout only; the gate always exits zero.
+_PATH_HIDDEN = "#reemote-path-hidden"
+
+
+class _HiddenPath:
+    """Sentinel type: absence an unprivileged read had no right to report."""
+
+
+#: The single sentinel the two-tier facts' first-tier reads return for a path the
+#: login user could not even name, because a directory above it withheld its
+#: ``x`` bit: ``test -e``, ``cat`` and ``stat`` all fail with ``EACCES`` and the
+#: shell squashes that into a plain "does not exist". ``process`` turns it into
+#: one elevated re-probe (issue #71). A private object, so no parsed value can
+#: ever compare equal to it.
+_HIDDEN = _HiddenPath()
+
+
+def _ancestor_dirs(path: str) -> list[str]:
+    """The path's directories, nearest first: ``/a/b/c`` -> ``["/a/b", "/a", "/"]``.
+
+    ``PurePosixPath``, not ``os.path``: the remote is always *nix while the
+    controller might be Windows (the operations' own reasoning). The walk stops at
+    a bare anchor -- ``/``, or a ``~user`` word -- so nothing above the filesystem
+    root or the home shorthand is ever asked about, and a bare relative name
+    contributes nothing: the working directory's own bits are not this probe's
+    business.
+    """
+    dirs: list[str] = []
+    directory = str(PurePosixPath(path).parent)
+    while directory and directory != "." and directory not in dirs:
+        dirs.append(directory)
+        if "/" not in directory or directory == "/":
+            break
+        directory = str(PurePosixPath(directory).parent)
+    return dirs
+
+
+def _quote_ancestor(directory: str) -> str:
+    """Quote one ancestor for the gate, leaving a leading ``~`` for the shell.
+
+    The ``File`` family's tilde rule: a ``~``, ``~/`` or ``~user`` head stays
+    unquoted so the remote shell expands it into the home directory the probe was
+    addressed to, while any later segment is quoted normally. ``~user`` is only
+    ever built after ``_check_tilde_username`` accepted the name.
+    """
+    if directory.startswith("~"):
+        head, _, tail = directory.partition("/")
+        return head + (f"/{shlex.quote(tail)}" if tail else "")
+    return shlex.quote(directory)
+
+
+def _hidden_parent_clause(path: str) -> str:
+    """Shell printing ``_PATH_HIDDEN`` when a directory above ``path`` hides it.
+
+    The ancestors are chained ``if``/``elif``, so the search stops at the first
+    directory the login user can ``test -e``: reaching *it* needed only its own
+    parent's search bit, and a traversable nearest ancestor makes everything
+    below it nameable, so a deeper miss is genuine absence rather than
+    invisibility. Only that one directory's ``-x`` is consulted -- on a directory
+    the execute bit *is* the search permission. Every branch ends in a successful
+    ``[ -x ]`` or ``printf`` (and an ``if`` with no branch taken exits zero), so
+    the clause never fails the shell that embeds it, which matters on the elevated
+    tier where ``run_shell_privileged`` turns any non-zero exit into an error.
+    """
+    dirs = _ancestor_dirs(path)
+    if not dirs:
+        # Nothing above the path to blame: a bare name is exactly as visible as
+        # the working directory allows, which this probe cannot judge.
+        return "true"
+    branches: list[str] = []
+    for index, directory in enumerate(dirs):
+        quoted = _quote_ancestor(directory)
+        opener = "if" if index == 0 else "elif"
+        branches.append(
+            f'{opener} [ -e {quoted} ]; then [ -x {quoted} ] '
+            f'|| printf "{_PATH_HIDDEN}\\n";'
+        )
+    return " ".join(branches) + " fi"
+
+
+def _answer_hidden(stdout: str) -> bool:
+    """Whether a probe's stdout reports the path as unnameable rather than absent.
+
+    The marker is matched as a whole line, so file content or a key that merely
+    mentions it cannot buy an elevation; and because the gate only runs in the
+    probe's no-answer arm, the marker can never travel beside a real answer.
+    """
+    return _PATH_HIDDEN in stdout.splitlines()
+
+
+def _seam_target(host: Host, user: str, path: str | None, suffix: str) -> str | None:
+    """The literal path a simulated read addresses, tilde form resolved.
+
+    An explicit ``path`` is the answer. The tilde form (``path=None``) resolves
+    through ``SimulatedHost.home_directories`` -- the seam the ``Home`` fact
+    reads -- so the traversal model sees the file the remote shell would expand
+    to. No seeded home leaves the model with nothing to test, which is
+    permissive: an unseeded host answers as though the login could reach it.
+    """
+    if path is not None:
+        return path
+    homes = getattr(host, "home_directories", None)
+    home = homes.get(user) if isinstance(homes, dict) else None
+    return f"{home}/{suffix}" if home else None
+
+
+def _seam_hidden(host: Host, path: str | None) -> bool:
+    """Whether the simulated host must answer this read as an unseen path.
+
+    ``SimulatedHost.login_path_visible`` is the traversal model the facts consult
+    before trusting an absent answer: the seeded ``directory_stats`` modes decide
+    whether the login user can name the path at all. Only the unprivileged tier
+    asks, so the elevated re-read falls back to the seam state and answers there
+    -- which is what makes the hidden-then-elevated scenario run offline. A host
+    without the model (or with no resolvable path) answers permissively.
+    """
+    if path is None:
+        return False
+    visible = getattr(host, "login_path_visible", None)
+    return visible is not None and not visible(path)
+
+
 class AuthorizedKeys:
     """The SSH public keys listed in a user's ``~/.ssh/authorized_keys`` file.
+
+    A key file the login user cannot see -- because a directory above it denies
+    traversal -- is re-probed elevated with ``sudo``, so a hidden file is never
+    reported as a file with no keys; the run-as user and any password come from
+    the inventory ``privilege`` data, never from a fact or an operation.
 
     **Commands:**
 
     ```bash
-    cat ~<user>/.ssh/authorized_keys 2>/dev/null || true
+    sh -c 'if test -e <target>; then cat -- <target> || true; else if [ -e <dir> ]; then [ -x <dir> ] || printf "#reemote-path-hidden\\n"; elif [ -e <parent> ]; then [ -x <parent> ] || printf "#reemote-path-hidden\\n"; fi; fi'
     ```
+
+    The second half runs only when the guard found nothing, and walks the path's
+    directories outward to the nearest existing one.
 
     **Returns:**
 
@@ -269,7 +428,7 @@ class AuthorizedKeys:
     **Raises:**
 
     ```python
-    HostConnectionError, ValueError
+    HostConnectionError, PrivilegeError, ValueError
     ```
 
     Examples:
@@ -279,7 +438,7 @@ class AuthorizedKeys:
     # Mirrors the baseline's ``server.AuthorizedKeys``: the full key strings are
     # returned as a list in the file's order; empty lines and lines starting
     # with ``#`` are skipped. A missing or empty file reads as ``[]`` (the
-    # command swallows ``cat``'s error), for example::
+    # ``|| true`` guard tolerates ``cat``'s failure), for example::
     #
     #     [
     #         "ssh-ed25519 AAAAC3Nz... user@host",
@@ -291,22 +450,46 @@ class AuthorizedKeys:
     # user's own ``~``. Because ``~user`` must stay an unquoted bare word, an
     # unsafe username raises ``ValueError`` instead of reaching the shell.
     # An explicit ``path`` reads that file instead (``shlex``-quoted:
-    # ``cat <path> 2>/dev/null || true``), which
+    # ``cat -- <path> || true``), which
     # is how the baseline's ``server.authorized_keys`` operation supports
     # non-default key files.
+    #
+    # The read is two-tier (the issue #71 note above). A missing file and a
+    # file the login user cannot name both leave the guard's ``test -e``
+    # failing, so the ``else`` arm asks the one question the guard cannot answer
+    # itself: whether a directory above the path withheld its ``x`` bit. Only a
+    # hidden answer sends the same shell through ``run_shell_privileged``; a
+    # plain ``ENOENT`` still reads as []. The whole shell rides ``sh -c`` so the
+    # elevated tier elevates the read rather than exec'ing a program named
+    # ``test`` with an unexpanded ``~user`` argument (the ``FileContents`` read
+    # and the issue #69 self-wrap rule).
 
     @classmethod
     def command(cls, user: str, path: str | None = None) -> str:
-        """Shell cats the key file, mapping a missing/unreadable one to no output.
+        """Shell cats the key file, mapping a missing one to no stdout.
 
         Tilde expansion resolves the user's home without another fact
         round-trip, so the username is validated rather than quoted; an
-        explicit path is quoted normally.
+        explicit path is quoted normally. ``|| true`` keeps a missing file from
+        failing the shell -- which the elevated tier would otherwise report as
+        ``CommandError`` -- and the ``else`` arm is the traversal gate, printing
+        the hidden marker when a directory above the path denied the lookup, so
+        the refusal is reported on stdout rather than as a tool's error text.
+        The composite rides ``sh -c`` so elevation reaches the ``cat`` and the
+        tilde still expands.
         """
         if path is not None:
-            return f"cat {shlex.quote(path)} 2>/dev/null || true"
-        _check_tilde_username(user)
-        return f"cat ~{user}/.ssh/authorized_keys 2>/dev/null || true"
+            raw = path
+            target = shlex.quote(path)
+        else:
+            _check_tilde_username(user)
+            raw = f"~{user}/.ssh/authorized_keys"
+            target = raw
+        inner = (
+            f"if test -e {target}; then cat -- {target} || true; "
+            f"else {_hidden_parent_clause(raw)}; fi"
+        )
+        return f"sh -c {shlex.quote(inner)}"
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> list[str]:
@@ -325,19 +508,55 @@ class AuthorizedKeys:
 
     @classmethod
     async def process(cls, host: Host, user: str, path: str | None = None) -> list[str]:
+        keys = await cls._read(host, user, path, privileged=False)
+        if keys is _HIDDEN:
+            # Not observable as the login user: a directory above the key file
+            # denied traversal, so the guard's ``test -e`` failed with ``EACCES``
+            # and answered "no such file". Re-read elevated; the run-as user and
+            # any password come from the inventory privilege data
+            # (run_shell_privileged), never from here.
+            keys = await cls._read(host, user, path, privileged=True)
+            if keys is _HIDDEN:
+                # Elevated, the marker means the run-as user was refused the same
+                # lookup -- it is not root. The fact's contract is a key list, so
+                # an unreachable file reports as one with no keys: the operation
+                # plans its write and that fails loudly at apply, instead of the
+                # fact guessing at content it never saw.
+                return []
+        return keys
+
+    @classmethod
+    async def _read(
+        cls, host: Host, user: str, path: str | None, *, privileged: bool
+    ) -> list[str] | _HiddenPath:
         # Build the shell first, even on the simulated path, so an unsafe
         # tilde username is rejected identically on both transports.
         shell = cls.command(user, path)
         authorized = getattr(host, "authorized_keys", None)
         if authorized is not None:
-            # SimulatedHost seam: the state is keyed by username for the
-            # default path and by the explicit path otherwise. Return a copy
-            # so callers never mutate the simulated state.
+            if not privileged and _seam_hidden(
+                host, _seam_target(host, user, path, ".ssh/authorized_keys")
+            ):
+                # SimulatedHost seam: the seeded directory modes shut the login
+                # out, so answer what the real guard would have answered and let
+                # the elevated tier come back here for the state.
+                return _HIDDEN
+            # The state is keyed by username for the default path and by the
+            # explicit path otherwise. Return a copy so callers never mutate
+            # the simulated state.
             key = user if path is None else path
             return list(authorized.get(key, []))
-        # Real transport: cat over asyncssh. A missing file produces empty
-        # stdout (the error is swallowed), which parses to [].
-        stdout = await host.run_shell(shell)
+        # Real transport: cat the file over asyncssh. A missing file produces
+        # empty stdout, which parses to []; a path the login could not name says
+        # so on its own line, which is the only thing telling the two apart.
+        if privileged:
+            stdout = await host.run_shell_privileged(shell, sudo=True)
+        else:
+            stdout = await host.run_shell(shell)
+        # The gate's line is read on either tier: a run-as user who is not root
+        # is refused exactly what the login user was.
+        if _answer_hidden(stdout):
+            return _HIDDEN
         return cls.parse(stdout.splitlines())
 
 
@@ -350,11 +569,20 @@ class AuthorizedKeysFile:
     ``server.locale`` for ``/etc/locale.gen`` and by
     ``server.security_limit`` for ``/etc/security/limits.conf``.
 
+    A file the login user cannot see -- because a directory above it denies
+    traversal -- is re-probed elevated with ``sudo``, so a hidden file is never
+    reported as an absent one, nor as the empty file an operation would rewrite
+    from scratch; the run-as user and any password come from the inventory
+    ``privilege`` data, never from an operation.
+
     **Commands:**
 
     ```bash
-    test -e <path> && { printf '#reemote-authorizedkeysfile\\n'; cat -- <path>; }
+    sh -c 'if test -e <path>; then printf "#reemote-authorizedkeysfile\\n"; cat -- <path> || true; else if [ -e <dir> ]; then [ -x <dir> ] || printf "#reemote-path-hidden\\n"; elif [ -e <parent> ]; then [ -x <parent> ] || printf "#reemote-path-hidden\\n"; fi; fi'
     ```
+
+    The second half runs only when the guard found nothing, and walks the path's
+    directories outward to the nearest existing one.
 
     **Returns:**
 
@@ -365,7 +593,7 @@ class AuthorizedKeysFile:
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError
+    HostConnectionError, PrivilegeError
     ```
 
     Examples:
@@ -390,6 +618,14 @@ class AuthorizedKeysFile:
     # there is no tilde branch: the operation resolves ``Home`` first and
     # always passes the explicit key-file path, which is also what lets the
     # simulated read ride the literal-path ``remote_files`` seam.
+    #
+    # The read is two-tier (issue #71). The ``test -e`` guard cannot tell a
+    # missing file from a file the login user was never allowed to name --
+    # under a directory that withholds its ``x`` bit every path below it answers
+    # "no such file" -- so the ``else`` arm carries the traversal gate, and only
+    # its marker re-runs the same shell elevated. Without it an
+    # ``authorized_keys`` file the login could not reach read as absent, and the
+    # operation re-planned its write on every pass.
 
     #: Marker printed before the ``cat``'d content, only when ``test -e``
     #: passes, so ``process`` can tell an existing (possibly empty) file from
@@ -400,26 +636,81 @@ class AuthorizedKeysFile:
     def command(cls, path: str) -> str:
         """Shell printing ``MARKER`` then the file's content, only if it exists.
 
-        The ``test -e`` guard means a missing file produces no output at all
-        (not even the marker), while an existing one -- empty or not -- always
-        leads with the marker line (``AptSourcesFile.command``'s form).
+        The ``test -e`` guard means a missing file prints no content at all (not
+        even the marker), while an existing one -- empty or not -- always leads
+        with the marker line. ``|| true`` absorbs a ``cat`` the login user was
+        refused, exactly as the baseline's unwrapped chain did, and the ``else``
+        arm is the traversal gate: the marker it prints is the one sign a
+        non-traversable directory leaves, since the guard itself cannot report
+        the refusal.
+
+        The whole read rides an explicit ``sh -c`` composite (the
+        ``FileContents``/issue #69 rule): ``process`` re-reads through
+        ``run_shell_privileged(..., sudo=True)``, and ``sudo`` execs its command
+        rather than running a shell, so an unwrapped ``if``/``&&`` chain would
+        elevate nothing. The ``printf`` formats are double-quoted to keep the
+        composite free of nested single-quote escaping, and every arm ends in a
+        truthy command so a missing file is never the non-zero exit the elevated
+        tier would raise ``CommandError`` for.
         """
         quoted = shlex.quote(path)
-        return f"test -e {quoted} && {{ printf '{cls.MARKER}\\n'; cat -- {quoted}; }}"
+        inner = (
+            f'if test -e {quoted}; then printf "{cls.MARKER}\\n"; '
+            f"cat -- {quoted} || true; "
+            f"else {_hidden_parent_clause(path)}; fi"
+        )
+        return f"sh -c {shlex.quote(inner)}"
 
     @classmethod
     async def process(cls, host: Host, path: str) -> str | None:
+        content = await cls._read(host, path, privileged=False)
+        if content is _HIDDEN:
+            # Not observable as the login user: a directory above the path
+            # denied traversal, so the guard answered "no such file" for a file
+            # that may well be there. Re-read elevated; the run-as user and any
+            # password come from the inventory privilege data
+            # (run_shell_privileged), never from an operation.
+            content = await cls._read(host, path, privileged=True)
+            if content is _HIDDEN:
+                # Elevated too the lookup was refused -- the run-as user is not
+                # root. The fact's contract is content or None, so an
+                # unreachable file reports as an absent one rather than the
+                # operation guessing at text nobody was allowed to read.
+                return None
+        return content
+
+    @classmethod
+    async def _read(
+        cls, host: Host, path: str, *, privileged: bool
+    ) -> str | None | _HiddenPath:
         remote_files = getattr(host, "remote_files", None)
         if remote_files is not None:
-            # SimulatedHost seam: decode the content the simulated remote
-            # filesystem holds at the path (None when absent). The same store
-            # the spool-and-install mutator writes the installed bytes back
-            # into, so a simulated write reads back through this fact.
+            # SimulatedHost seam: the seeded directory modes shut the login out,
+            # so answer what the real guard would have answered -- a path behind
+            # an unsearchable directory is one the login cannot even see, whether
+            # or not the seed happens to hold it. The elevated tier comes back
+            # here for the state.
+            if not privileged and _seam_hidden(host, path):
+                return _HIDDEN
+            # Otherwise decode the content the simulated remote filesystem holds
+            # at the path (None when absent). The same store the
+            # spool-and-install mutator writes the installed bytes back into, so
+            # a simulated write reads back through this fact.
             data = remote_files.get(path)
-            return data.decode("utf-8") if data is not None else None
+            if data is None:
+                return None
+            return data.decode("utf-8")
         # Real transport: cat the file over asyncssh behind the marker, so a
         # missing file (no marker) reads as None rather than empty content.
-        stdout = await host.run_shell(cls.command(path))
+        command = cls.command(path)
+        if privileged:
+            stdout = await host.run_shell_privileged(command, sudo=True)
+        else:
+            stdout = await host.run_shell(command)
+        # The gate's line is read on either tier: a run-as user who is not root
+        # is refused exactly what the login user was.
+        if _answer_hidden(stdout):
+            return _HIDDEN
         prefix = f"{cls.MARKER}\n"
         if not stdout.startswith(prefix):
             return None
@@ -3220,16 +3511,22 @@ class SshKeyPair:
     """The fingerprint of a user's SSH key pair, or None when it is absent.
 
     Reads the public half of the pair with ``ssh-keygen -lf`` and reports
-    its ``SHA256:...`` fingerprint. A public key the login user cannot read
-    is re-read elevated with ``sudo``, so restrictive ``.ssh`` modes keep
-    key-pair idempotence; the run-as user and any password come from the
-    inventory ``privilege`` data, never from a fact or operation.
+    its ``SHA256:...`` fingerprint. A key the login user cannot see -- because a
+    directory above it denies traversal, as under Ubuntu's ``0750``
+    ``useradd -m`` home -- or cannot read is re-probed elevated with ``sudo``, so
+    restrictive modes keep key-pair idempotence instead of planning a
+    regeneration over the key that is really there; the run-as user and any
+    password come from the inventory ``privilege`` data, never from a fact or
+    operation.
 
     **Commands:**
 
     ```bash
-    test -e ~<user>/.ssh/id_rsa.pub && { printf '#reemote-sshkeypair\\n'; ssh-keygen -lf ~<user>/.ssh/id_rsa.pub 2>/dev/null || printf '#reemote-sshkeypair-unreadable\\n'; }
+    sh -c 'if test -e <target>; then printf "#reemote-sshkeypair\\n"; ssh-keygen -lf <target> 2>/dev/null || printf "#reemote-sshkeypair-unreadable\\n"; else if [ -e <dir> ]; then [ -x <dir> ] || printf "#reemote-path-hidden\\n"; elif [ -e <parent> ]; then [ -x <parent> ] || printf "#reemote-path-hidden\\n"; fi; fi'
     ```
+
+    The second half runs only when the guard found nothing, and walks the path's
+    directories outward to the nearest existing one.
 
     **Returns:**
 
@@ -3263,6 +3560,17 @@ class SshKeyPair:
     # shell also masks a missing ``ssh-keygen`` (exit 127 lands on the
     # ``UNREADABLE`` arm), so this fact never raises
     # ``CommandNotFoundError``.
+    #
+    # Two signals raise the elevated re-read, because one alone was not enough
+    # (issue #71): the ``UNREADABLE`` line reports a key the login cannot *read*,
+    # and the ``else`` arm's traversal gate reports a lookup the login was never
+    # allowed to *make* -- a state ``test -e`` hides, since a directory without
+    # its ``x`` bit makes every path under it answer "no such file". Without the
+    # second signal an Ubuntu ``0750`` home read the pair as absent, the
+    # operation planned a generation over the existing key, and ``ssh-keygen``
+    # prompted for an overwrite no channel could answer. The composite rides
+    # ``sh -c`` so the elevated tier elevates the whole read rather than
+    # exec'ing a program named ``test`` (the issue #69 rule).
 
     #: Marker printed before the ``ssh-keygen`` row, only when ``test -e``
     #: passes, so ``_read`` can tell an existing key file from a missing one
@@ -3279,25 +3587,37 @@ class SshKeyPair:
     def command(cls, user: str, path: str | None = None) -> str:
         """Shell printing ``MARKER`` then the ``ssh-keygen -lf`` row, if the key exists.
 
-        The ``test -e`` guard means a missing file produces no output at all
-        (not even the marker), while an existing one always leads with the
-        marker line; a failing read prints ``UNREADABLE`` instead of the row.
-        Tilde expansion resolves the user's home without another fact
+        The ``test -e`` guard means a missing file prints no content at all (not
+        even the marker), while an existing one always leads with the marker
+        line; a failing read prints ``UNREADABLE`` instead of the row. The
+        ``else`` arm is the traversal gate, whose marker is the one sign a
+        non-traversable directory leaves -- the guard cannot report the refusal
+        it caused. Tilde expansion resolves the user's home without another fact
         round-trip, so the username is validated rather than quoted; the
         default file is the conventional ``id_rsa.pub``. An explicit path
         (what ``server.ssh_keypair`` always passes, since it knows the key
         type) is quoted normally.
+
+        The whole read rides an explicit ``sh -c`` composite for the elevated
+        re-read to mean anything (issue #69), its ``printf`` formats are
+        double-quoted to avoid nested single quotes, and both failure arms end
+        in a truthy guard so the elevated tier's non-zero-exit check never fires
+        and a missing ``ssh-keygen`` never surfaces as ``CommandNotFoundError``.
         """
         if path is None:
             _check_tilde_username(user)
-            target = f"~{user}/.ssh/id_rsa.pub"
+            raw = f"~{user}/.ssh/id_rsa.pub"
+            target = raw
         else:
+            raw = path
             target = shlex.quote(path)
-        return (
-            f"test -e {target} && {{ printf '{cls.MARKER}\\n'; "
-            f"ssh-keygen -lf {target} 2>/dev/null "
-            f"|| printf '{cls.UNREADABLE}\\n'; }}"
+        inner = (
+            f'if test -e {target}; then printf "{cls.MARKER}\\n"; '
+            f'ssh-keygen -lf {target} 2>/dev/null '
+            f'|| printf "{cls.UNREADABLE}\\n"; '
+            f"else {_hidden_parent_clause(raw)}; fi"
         )
+        return f"sh -c {shlex.quote(inner)}"
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> str | None:
@@ -3323,40 +3643,49 @@ class SshKeyPair:
 
     @classmethod
     async def process(cls, host: Host, user: str, path: str | None = None) -> str | None:
-        # Build the shell first, even on the simulated path, so an unsafe
-        # tilde username is rejected identically on both transports.
-        cls.command(user, path)
-        key_pairs = getattr(host, "ssh_key_pairs", None)
-        if key_pairs is not None:
-            # SimulatedHost seam: the state is keyed by username for the
-            # default path and by the explicit public-key path otherwise; an
-            # absent key reads as None, like a missing file. str is
-            # immutable, so no copy is needed.
-            return key_pairs.get(user if path is None else path)
         fingerprint = await cls._read(host, user, path, privileged=False)
-        if fingerprint is _UNREADABLE_KEY_PAIR:
-            # Present but unreadable as the login user: re-read elevated.
-            # The run-as user and any password come from the inventory
-            # privilege data (run_shell_privileged), never from here.
+        if fingerprint is _HIDDEN or fingerprint is _UNREADABLE_KEY_PAIR:
+            # Either the key sits behind a directory the login user may not
+            # search, or it is there but mode-unreadable: re-read elevated. The
+            # run-as user and any password come from the inventory privilege
+            # data (run_shell_privileged), never from here.
             fingerprint = await cls._read(host, user, path, privileged=True)
-            if fingerprint is _UNREADABLE_KEY_PAIR:
+            if fingerprint is _HIDDEN or fingerprint is _UNREADABLE_KEY_PAIR:
                 # Even elevated the row failed to read -- in practice no
-                # ``ssh-keygen`` on the host, which the guarded shell hides.
-                # Reads as absent: an operation can only plan a generation,
-                # and that command then fails loudly at apply rather than
-                # the fact guessing an answer.
+                # ``ssh-keygen`` on the host, which the guarded shell hides, or a
+                # run-as user refused the same lookup. Reads as absent: an
+                # operation can only plan a generation, which then fails loudly
+                # at apply rather than the fact guessing an answer.
                 return None
         return fingerprint
 
     @classmethod
     async def _read(
         cls, host: Host, user: str, path: str | None, *, privileged: bool
-    ) -> str | None | _UnreadableKeyPair:
+    ) -> str | None | _UnreadableKeyPair | _HiddenPath:
+        # Build the shell first, even on the simulated path, so an unsafe
+        # tilde username is rejected identically on both transports.
         command = cls.command(user, path)
+        key_pairs = getattr(host, "ssh_key_pairs", None)
+        if key_pairs is not None:
+            if not privileged and _seam_hidden(
+                host, _seam_target(host, user, path, ".ssh/id_rsa.pub")
+            ):
+                # SimulatedHost seam: the seeded directory modes shut the login
+                # out, so answer what the real guard would have answered and let
+                # the elevated tier come back here for the state.
+                return _HIDDEN
+            # The state is keyed by username for the default path and by the
+            # explicit public-key path otherwise; an absent key reads as None,
+            # like a missing file. str is immutable, so no copy is needed.
+            return key_pairs.get(user if path is None else path)
         if privileged:
             stdout = await host.run_shell_privileged(command, sudo=True)
         else:
             stdout = await host.run_shell(command)
+        if _answer_hidden(stdout):
+            # The gate's line, on either tier: the pair could not be named.
+            return _HIDDEN
         prefix = f"{cls.MARKER}\n"
         if not stdout.startswith(prefix):
             # The test -e guard failed: no public key file, no fingerprint.
@@ -4567,6 +4896,13 @@ class _KeysPathStat:
     from "wrong type" (both short-circuit to no output and read as ``None``)
     -- the same simplification ``_HomeDirectory`` already accepts, since
     only a test seeds a deliberately wrong-typed path.
+
+    A path the login user cannot even name -- every entry under a home that
+    withholds its ``x`` bit, as Ubuntu's ``0750`` ``useradd -m`` homes do --
+    re-probes elevated with ``sudo``, so a ``.ssh`` directory that exists but
+    cannot be seen is not chmod'd and chown'd again on every pass; the run-as
+    user and any password come from the inventory ``privilege`` data, never
+    from a fact or an operation.
     """
 
     # GNU stat owner/mode format. ``%a`` prints the mode as its octal digits
@@ -4580,13 +4916,27 @@ class _KeysPathStat:
     def command(cls, path: str, directory: bool) -> str:
         """Shell describing ``path``'s owner/mode only for the wanted type.
 
-        A missing or wrong-typed path produces no output at all (the
-        ``test -d``/``test -f`` guard short-circuits), like
-        the baseline's ``Directory``/``File`` chains.
+        A missing or wrong-typed path prints nothing at all (the
+        ``test -d``/``test -f`` guard short-circuits), like the baseline's
+        ``Directory``/``File`` chains. A *hidden* path prints nothing too, which
+        is why the ``elif`` arm -- taken only when the guard failed and the path
+        is not even nameable -- carries the traversal gate: its marker is the one
+        sign a directory above the path refused the lookup, the state a bare
+        ``test`` cannot report (issue #71).
+
+        The composite rides an explicit ``sh -c`` so the elevated re-probe
+        elevates the whole probe instead of exec'ing a program named ``test``
+        (the issue #69 rule), and the ``stat`` format is double-quoted to keep
+        it free of nested single-quote escaping.
         """
         test = "-d" if directory else "-f"
         quoted = shlex.quote(path)
-        return f"test {test} {quoted} && stat -c '{cls._GNU_STAT_FORMAT}' {quoted}"
+        inner = (
+            f'if test {test} {quoted}; then stat -c "{cls._GNU_STAT_FORMAT}" '
+            f'{quoted}; elif ! test -e {quoted}; then '
+            f"{_hidden_parent_clause(path)}; fi"
+        )
+        return f"sh -c {shlex.quote(inner)}"
 
     @classmethod
     def parse(cls, output: Iterable[str]) -> dict[str, Any] | Literal[False] | None:
@@ -4615,10 +4965,34 @@ class _KeysPathStat:
     async def process(
         cls, host: Host, path: str, directory: bool = True
     ) -> dict[str, Any] | Literal[False] | None:
+        info = await cls._read(host, path, directory, privileged=False)
+        if info is _HIDDEN:
+            # Not observable as the login user: a directory above the path
+            # withheld its ``x`` bit, so the guard answered "no such file" for a
+            # path that may well be there. Re-probe elevated; the run-as user and
+            # any password come from the inventory privilege data
+            # (run_shell_privileged), never from here.
+            info = await cls._read(host, path, directory, privileged=True)
+            if info is _HIDDEN:
+                # Elevated too the lookup was refused -- the run-as user is not
+                # root. Reporting the path as absent is the honest answer of a
+                # probe nobody was allowed to make, and the operation's own write
+                # then fails loudly at apply rather than guessing a state.
+                return None
+        return info
+
+    @classmethod
+    async def _read(
+        cls, host: Host, path: str, directory: bool, *, privileged: bool
+    ) -> dict[str, Any] | Literal[False] | None | _HiddenPath:
         stats = getattr(host, "directory_stats" if directory else "file_stats", None)
         if stats is not None:
             # SimulatedHost seam (shared with files.Directory/files.File): a
-            # dict is the wanted type's metadata -- projected to the
+            # seeded ancestor mode that shuts the login out answers what the real
+            # guard answered, so the elevated tier comes back here.
+            if not privileged and _seam_hidden(host, path):
+                return _HIDDEN
+            # A dict is the wanted type's metadata -- projected to the
             # owner/mode triple, copied -- False an existing wrong-typed
             # path, an absent key None.
             value = stats.get(path)
@@ -4629,8 +5003,18 @@ class _KeysPathStat:
                     "mode": value.get("mode"),
                 }
             return value
-        # Real transport: the guarded stat chain over asyncssh.
-        stdout = await host.run_shell(cls.command(path, directory))
+        # Real transport: the guarded stat chain over asyncssh. A missing
+        # ``stat`` still exits 127 through the wrapper, and ``run_shell`` keeps
+        # raising that as CommandNotFoundError rather than letting it parse as
+        # an absent path.
+        command = cls.command(path, directory)
+        if privileged:
+            stdout = await host.run_shell_privileged(command, sudo=True)
+        else:
+            stdout = await host.run_shell(command)
+        if _answer_hidden(stdout):
+            # The gate's line, on either tier: the path could not be named.
+            return _HIDDEN
         return cls.parse(stdout.splitlines())
 
 
@@ -4852,7 +5236,7 @@ async def user_authorized_keys(
     **Raises:**
 
     ```python
-    CommandNotFoundError, HostConnectionError, OperationError, ValueError
+    CommandNotFoundError, HostConnectionError, OperationError, PrivilegeError, ValueError
     ```
 
     Examples:
@@ -4902,6 +5286,15 @@ async def user_authorized_keys(
     # stand-ins. Those state verbs stay in-place (a touch/mkdir/chmod/chown
     # payload is not file text); only the key-content write below moved to
     # the spool-and-install family.
+    #
+    # Every path read here is two-tier (issue #71): ``_KeysPathStat`` and the key
+    # facts each carry a traversal gate in their guard's failure arm, so a lookup
+    # the login user was never allowed to make -- an Ubuntu ``0750``
+    # ``useradd -m`` home hides its whole ``.ssh`` tree from a stranger login,
+    # and a bare ``test -d``/``test -e`` answers that with "no such file" --
+    # re-probes elevated instead of reporting the directory and the key file as
+    # missing. Without it the mkdir/chmod/chown trio and the key rewrite were
+    # re-planned on every pass and the ``changed`` flag never settled.
     #
     # The ``Home`` fact answers ``None`` for a user the host does not know
     # (its ``echo ~user`` stays unexpanded), and that reads as an
@@ -5200,7 +5593,12 @@ async def ssh_keypair(
     # GAP-2). Idempotence rides the ``SshKeyPair`` fact: a public half with a
     # fingerprint needs nothing (unless ``force``), and the re-read is
     # elevated-fault-tolerant, so a ``700`` ``.ssh`` owned by the target user
-    # -- the state this operation itself creates -- still reads. The
+    # -- the state this operation itself creates -- still reads. Issue #71
+    # widened that tolerance from a file the login user could not *read* to a
+    # lookup it was never allowed to *make*: the fact's own traversal gate sends
+    # a hidden path re-reading elevated, where it used to read as no pair at all
+    # and this operation planned a generation whose ``ssh-keygen`` then stopped on
+    # the real key's overwrite prompt, got no answer on stdin and exited 1. The
     # directory half is the ``user_authorized_keys`` ensure block verbatim
     # (``_KeysPathStat`` probe, ``_HomeMkdirCommand``/``_KeysChmodCommand``
     # 700/``_HomeChownCommand`` pair, wrong-typed path raises
