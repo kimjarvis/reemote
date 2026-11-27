@@ -60,6 +60,7 @@ from .postgresql import PostgresqlVars, postgresql, postgresql_data
 from .redis import RedisVars, redis
 from .repo_epel import EpelVars, repo_epel
 from .security import SecurityVars, security
+from .users import DeletedUserSpec, GroupSpec, UserSpec, UsersVars, users
 
 __all__: list[str] = [
     "ApacheOutputs",
@@ -68,10 +69,12 @@ __all__: list[str] = [
     "CertbotVars",
     "ComposerVars",
     "DatadogVars",
+    "DeletedUserSpec",
     "DockerVars",
     "DrushVars",
     "EpelVars",
     "GitVars",
+    "GroupSpec",
     "JavaVars",
     "MemcachedVars",
     "NfsVars",
@@ -87,6 +90,8 @@ __all__: list[str] = [
     "PostgresqlVars",
     "RedisVars",
     "SecurityVars",
+    "UserSpec",
+    "UsersVars",
     "apache",
     "certbot",
     "composer",
@@ -108,4 +113,5 @@ __all__: list[str] = [
     "redis",
     "repo_epel",
     "security",
+    "users",
 ]

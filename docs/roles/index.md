@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships twenty configuration roles as **library code**. Each one is the
+reemote ships twenty-one configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -30,7 +30,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The twenty roles group by what they configure. The [catalogue](#the-catalogue)
+The twenty-one roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -83,6 +83,12 @@ and outputs.
 | [security](security.md) | SSH and host hardening — the `sshd_config` directives and access lists, the sudoers loops, Fail2Ban and unattended-upgrades |
 | [certbot](certbot.md) | Certbot — the release-dispatched package, the configured certificates (standalone or webroot) and the renewal cron entry |
 
+### Accounts
+
+| Role | Purpose |
+| --- | --- |
+| [users](users.md) | Accounts — the groups, per-user primary groups, users with shell/comment/home/membership, generated key pairs, authorized keys, profile blocks, and the deletions last |
+
 ### Time synchronisation
 
 | Role | Purpose |
@@ -113,6 +119,7 @@ and outputs.
 | [security](security.md) | [`geerlingguy.security`](https://github.com/geerlingguy/ansible-role-security) | Ubuntu | 2 changed / 1 converged | none | no | 1 |
 | [certbot](certbot.md) | [`geerlingguy.certbot`](https://github.com/geerlingguy/ansible-role-certbot) | Ubuntu | `2 + 2C` (`C` certs); 2 install-only | none | no | 1 |
 | [redis](redis.md) | [`geerlingguy.redis`](https://github.com/geerlingguy/ansible-role-redis) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
+| [users](users.md) | [`singleplatform-eng/ansible-users`](https://github.com/singleplatform-eng/ansible-users) | Ubuntu | exactly 1 (`2` under the `on_create` gate) | none | no | 1 |
 
 ## Reading the columns
 
@@ -206,6 +213,12 @@ and outputs.
   Debian-ordering case: the config requests precede the package install inside
   the single wave, because the install starts the daemon — and still the
   checkpoint-only shape, no facts at all.
+- **[users](users.md)** — the groups, the accounts with their shells, homes and
+  memberships, generated key pairs, authorized keys, profile blocks, and the
+  deletions last. The pure request wave: every gate is vars-only, so the whole
+  task list is one wave with zero barriers on the default path — even a dry
+  pass plans it entire — and the one `fact(Users)` snapshot appears only under
+  the `update_password: on_create` gate.
 
 ## Running one
 

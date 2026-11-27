@@ -187,6 +187,7 @@ nav:
           - security: roles/security.md
           - certbot: roles/certbot.md
           - redis: roles/redis.md
+          - users: roles/users.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md
