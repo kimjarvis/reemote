@@ -207,8 +207,9 @@ nav:
           - clamav: roles/clamav.md
           - mailhog: roles/mailhog.md
           - supervisor: roles/supervisor.md
-          - htpasswd: roles/htpasswd.md
           - daemonize: roles/daemonize.md
+          - varnish: roles/varnish.md
+          - htpasswd: roles/htpasswd.md
           - gitlab: roles/gitlab.md
 #  - Examples:
 #      - Overview: examples.md

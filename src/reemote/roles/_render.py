@@ -3,10 +3,10 @@
 
 """The single jinja2 / PyYAML import site for the template-rendering roles (§17.4).
 
-Fifteen roles render a control-side template while building their deploys: fourteen
+Sixteen roles render a control-side template while building their deploys: fifteen
 use Jinja2 (``apache``, ``elasticsearch``, ``firewall``, ``gitlab``, ``kibana``,
 ``memcached``, ``minio``, ``nginx``, ``ntp``, ``postgresql``, ``redis``,
-``supervisor``, ``systemd``, ``zabbix_agent``) and ``datadog``
+``supervisor``, ``systemd``, ``varnish``, ``zabbix_agent``) and ``datadog``
 dumps YAML with PyYAML. As scripts they
 each did a lazy
 ``try: import jinja2`` with an ``except ImportError`` branch printing

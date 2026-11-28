@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships forty-three configuration roles as **library code**. Each one is the
+reemote ships forty-four configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The forty-three roles group by what they configure. The [catalogue](#the-catalogue)
+The forty-four roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -58,6 +58,7 @@ and outputs.
 | --- | --- |
 | [memcached](memcached.md) | memcached — the package, `/etc/memcached.conf`, the service, one restart handler |
 | [redis](redis.md) | Redis — the setgid `/etc/redis` directory, the rendered `redis.conf`, the package, the service, one restart handler |
+| [varnish](varnish.md) | Varnish Cache — the packagecloud key and deb822 repository derived from `varnish_version`, the package, the rendered sysvinit fragment and systemd unit override, the default VCL and admin secret, and one restart handler with the daemon reload folded into it |
 | [nfs](nfs.md) | NFS — the packages, the export directories, `/etc/exports`, the gated service and an `exportfs -ra` command handler |
 | [glusterfs](glusterfs.md) | GlusterFS — the optional Gluster PPA with its reinstall split, the server/client packages and the `glusterd` unit started and enabled |
 | [minio](minio.md) | MinIO — the service user and directories, the unpacked `minio`/`mc` bundle, the rendered env and unit, the restart → port-wait handler chain, opt-in buckets, users and mirror units |
@@ -109,7 +110,7 @@ and outputs.
 | [clamav](clamav.md) | ClamAV — the antivirus packages, the install-gated `freshclam` run, the `clamd.conf` edits, both units and one restart handler |
 | [firewall](firewall.md) | iptables firewall — the once-per-machine flush gate, the rendered `/etc/firewall.bash` script and its unit, service state, one restart handler |
 | [certbot](certbot.md) | Certbot — the release-dispatched package, the configured certificates (standalone or webroot) and the renewal cron entry |
-| [htpasswd](htpasswd.md) | htpasswd — the `apache2-utils` install and each managed file's merged `name:hash` lines, converged through a `FileContents` barrier |
+| [htpasswd](htpasswd.md) | htpasswd — the Apache utilities and `name:hash` entries in root-owned password files, merged by a verify-then-keep read with control-side `$apr1$`/`{SHA}` hashing |
 
 ### Accounts
 
@@ -167,8 +168,9 @@ and outputs.
 | [clamav](clamav.md) | [`geerlingguy.clamav`](https://github.com/geerlingguy/ansible-role-clamav) | Ubuntu | 4 fresh / 2 converged | none | no | 1 |
 | [mailhog](mailhog.md) | [`geerlingguy.mailhog`](https://github.com/geerlingguy/ansible-role-mailhog) | Ubuntu | exactly 2 | none | no | 1 |
 | [supervisor](supervisor.md) | [`geerlingguy.supervisor`](https://github.com/geerlingguy/ansible-role-supervisor) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
-| [htpasswd](htpasswd.md) | [geerlingguy.htpasswd](https://github.com/geerlingguy/ansible-role-htpasswd) | Ubuntu | `1 + P` (`P` credential paths); 1 install-only | none | no | 1 |
 | [daemonize](daemonize.md) | [`geerlingguy.daemonize`](https://github.com/geerlingguy/ansible-role-daemonize) | Ubuntu | 2 fresh / 1 converged | none | no | 1 |
+| [varnish](varnish.md) | [`geerlingguy.varnish`](https://github.com/geerlingguy/ansible-role-varnish) | Ubuntu | 3 changed / 2 converged | none | **yes** | 1 |
+| [htpasswd](htpasswd.md) | [`geerlingguy.htpasswd`](https://github.com/geerlingguy/ansible-role-htpasswd) | Ubuntu | `1 + P` (`P` credential paths); 1 install-only | none | no | 1 |
 | [gitlab](gitlab.md) | [`geerlingguy.gitlab`](https://github.com/geerlingguy/ansible-role-gitlab) | Ubuntu | 8 fresh / 4 converged | none | **yes** | 1 |
 
 ## Reading the columns
@@ -185,11 +187,11 @@ and outputs.
   `PhpOutputs` — the PHP version and extension paths it used to carry as a copied
   constant. Every other role returns `None`, and does so on its family-guard's
   early return too.
-- **`reemote[templates]`** is needed by the fifteen roles that render configuration
+- **`reemote[templates]`** is needed by the sixteen roles that render configuration
   through Jinja2 or PyYAML — `apache`, `datadog`, `elasticsearch`, `firewall`,
   `gitlab`, `kibana`,
   `memcached`, `minio`, `nginx`, `ntp`, `postgresql`, `redis`, `supervisor`,
-  `systemd` and
+  `systemd`, `varnish` and
   `zabbix_agent`, the list
   [`reemote.roles._render`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/_render.py)
   exists to carry. The others render in plain Python — `json.dumps`, an f-string, a
@@ -400,13 +402,6 @@ and outputs.
   `systemd.service` request whose false gates are the `None` sentinels — and
   the handler keeps the upstream `when: supervisor_started` as a body-level
   check, so a `started: false` host configures but never restarts.
-
-* **htpasswd** — migrates `geerlingguy.htpasswd`: it installs the
-  Apache utilities, reads each managed file back through a `FileContents`
-  barrier, merges the configured credentials control-side — a line whose
-  stored hash already verifies the desired password is reproduced verbatim,
-  so random salts converge — and writes the result through spool-and-install
-  with a `files.file` metadata companion.
 - **[daemonize](daemonize.md)** — the `build-essential` toolchain the role's README
   names as a prerequisite, the release tarball extracted into the workspace behind
   Ansible's `creates:` gate, and — only on a host where the binary is not already
@@ -414,7 +409,24 @@ and outputs.
   no-checkpoint build case: one `fact(server.Which)` read is the role's
   `register` + `when: rc != 0`, so a host that already built the binary never
   emits the build wave — and there are no handlers for a checkpoint to feed.
-
+- **[varnish](varnish.md)** — the packagecloud dependencies, key and deb822
+  repository whose name and `Suites` come from `varnish_version` and the read
+  release codename, the `varnish` package plus an optional VMOD package, the four
+  rendered files (`/etc/default/varnish`, the `varnish.service` override, the
+  default VCL, the admin secret) each with its metadata companion, and the started
+  and enabled units. The one-checkpoint template role: upstream flushed both of
+  its handlers at the end of the play, so one `checkpoint("configure done")` is the
+  faithful notification read and the two handlers are **one**
+  `restart_handler(..., daemon_reload=True)` request — upstream notifies
+  `reload systemd` from the unit task alone, so a host that reloads always
+  restarts. The reload rides that keyword's state gate (issues #50 and #75), which
+  fires for an override the unit has never loaded and not for a secret-only change.
+- **[htpasswd](htpasswd.md)** — the `apache2-utils` package and `name:hash`
+  entries in root-owned password files: one `fact(FileContents)` read per path,
+  a verify-then-keep merge, and one `files.install`/`files.file` pair. The
+  control-side-hashing role: `$apr1$` is pure standard-library `hashlib`
+  (pinned against openssl vectors), so every fresh salt still converges — a
+  rerun rewrites no line, and no request line ever renders the file's content.
 - **[gitlab](gitlab.md)** — the dependency install plus `gnupg2`, the vendor apt
   repository run through its own `script.deb.sh`, the optionally pinned
   `gitlab-ce` package, the tolerated bootstrap reconfigure, the optional
@@ -448,9 +460,9 @@ The inventory entry's `family` decides what happens. Each role's body opens with
 the OS guard — `if host.family != "Ubuntu": return …` — so a host on another
 family emits no requests, no barriers and no report lines at all rather than
 failing on the first `apt` call. The `family` field is a declaration the role
-trusts. Nine roles read `fact(LinuxDistribution)` for their own reasons —
+trusts. Ten roles read `fact(LinuxDistribution)` for their own reasons —
 `certbot`, `docker`, `java`, `ntp`, `php`, `php_versions`, `postgresql`,
-`repo_epel`, `repo_remi` — and
+`repo_epel`, `repo_remi`, `varnish` — and
 `certbot`, `java`, `ntp`, `postgresql`, `repo_epel` and `repo_remi` treat that
 read as the check
 that the machine matches the declaration, raising before any request is built
