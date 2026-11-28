@@ -32,6 +32,12 @@ role's first item is the ``FileLink`` fact barrier, so the run parks there befor
 reading any state, fetching nothing and applying no request -- this differs from
 the old two-phase script, whose ``dry`` prepare pass fetched the phar control-side
 to plan the sha1 comparison.
+
+The family guard is exercised on both sides of the RedHat extension: the
+``web1`` CentOS target runs the *identical* stream (every launcher request is a
+family-agnostic ``files`` operation, so the same waves install the same bytes),
+while the ``db1`` Alpine host returns before its first barrier and records
+nothing at all.
 """
 
 import pytest
@@ -78,41 +84,45 @@ def canned_fetch(monkeypatch):
 
 
 def make_inventory(**overrides) -> list[dict]:
-    """A two-host inventory: one Ubuntu target, one CentOS host that must be skipped.
+    """A three-host inventory: Ubuntu and RedHat targets, one Alpine host to skip.
 
-    The role variables ride in the entry's ``roles`` mapping under ``"drush"``,
-    bound by ``resolve_vars``. With no overrides the role defaults apply
-    (launcher install enabled, version 0.10.1, ``/usr/local/bin/drush``).
+    The role variables ride in the entries' ``roles`` mapping under ``"drush"``,
+    bound by ``resolve_vars``; the overrides apply to *both* target families, so
+    a gate or path change is seen on each. With no overrides the role defaults
+    apply (launcher install enabled, version 0.10.1, ``/usr/local/bin/drush``).
     """
-    entry = {
-        "host": "ubuntu",
-        "family": "Ubuntu",
-        "connection": {
-            "address": "192.0.2.10",
-            "username": "supervisor",
-            "key_path": "~/.ssh/id_ed25519",
-        },
-        "group": "ubuntu",
-        "tags": ["ubuntu_host", "apt_package_manager"],
-        "roles": {
-            "drush": {
-            },
-        },
-    }
-    entry["roles"]["drush"].update(overrides)
+    drush_vars: dict = dict(overrides)
     return [
-        entry,
+        {
+            "host": "ubuntu",
+            "family": "Ubuntu",
+            "connection": {
+                "address": "192.0.2.10",
+                "username": "supervisor",
+                "key_path": "~/.ssh/id_ed25519",
+            },
+            "group": "ubuntu",
+            "tags": ["ubuntu_host", "apt_package_manager"],
+            "roles": {"drush": drush_vars},
+        },
         {
             "host": "web1",
             "family": "RedHat",
             "connection": {"address": "192.0.2.11", "username": "admin"},
             "group": "centos",
+            "roles": {"drush": drush_vars},
+        },
+        {
+            "host": "db1",
+            "family": "Alpine",
+            "connection": {"address": "192.0.2.12", "username": "root"},
+            "group": "alpine",
         },
     ]
 
 
 def seed(host: SimulatedHost, *, with_dest_dir: bool = True) -> None:
-    """Pre-state: a stock Ubuntu machine, no drush yet.
+    """Pre-state: a stock target machine (either family), no drush yet.
 
     ``/usr/local/bin`` exists on a stock host (the directory task no-ops);
     ``with_dest_dir=False`` removes it to exercise the create branch.
@@ -165,7 +175,7 @@ def make_hosts(
     hosts: dict[str, SimulatedHost] = {}
     for entry in inventory:
         host = SimulatedHost.from_inventory(entry)
-        if entry.get("family") == "Ubuntu":
+        if entry.get("family") in ("Ubuntu", "RedHat"):
             seed(host, with_dest_dir=with_dest_dir)
         hosts[host.name] = host
     return hosts
@@ -202,17 +212,17 @@ def ubuntu_names(report) -> set[str]:
 # --- the shape: two fact barriers then the requests, nothing else --------------
 
 
-def _shape(report):
-    """The ubuntu host's (barrier waves, request waves) for one pass.
+def _shape(report, hostname: str = "ubuntu"):
+    """One host's (barrier waves, request waves) for one pass.
 
     ``run_waves`` counts only waves that applied a request in ``wave_ids``, so
     the two fact-only waves are read from ``report.records`` instead -- each
     barrier record carries its ``fact_cls`` (an ``act``/``control``/checkpoint
     barrier carries none), which is what encodes §18.9's shape.
     """
-    ubuntu = [r for r in report.records if r.host == "ubuntu"]
-    barriers = [r for r in ubuntu if r.barrier is not None]
-    requests = [r for r in ubuntu if r.log is not None]
+    records = [r for r in report.records if r.host == hostname]
+    barriers = [r for r in records if r.barrier is not None]
+    requests = [r for r in records if r.log is not None]
     return barriers, [r.wave for r in requests]
 
 
@@ -254,8 +264,9 @@ async def test_first_pass_installs_the_launcher(canned_fetch):
     host = hosts["ubuntu"]
 
     # The phar was fetched control-side and installed binary (issue #23):
-    # root:root 0755 at the destination, the /tmp spool cleaned up.
-    assert canned_fetch == [URL]
+    # root:root 0755 at the destination, the /tmp spool cleaned up. Both
+    # target hosts fetched, in inventory order.
+    assert canned_fetch == [URL, URL]
     assert host.remote_files[DEST] == FAKE_PHAR
     assert host.file_stats[DEST]["mode"] == 755
     assert host.file_stats[DEST]["user"] == "root"
@@ -271,19 +282,52 @@ async def test_first_pass_installs_the_launcher(canned_fetch):
     assert changed_entries(report)
 
 
-async def test_non_ubuntu_host_is_never_touched(canned_fetch):
+async def test_off_target_alpine_host_is_never_touched(canned_fetch):
     inventory = make_inventory()
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
-    skipped = hosts["web1"]
+    skipped = hosts["db1"]
     assert skipped.remote_files == {}
     assert skipped.directory_stats == {}
     assert skipped.links == {}
     # The family guard returns before the first yield, so the off-target host
     # emits no log entry and is never contacted or fetched for.
-    assert not any(entry.host == "web1" for entry in report.merged().log)
-    assert canned_fetch == [URL]  # only the ubuntu host fetched
+    assert not any(entry.host == "db1" for entry in report.merged().log)
+    # Only the two target hosts fetched.
+    assert canned_fetch == [URL, URL]
+
+
+async def test_redhat_target_runs_the_identical_stream(canned_fetch):
+    """The family-guard extension: the RedHat target converges like Ubuntu's.
+
+    Every launcher request is a family-agnostic ``files`` operation, so the
+    CentOS host shows the same three waves, installs the same bytes at the
+    same mode, and reports no change on the rerun.
+    """
+    inventory = make_inventory()
+    hosts = make_hosts(inventory)
+    report = await run_role(inventory, hosts)
+    host = hosts["web1"]
+
+    barriers, request_waves = _shape(report, "web1")
+    assert [getattr(b.barrier, "fact_cls", None) for b in barriers] == [
+        FileLink,
+        File,
+    ]
+    assert [b.wave for b in barriers] == [0, 1]
+    assert set(request_waves) == {2}
+
+    assert host.remote_files[DEST] == FAKE_PHAR
+    assert host.file_stats[DEST]["mode"] == 755
+    assert host.file_stats[DEST]["user"] == "root"
+    assert SPOOL not in host.remote_files
+    assert "Install Drush." in {
+        entry.name for entry in report.merged().log if entry.host == "web1"
+    }
+
+    second = await run_role(inventory, hosts)
+    assert changed_entries(second) == []
 
 
 # --- the second pass is a no-op -----------------------------------------------
@@ -328,6 +372,8 @@ async def test_dry_preview_mutates_nothing(canned_fetch):
     assert host.file_stats == {}
     assert host.links == {}
     assert host.directory_stats == before_dirs
+    # The RedHat target parks on its own first barrier too, untouched.
+    assert hosts["web1"].remote_files == {}
 
 
 # --- the symlink cleanup branch ------------------------------------------------
@@ -436,11 +482,13 @@ async def test_launcher_install_false_deploys_nothing(canned_fetch):
     report = await run_role(inventory, hosts)
 
     # The include-level gate is the body's opening return, so no barrier, no
-    # request, no log line and no fetch for the ubuntu host.
+    # request, no log line and no fetch for either target host.
     assert changed_entries(report) == []
     assert not any(entry.host == "ubuntu" for entry in report.merged().log)
+    assert not any(entry.host == "web1" for entry in report.merged().log)
     assert canned_fetch == []
     assert hosts["ubuntu"].remote_files == {}
+    assert hosts["web1"].remote_files == {}
 
 
 async def test_custom_path_and_version(canned_fetch):
@@ -454,10 +502,12 @@ async def test_custom_path_and_version(canned_fetch):
     custom_url = PHAR_URL_TEMPLATE.format(version="0.10.0")
 
     await run_role(inventory, hosts)
-    assert canned_fetch == [custom_url]
+    assert canned_fetch == [custom_url, custom_url]
     assert host.remote_files["/opt/bin/drush"] == FAKE_PHAR
     assert host.directory_stats["/opt/bin"]["mode"] == 755
     assert DEST not in host.remote_files
+    # The same override bound on the RedHat target installs the same way.
+    assert hosts["web1"].remote_files["/opt/bin/drush"] == FAKE_PHAR
 
     second = await run_role(inventory, hosts)
     assert changed_entries(second) == []

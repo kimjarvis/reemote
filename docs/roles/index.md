@@ -137,7 +137,7 @@ and outputs.
 | [postgresql](postgresql.md) | [`geerlingguy.postgresql`](https://github.com/geerlingguy/ansible-role-postgresql) | RedHat | pass A 7 (6 converged), pass B 2 | none | **yes** | **2** |
 | [datadog](datadog.md) | [`datadog.datadog`](https://github.com/DataDog/ansible-datadog) 5.6.0 | Ubuntu | up to 10 | none | **yes** | 1 |
 | [composer](composer.md) | [`geerlingguy.composer`](https://github.com/geerlingguy/ansible-role-composer) | Ubuntu | 5 + 2P fresh / 3 + P converged | none | no | 1 |
-| [drush](drush.md) | [`geerlingguy.drush`](https://github.com/geerlingguy/ansible-role-drush) | Ubuntu | exactly 3 | none | no | 1 |
+| [drush](drush.md) | [`geerlingguy.drush`](https://github.com/geerlingguy/ansible-role-drush) | Ubuntu, RedHat | exactly 3 | none | no | 1 |
 | [ntp](ntp.md) | [`geerlingguy.ntp`](https://github.com/geerlingguy/ansible-role-ntp) | Ubuntu | 5 changed / 4 converged | none | **yes** | 1 |
 | [docker](docker.md) | [`geerlingguy.docker`](https://github.com/geerlingguy/ansible-role-docker) | Ubuntu | 5 changed / 4 converged | none | no | 1 |
 | [java](java.md) | [`geerlingguy.java`](https://github.com/geerlingguy/ansible-role-java) | Ubuntu | 2 | none | no | 1 |

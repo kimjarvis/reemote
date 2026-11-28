@@ -66,10 +66,12 @@ the phar's sha1 matches (``content already up to date``), the mode matches. The
 phar is still fetched on every *real* pass, because the sha1 comparison must
 read the body; the no-change claim is about the host, not the fetch count.
 
-Hosts outside the ``"Ubuntu"`` family -- and hosts with
-``launcher_install`` false -- emit nothing at all: both gates are the
+Hosts outside the ``"Ubuntu"`` and ``"RedHat"`` target families -- and hosts
+with ``launcher_install`` false -- emit nothing at all: both gates are the
 body's opening ``if``, so such a host returns before its first ``yield`` and
-appears in no wave.
+appears in no wave. The RedHat target runs the identical stream: every launcher
+operation is a family-agnostic ``files`` request, so the same three waves
+install the same phar there.
 """
 
 import asyncio

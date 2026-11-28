@@ -5,7 +5,7 @@
 | Role | [`geerlingguy.drush`](https://github.com/geerlingguy/ansible-role-drush) |
 | Module | [`reemote.roles.drush`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/drush.py) |
 | Runner | [`examples/roles/drush.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/drush.py) |
-| Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
+| Target | **Ubuntu, RedHat** — hosts in the `"Ubuntu"` or `"RedHat"` OS family |
 | Variables | the entry's `drush` role mapping → `DrushVars` |
 
 <!---
@@ -16,9 +16,14 @@
 | Factory | plain (non-`async`) — the runner calls `drush(v)`; the phar's fetch lives inside `files.download`, not as a barrier |
 
 `drush` installs the [Drush launcher](https://www.drush.org/), the Drupal
-command-line shell's version-delegating phar, on Ubuntu hosts: the old-symlink
-cleanup, the `/usr/local/bin` directory, the launcher phar download and the
-`0755` executable bit.
+command-line shell's version-delegating phar, on Ubuntu and RedHat hosts: the
+old-symlink cleanup, the `/usr/local/bin` directory, the launcher phar download
+and the `0755` executable bit. The launcher task list is family-agnostic —
+every request is a `files` operation, no package module and no service — so a
+RedHat host runs the identical stream; widening the guard to `RedHat` follows
+the apache/certbot precedent and matches the upstream role, whose `meta`
+declares Fedora, whose molecule default instance is rockylinux9 and whose
+test playbooks pre-handle RedHat.
 
 It is a **library role**, not a script: one factory that returns a resumable
 deploy, so a program composes it with `yield from scoped("drush", drush(v))(host)`
@@ -42,7 +47,7 @@ The role's tasks map onto reemote operations and barriers:
 | `file: path={{ path \| dirname }} state=directory mode=0755` | `files.directory(dirname(path), mode="0755")` | covered |
 | `get_url: url={{ drush_launcher_phar_url }} dest=… mode=0755` | `files.download(url, dest, mode="0755")` | deviation (D1/D2/D3/D4) |
 | `file: path={{ drush_launcher_path }} mode=0755` (executable) | `files.file(path, mode="0755")` (guarded on the `File` barrier) | covered (D3) |
-| `include_tasks` gated on `when: drush_launcher_install` | body-opening `if host.family != "Ubuntu" or not launcher_install: return` | recipe |
+| `include_tasks` gated on `when: drush_launcher_install` | body-opening `if host.family not in TARGET_FAMILIES or not launcher_install: return` | recipe |
 | `composer global require` + symlink branch (`drush_composer_global_install`) | **rejected** at resolution time | scoped out |
 | `git clone` + composer install branch (`drush_install_from_source`) | **rejected** at resolution time | scoped out |
 
@@ -65,9 +70,9 @@ library rebuilds with a format template. The phar is fetched **control-side**
 
 The target needs PHP to *run* drush — the launcher is a phar that executes `php` —
 but this role does not install PHP (the Ansible role does not either; its README
-lists PHP as a prerequisite). SSH access to each Ubuntu host with passwordless
-sudo (or a `privilege` section in the inventory): every elevated request carries
-`sudo=True`, because reemote has no play-level `become`.
+lists PHP as a prerequisite). SSH access to each Ubuntu or RedHat host with
+passwordless sudo (or a `privilege` section in the inventory): every elevated
+request carries `sudo=True`, because reemote has no play-level `become`.
 
 ## 3. Variables
 
@@ -160,15 +165,16 @@ fixed, so a fourth would mean a barrier had been added speculatively:
 | 2 | `files.file(present=False)` (when a symlink) + `files.directory` + `files.download` + `files.file(mode=…)` (when a file existed) requests | the whole launcher task list, in role order |
 
 There is **no checkpoint and no handler**: the role ships no `handlers/main.yml`
-and nothing reads an outcome. A host whose `host.family` is not `"Ubuntu"` — or one
-with `launcher_install` false — returns before its first `yield`, so it emits no
-requests, no barriers and no report lines at all.
+and nothing reads an outcome. A host outside the `"Ubuntu"`/`"RedHat"` target
+families — or one with `launcher_install` false — returns before its first
+`yield`, so it emits no requests, no barriers and no report lines at all.
 
 ## 7. Transcript
 
-From `tests/roles/test_drush.py`, against the simulated Ubuntu host (`ubuntu`)
-plus a CentOS host the role never touches. Fresh host, first pass (the destination
-is absent, so the executable-bit task is not even requested):
+From `tests/roles/test_drush.py`, against the simulated Ubuntu (`ubuntu`) and
+CentOS (`web1`) targets plus an Alpine host the role never touches. Fresh host,
+first pass (the destination is absent, so the executable-bit task is not even
+requested):
 
 ```text
 (root)
@@ -199,7 +205,9 @@ content already in place. No line reports a change:
     ubuntu: Ensure Drush is executable. [no change: file /usr/local/bin/drush already exists]
 ```
 
-The CentOS host appears in neither tree: no barrier record, no request line.
+The Alpine host appears in neither tree: no barrier record, no request line.
+The CentOS host shows the identical tree under `web1` — same two barrier lines,
+same install wave, same converged rerun.
 
 ## 8. Deliberate deviations from the Ansible role
 
@@ -220,8 +228,10 @@ The CentOS host appears in neither tree: no barrier record, no request line.
   default-false; rejected at resolution time (D8).
 * **`drush_install_from_source`** (the build-from-source branch). Opt-in and
   default-false; rejected at resolution time (D8).
-* **Non-Ubuntu families.** The role is generic-Linux upstream, but this migration
-  fixes one target; a non-Ubuntu host is skipped silently rather than mapped.
+* **Alpine and other families.** The role is generic-Linux upstream; the guard
+  covers the two families this migration targets — `Ubuntu` and `RedHat` (the
+  launcher path uses no family-specific primitive, so both run the identical
+  stream). Any other family is skipped silently rather than mapped.
 * **Installing PHP.** The launcher is a phar that runs `php`, but the Ansible role
   lists PHP only as a prerequisite and never installs it; neither does this role.
 

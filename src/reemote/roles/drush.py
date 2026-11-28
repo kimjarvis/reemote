@@ -4,15 +4,21 @@
 # """The Drush role (migrated from ``geerlingguy.drush``).
 #
 # Installs the `Drush launcher <https://www.drush.org/>`_, the Drupal
-# command-line shell's version-delegating phar, on Ubuntu hosts: the old-symlink
-# cleanup, the ``/usr/local/bin`` directory, the launcher phar download and the
-# 0755 executable bit. :func:`drush` is the whole task list and
+# command-line shell's version-delegating phar, on Ubuntu and RedHat hosts: the
+# old-symlink cleanup, the ``/usr/local/bin`` directory, the launcher phar
+# download and the 0755 executable bit. :func:`drush` is the whole task list and
 # :class:`DrushVars` is ``defaults/main.yml``, bound from the inventory
 # entry's ``drush`` role mapping by :func:`~reemote.rolevars.resolve_vars`.
 #
-# Target: hosts in the ``"Ubuntu"`` OS family. A host outside the target family,
-# or one with ``launcher_install`` false, returns before its first ``yield`` and
-# emits no requests, no barriers and no log lines at all.
+# Target: hosts in the ``"Ubuntu"`` and ``"RedHat"`` OS families. The launcher
+# task list touches only the family-agnostic ``files`` operations -- no package
+# module, no service -- so a RedHat host runs the identical three-wave stream,
+# which is what made widening the guard free (the apache/certbot precedent);
+# upstream declares the family (``meta`` lists Fedora, molecule's default
+# instance is rockylinux9, and its playbooks pre-handle RedHat). A host outside
+# the target families, or one with ``launcher_install`` false, returns before
+# its first ``yield`` and emits no requests, no barriers and no log lines at
+# all.
 #
 # This is the smallest role in the corpus and the shape check for the design:
 # **two ``fact`` barriers then ``yield from`` -- and nothing else.** No
@@ -99,6 +105,13 @@ PHAR_URL_TEMPLATE = (
     "https://github.com/drush-ops/drush-launcher/releases/download/"
     "{version}/drush.phar"
 )
+
+#: The families the role runs on; anything else returns before its first
+#: ``yield`` and emits no requests, no barriers and no log lines. The RedHat
+#: entry costs nothing -- every launcher request is a family-agnostic
+#: ``files`` operation -- and mirrors the upstream role, which declares Fedora
+#: in ``meta`` and defaults molecule to rockylinux9.
+TARGET_FAMILIES = ("Ubuntu", "RedHat")
 
 
 # --- variables ---------------------------------------------------------------
@@ -265,7 +278,7 @@ def launcher(hv: DrushVars, is_symlink: bool, dest_exists: bool) -> Deploy:
 
 
 def drush(v: VarsSet[DrushVars]) -> Deploy:
-    """Install the Drush launcher on Ubuntu hosts.
+    """Install the Drush launcher on Ubuntu and RedHat hosts.
 
     Args:
         v: The role's resolved variables, one :class:`DrushVars` per host
@@ -286,7 +299,7 @@ def drush(v: VarsSet[DrushVars]) -> Deploy:
         # The family gate and the role's include-level ``when: drush_launcher_install``
         # are body-opening returns, not per-request ``when=`` guards: such a host
         # emits no requests, no barriers and is never contacted.
-        if host.family != "Ubuntu" or not hv.launcher_install:
+        if host.family not in TARGET_FAMILIES or not hv.launcher_install:
             return
 
         # The role's ``stat`` register as two fact barriers: FileLink answers
