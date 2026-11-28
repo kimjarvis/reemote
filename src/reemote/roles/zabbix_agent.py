@@ -28,8 +28,9 @@
 #
 # 0. the ``fact(LsbRelease)`` barrier -- skipped entirely when
 #    :attr:`ZabbixAgentVars.distribution_release` overrides the codename.
-# 1. the ``fact(FindFiles)`` purge sweep, the read that feeds the removal
-#    requests and the per-host key stream.
+# 1. the ``fact(FindFiles)`` purge sweep -- gated on ``src_reinstall`` as well
+#    as the repo, mirroring the role's compound ``when`` -- the read that
+#    feeds the removal requests.
 # 2. the keyring install, removals, repository lines, packages, the pin, the
 #    enable, closed by the ``act`` getenforce probe.
 # 3. :func:`configure` -- SELinux exemption, PSK file, the rendered conf, the
@@ -82,8 +83,10 @@
 #   ``firewalld-reload`` command handler is scoped out with its notifying tasks.
 # * **D8** the repository purge is the role's two-step ``find`` (registered,
 #   then a ``file: state=absent`` loop with an ``excludes``): the ``find`` is the
-#   ``fact(FindFiles)`` barrier and the exclusion is a plain Python filter, so
-#   one *file*-shaped removal request is emitted per stale path.
+#   ``fact(FindFiles)`` barrier -- skipped, like the task's ``when``, unless
+#   both ``repo == "zabbix"`` and ``src_reinstall`` hold -- and the exclusion is
+#   a plain Python filter, so one *file*-shaped removal request is emitted per
+#   stale path, sorted so the order never depends on ``find``'s traversal.
 # * **D9** the SELinux ordering quirk is preserved: the policycoreutils install
 #   in the Debian stage sees only the *user-set* ``selinux`` variable (the
 #   getenforce probe has not run yet, exactly as in the role), while the
@@ -102,7 +105,9 @@
 #   all -- issue #72. The scripts-tree copy behind
 #   ``userparameters`` was refused as boundary issue #67. The API-only
 #   variables (``zabbix_url``, ``zabbix_api_user``, ``zabbix_host_groups``,
-#   ``zabbix_macros`` ...) are rejected outright by ``extra="forbid"``.
+#   ``zabbix_macros`` ...) are not fields at all: ``resolve_vars``' typo rule
+#   rejects such inventory keys (``RoleVarsError``) and ``extra="forbid"``
+#   closes the call-site ``overrides`` hole.
 # * **D12** ``zabbix_agent_hostname`` defaults to ``inventory_hostname``, which
 #   is the reemote host name; the role's literal ``Server=None`` rendering for
 #   the unset ``server``/``serveractive`` defaults renders as ``Server=`` here.
@@ -941,7 +946,8 @@ def validate(v: ZabbixAgentVars, host: Host) -> None:
     The datadog precedent: a flag whose branch this migration does not carry
     raises rather than silently doing nothing. The API-only *values* (server
     URL, credentials, host groups, macros) never reach the model at all --
-    ``extra="forbid"`` rejects them while the inventory resolves.
+    ``resolve_vars``' typo rule rejects unknown inventory keys
+    (``RoleVarsError``), and ``extra="forbid"`` covers call-site overrides.
 
     Raises:
         ValueError: A scoped-out branch was asked for, naming the replacement
@@ -1162,9 +1168,10 @@ async def zabbix_agent(v: VarsSet[ZabbixAgentVars]) -> Deploy:
 
     This is an **async** factory: the signing key's URL is an inventory-wide
     constant, so it is fetched here -- once, and even under ``dry`` (§6.3).
-    The runner must ``await zabbix_agent(v)``. Hosts whose resolved variables
-    skip the vendor repository (``repo != "zabbix"``) are skipped by the fetch
-    gate.
+    The runner must ``await zabbix_agent(v)``. The gate is inventory-wide: the
+    key is downloaded when *any* host asks for the vendor repository (the
+    factory cannot see families), and hosts that do not use it ignore the
+    fetched text.
 
     Args:
         v: The role's resolved variables, one :class:`ZabbixAgentVars` per host
@@ -1176,8 +1183,10 @@ async def zabbix_agent(v: VarsSet[ZabbixAgentVars]) -> Deploy:
 
     Raises:
         ValueError: A scoped-out knob is set (D11), or the (version, codename)
-            pair has no signing key (D4). Both raise inside the body, before
-            the host is contacted.
+            pair has no signing key (D4). The knobs raise in ``validate``
+            before the first request; the signing-key miss raises as soon as
+            the codename is known -- at the wave-0 barrier, or before any
+            contact when ``distribution_release`` is set.
     """
     # Control-side IO, inventory-wide: the one key the repository tasks sign.
     key_text: str | None = None
@@ -1204,18 +1213,24 @@ async def zabbix_agent(v: VarsSet[ZabbixAgentVars]) -> Deploy:
         stale: tuple[str, ...] = ()
         stream: IO[bytes] | None = None
         if using_repo:
-            # Wave 1: the purge sweep's read precedes the removals and the
-            # keyring request, mirroring the role's find -> loop ordering (D8).
-            found = yield fact(FindFiles, SOURCES_DIR, fname=SOURCES_PATTERN)
-            stale = tuple(
-                path for path in found if PurePosixPath(path).stem != managed_file
-            )
             stream = _key_stream(key_text)
+            if hv.src_reinstall:
+                # Wave 1: the purge sweep's read precedes the removals (D8);
+                # both flags gate it, like the role's compound ``when``, and
+                # the paths sort so removal order never follows ``find``.
+                found = yield fact(FindFiles, SOURCES_DIR, fname=SOURCES_PATTERN)
+                stale = tuple(
+                    sorted(
+                        path
+                        for path in found
+                        if PurePosixPath(path).stem != managed_file
+                    )
+                )
         plan = InstallPlan(
             codename=codename,
             sign_key=sign_key,
             repo_filename=managed_file,
-            stale_sources=stale if hv.src_reinstall else (),
+            stale_sources=stale,
             env=proxy_env(hv),
         )
 

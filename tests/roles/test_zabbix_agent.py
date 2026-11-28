@@ -388,6 +388,34 @@ async def test_non_ubuntu_host_emits_nothing(rig, canned_fetch):
     assert not [e for e in log if e.host == "web1"]
 
 
+async def test_src_reinstall_false_skips_the_purge_sweep(rig, canned_fetch):
+    """D8's compound gate: ``src_reinstall`` skips the ``find`` barrier itself.
+
+    The role's ``find`` task is gated on both ``zabbix_repo`` and
+    ``zabbix_agent_src_reinstall``, so the whole wave vanishes offline — the
+    keyring and the repository lines still install, the stale source stays.
+    """
+    inventory, hosts = rig
+    inventory[0]["roles"]["zabbix_agent"]["src_reinstall"] = False
+    report = await run_role(inventory, hosts)
+    host = hosts["ubuntu"]
+
+    assert "FindFiles" not in report.tree()
+    assert STALE_LIST in host.remote_files
+    assert REMOVE_NAME not in entry_names(report)
+    # The vendor block is untouched: keyring and both repository lines.
+    assert REPO_KEYRING in host.remote_files
+    assert host_repo_text(host).splitlines() == [DEB_LINE, DEB_SRC_LINE]
+
+    records = [record for record in report.records if record.host == "ubuntu"]
+    barrier_kinds = [
+        type(record.barrier).__name__ for record in records if record.barrier
+    ]
+    assert barrier_kinds == ["FactRequest", "ActionRequest", "CheckpointRequest"]
+    # One wave fewer than the default stream: no purge read, no purge wave.
+    assert sorted({record.wave for record in records}) == [0, 1, 2, 3]
+
+
 # --- the second pass is a no-op ------------------------------------------------
 
 

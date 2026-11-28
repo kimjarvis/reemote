@@ -31,7 +31,7 @@ files live as barriers inside the one per-host generator:
 key_text = await files.fetch_url(REPO_KEY_URL)      # the factory, control-side
 
 codename = hv.distribution_release or (yield fact(LsbRelease))["codename"]
-found = yield fact(FindFiles, SOURCES_DIR, fname=SOURCES_PATTERN)   # the purge read
+found = yield fact(FindFiles, SOURCES_DIR, fname=SOURCES_PATTERN)   # the purge read, gated on src_reinstall
 yield from install(plan, hv, stream)(host)
 result = yield act(Shell, command=GETENFORCE_PROBE, sudo=True)      # exit status is data
 yield from configure(hv, conf, selinux_active)(host)
@@ -45,14 +45,14 @@ yield from service_handler(notified, (SERVICE_NAME,), action="restarted")(host)
 | --- | --- | --- |
 | `include_vars: vars/<OS>.yml`, the `zabbix_agent_os_family` dispatch | the frozen Debian constants, one family guard | deviation (D1) |
 | `apt_key: url=... state=present` | factory `files.fetch_url` → `apt.key(src=stream, keyid=…)` | deviation (D3) |
-| `find: repo_zabbix_com_zabbix*.list` + `file: state=absent` loop | `yield fact(FindFiles, …)` → one `files.file(present=False)` per stale path | barrier (D8) |
+| `find: repo_zabbix_com_zabbix*.list` + `file: state=absent` loop | `yield fact(FindFiles, …)` → one `files.file(present=False)` per stale path, both reads and writes gated on `repo` *and* `src_reinstall` | barrier (D8) |
 | `apt_repository: deb …/ubuntu focal main` (and `deb-src`, `update_cache: yes`) | `apt.repo(src=…, update_cache=True)` ×2 | covered (D2) |
 | `copy: content=… dest=/etc/apt/preferences.d/…` (apt priority) | `files.directory` + `files.install(content=…)` | covered |
 | `apt: name={{ zabbix_agent_packages }}` + `environment:` proxy | `apt.packages(…, env=…)` via `op`'s meta-parameters | covered (D5) |
 | `service: enabled=yes use=service` (the Debian-stage enable) | `systemd.service(enabled=True, running=None)` | covered |
 | `stat` + `command: getenforce` + `set_fact` chain | `yield act(Shell, "test -x … && getenforce")` | barrier (D6) |
 | `selinux_permissive: name=zabbix_agent_t` | `selinux.permissive_domain(domain=…)` | covered (D9) |
-| `copy: zabbix_agent_tlspskfile` (+ its directory task, `notify`) | `files.directory` + `files.install(mode="0400")` | covered |
+| `copy: zabbix_agent_tlspskfile` (+ its directory task, which does not notify) | `files.directory` + `files.install(mode="0400")` | covered |
 | `template: zabbix_agentd.conf.j2` | control-side Jinja2 render → `files.install(content=…)` | recipe (D13) |
 | `file: state=directory` (the include dir) | `files.directory(mode="0750")` | covered |
 | `service: state=started enabled=yes` (final) | `systemd.service(running=True, enabled=True)` | covered |
@@ -220,7 +220,7 @@ appended — so the fresh host runs five waves and the converged one four:
 | Wave | Item | Why |
 | --- | --- | --- |
 | 0 | `fact(LsbRelease)` | the codename feeding the repository line and the `sign_keys` row — skipped entirely when `distribution_release` overrides it |
-| 1 | `fact(FindFiles, SOURCES_DIR, fname=SOURCES_PATTERN)` | the role's `find` before its removal loop; conditional — only hosts using the vendor repo park here |
+| 1 | `fact(FindFiles, SOURCES_DIR, fname=SOURCES_PATTERN)` | the role's `find` before its removal loop; conditional — only hosts using the vendor repo *and* `src_reinstall` park here |
 | 2 | `install`: the keyring, the stale-source removals, both repository lines (the second carrying the refresh), the pin, the packages, the enable — closed by `act(Shell, "test -x /usr/sbin/getenforce && getenforce")` | the probe can only run after its wave's packages, so it *ends* the install wave instead of starting one |
 | 3 | `configure`: the SELinux exemption, the PSK pair, the rendered conf, the include dir, the final service task — closed by `checkpoint("configure done")` | the checkpoint **is** the role's `notify`: it reads the wave it just closed and names the hosts whose `Configure zabbix-agent` / `Place TLS PSK File` entries changed |
 | 4 | `service_handler(notified, ("zabbix-agent",), action="restarted")` | only on the hosts that checkpoint selected — the wave vanishes once converged |
@@ -229,8 +229,9 @@ Three ordering rules are load-bearing:
 
 * **The purge read precedes the purge writes.** The `FindFiles` barrier ends
   wave 1, so the removal requests in wave 2 name paths the host actually
-  reported — and the managed file is filtered out in Python (the role's
-  `excludes`), never removed.
+  reported — sorted, so the order never follows `find`'s traversal — and the
+  managed file is filtered out in Python (the role's `excludes`), never
+  removed.
 * **The probe rides the install wave, not the configure one.** D9's asymmetry
   falls out of this for free: `policycoreutils` installs on the *user variable*
   alone (the probe has not answered yet, exactly as in the role), while the
@@ -326,10 +327,10 @@ The RedHat host appears in no tree: no barrier record, no request line.
 | D5 | The tasks' `environment:` blocks become `op`'s `env=` meta-parameter | issue #66; omitted exactly where the role used `default(omit)` |
 | D6 | The getenforce `stat` + `command` + `set_fact` chain becomes one `act` barrier | a non-zero exit is data — the missing binary and the disabled daemon both read as "no SELinux" — and `changed_when: false` is inherent to a barrier |
 | D7 | The handler is the checkpoint pattern; its `enabled: yes` is not reproduced inside `service_handler` | the install stage's enable task and the final service task already converge `enabled` on every host; the `firewalld-reload` command handler is scoped out with its notifying tasks |
-| D8 | The repository purge is `fact(FindFiles)` + a Python filter, one removal request per stale path | faithful to the role's `find` → `file: state=absent` loop with `excludes`; the managed file is never in the removal set |
+| D8 | The repository purge is `fact(FindFiles)` + a Python filter, one removal request per stale path | faithful to the role's `find` → `file: state=absent` loop with `excludes` and its compound `when` (`repo`, `src_reinstall`); the paths sort, and the managed file is never in the removal set |
 | D9 | The SELinux ordering quirk is **preserved**, not smoothed over | the policycoreutils install in the Debian stage sees only the user-set `selinux` variable (the probe has not run yet, exactly as in the role), while the permissive-domain task runs on variable **or** probe verdict |
 | D10 | The `Linux.yml` IP `set_fact` chain is out of scope | it only feeds the API branch; `listenip` is honoured verbatim and `listeninterface` raises rather than silently ignoring it |
-| D11 | The scoped-out branches **raise**, never silently drop | `docker`, `tlspsk_auto`, `firewall_enable`, `firewalld_enable`, `api_create_hosts`/`hostgroup` and a non-empty `userparameters` each name their replacement path (#67, #72); the API-only variables are rejected outright by `extra="forbid"` |
+| D11 | The scoped-out branches **raise**, never silently drop | `docker`, `tlspsk_auto`, `firewall_enable`, `firewalld_enable`, `api_create_hosts`/`hostgroup` and a non-empty `userparameters` each name their replacement path (#67, #72); the API-only variables are not fields at all — the `resolve_vars` typo rule rejects them, `extra="forbid"` covers call-site overrides |
 | D12 | `hostname` defaults to the reemote host name; unset `server`/`serveractive` render `Server=` | the role's `inventory_hostname` default maps directly, and its literal empty-default rendering is what the template produced too |
 | D13 | The template is carried **verbatim** and rendered control-side | through `reemote.roles._render` with Ansible's `comment` filter and a `version_compare` *test* registered — the systemd role precedent; `ansible_managed` is frozen to its default text |
 
