@@ -1,35 +1,35 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Control-side Zabbix API operations.
-
-The ``zabbix`` namespace is reemote's answer to the community Ansible modules
-``zabbix_group``, ``zabbix_host`` and ``zabbix_hostmacro`` (the API branch of
-``ansible-zabbix-agent``, issue #72). Those tasks run ``delegate_to: localhost``
-with ``become: no``: they never touch the target host, they open an HTTPS
-connection *from the controller* to the Zabbix server's JSON-RPC endpoint and
-register the host there. That is the **control-side** shape, not the operation
-family -- the same stance ``files.fetch_url`` takes for a controller GET (issue
-#20), and the reason this namespace ships plain coroutine functions rather
-than ``op()`` operations that yield command descriptors.
-
-Consequently the three entry points (``host_group``, ``host``, ``host_macro``)
-and the :class:`ZabbixClient` behind them take no ``OpContext``, yield no
-``Command``, and are awaited directly -- either inside an ``async def`` role
-factory (work identical for every host, the datadog ``await files.fetch_url``
-pattern) or behind a ``control`` barrier (per-host registration whose input is
-a gathered fact, the ``repo_epel``/``control_fetch`` pattern). Each is
-**idempotent** the way an operation gates on a fact: it reads current state
-through ``hostgroup.get`` / ``host.get`` / ``hostmacro.get`` first and issues a
-create/update/delete only when the live state actually differs, then reports
-what it changed.
-
-The one network write is the module-level :func:`_jsonrpc_request` seam --
-``urllib`` in a worker thread (``asyncio.to_thread``), mirroring
-``files._fetch_url_bytes`` so no HTTP client dependency is added (the runtime
-set stays asyncssh/distro/pydantic). Tests and the offline example replace that
-seam with a canned JSON-RPC responder and never touch the network.
-"""
+# """Control-side Zabbix API operations.
+#
+# The ``zabbix`` namespace is reemote's answer to the community Ansible modules
+# ``zabbix_group``, ``zabbix_host`` and ``zabbix_hostmacro`` (the API branch of
+# ``ansible-zabbix-agent``, issue #72). Those tasks run ``delegate_to: localhost``
+# with ``become: no``: they never touch the target host, they open an HTTPS
+# connection *from the controller* to the Zabbix server's JSON-RPC endpoint and
+# register the host there. That is the **control-side** shape, not the operation
+# family -- the same stance ``files.fetch_url`` takes for a controller GET (issue
+# #20), and the reason this namespace ships plain coroutine functions rather
+# than ``op()`` operations that yield command descriptors.
+#
+# Consequently the three entry points (``host_group``, ``host``, ``host_macro``)
+# and the :class:`ZabbixClient` behind them take no ``OpContext``, yield no
+# ``Command``, and are awaited directly -- either inside an ``async def`` role
+# factory (work identical for every host, the datadog ``await files.fetch_url``
+# pattern) or behind a ``control`` barrier (per-host registration whose input is
+# a gathered fact, the ``repo_epel``/``control_fetch`` pattern). Each is
+# **idempotent** the way an operation gates on a fact: it reads current state
+# through ``hostgroup.get`` / ``host.get`` / ``hostmacro.get`` first and issues a
+# create/update/delete only when the live state actually differs, then reports
+# what it changed.
+#
+# The one network write is the module-level :func:`_jsonrpc_request` seam --
+# ``urllib`` in a worker thread (``asyncio.to_thread``), mirroring
+# ``files._fetch_url_bytes`` so no HTTP client dependency is added (the runtime
+# set stays asyncssh/distro/pydantic). Tests and the offline example replace that
+# seam with a canned JSON-RPC responder and never touch the network.
+# """
 
 import asyncio
 import base64
