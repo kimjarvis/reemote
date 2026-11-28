@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships forty-two configuration roles as **library code**. Each one is the
+reemote ships forty-three configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The forty-two roles group by what they configure. The [catalogue](#the-catalogue)
+The forty-three roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -91,6 +91,7 @@ and outputs.
 | [kibana](kibana.md) | Kibana — the dependencies, the Elasticsearch signing key and Elastic apt repository, the `kibana` package, the service, the rendered `kibana.yml`, one restart handler |
 | [elasticsearch](elasticsearch.md) | Elasticsearch — the dependencies, the Elastic signing key and apt repository, the `elasticsearch` package, the rendered config and version-appropriate heap file, the service and port wait, one restart handler |
 | [node_exporter](node_exporter.md) | node_exporter — the release tarball unpacked and the binary moved into place, the service group and account, the rendered systemd unit, the running/enabled unit, the restart handler and the metrics-endpoint check |
+| [gitlab](gitlab.md) | GitLab CE — the dependencies and the vendor `script.deb.sh` repository, the optional version pin, the fact-gated bootstrap reconfigure, the optional self-signed certificate, the rendered `/etc/gitlab/gitlab.rb` and one command handler |
 
 ### Base system
 
@@ -168,6 +169,7 @@ and outputs.
 | [supervisor](supervisor.md) | [`geerlingguy.supervisor`](https://github.com/geerlingguy/ansible-role-supervisor) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
 | [htpasswd](htpasswd.md) | [geerlingguy.htpasswd](https://github.com/geerlingguy/ansible-role-htpasswd) | Ubuntu | `1 + P` (`P` credential paths); 1 install-only | none | no | 1 |
 | [daemonize](daemonize.md) | [`geerlingguy.daemonize`](https://github.com/geerlingguy/ansible-role-daemonize) | Ubuntu | 2 fresh / 1 converged | none | no | 1 |
+| [gitlab](gitlab.md) | [`geerlingguy.gitlab`](https://github.com/geerlingguy/ansible-role-gitlab) | Ubuntu | 8 fresh / 4 converged | none | **yes** | 1 |
 
 ## Reading the columns
 
@@ -183,9 +185,9 @@ and outputs.
   `PhpOutputs` — the PHP version and extension paths it used to carry as a copied
   constant. Every other role returns `None`, and does so on its family-guard's
   early return too.
-- **`reemote[templates]`** is needed by the fourteen roles that render configuration
+- **`reemote[templates]`** is needed by the fifteen roles that render configuration
   through Jinja2 or PyYAML — `apache`, `datadog`, `elasticsearch`, `firewall`,
-  `kibana`,
+  `gitlab`, `kibana`,
   `memcached`, `minio`, `nginx`, `ntp`, `postgresql`, `redis`, `supervisor`,
   `systemd` and
   `zabbix_agent`, the list
@@ -412,6 +414,17 @@ and outputs.
   no-checkpoint build case: one `fact(server.Which)` read is the role's
   `register` + `when: rc != 0`, so a host that already built the binary never
   emits the build wave — and there are no handlers for a checkpoint to feed.
+
+- **[gitlab](gitlab.md)** — the dependency install plus `gnupg2`, the vendor apt
+  repository run through its own `script.deb.sh`, the optionally pinned
+  `gitlab-ce` package, the tolerated bootstrap reconfigure, the optional
+  self-signed certificate behind a `creates=` read, the rendered
+  `/etc/gitlab/gitlab.rb` at root:root `0600`, and the `restart gitlab` command
+  handler. The fact-gated role: three `fact(FileExists)` probes and three `act`
+  barriers reproduce upstream's two `stat` registers and its `creates=` gate
+  in-stream, so the wave count is the host's — eight waves on a fresh machine,
+  four once converged — and the dry preview parks at the very first probe
+  rather than planning the whole stream.
 
 ## Running one
 

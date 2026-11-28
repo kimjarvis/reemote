@@ -24,7 +24,7 @@ module is aliased (``from reemote.modules
 import postgresql as pg``). ``tests/roles/test_exports.py`` pins both facts.
 
 The template-rendering roles (``apache``, ``datadog``, ``elasticsearch``,
-``firewall``, ``kibana``, ``memcached``, ``minio``, ``nginx``, ``ntp``,
+``firewall``, ``gitlab``, ``kibana``, ``memcached``, ``minio``, ``nginx``, ``ntp``,
 ``postgresql``, ``redis``, ``supervisor``, ``systemd``, ``zabbix_agent``) import
 jinja2 and PyYAML only through :mod:`reemote.roles._render`, the single import
 site for them, which needs the ``reemote[templates]`` extra (§17.4). Nothing in
@@ -54,6 +54,7 @@ from .drush import DrushVars, drush
 from .elasticsearch import ElasticsearchVars, elasticsearch
 from .firewall import FirewallVars, ForwardedPort, firewall
 from .git import GitVars, git
+from .gitlab import GitlabVars, gitlab
 from .glusterfs import GlusterfsVars, glusterfs
 from .helm import HelmChecksum, HelmVars, helm
 from .hosts import HostsEntry, HostsVars, hosts
@@ -105,6 +106,7 @@ __all__: list[str] = [
     "ForwardedPort",
     "GemSpec",
     "GitVars",
+    "GitlabVars",
     "GlusterfsVars",
     "GroupSpec",
     "HelmChecksum",
@@ -159,6 +161,7 @@ __all__: list[str] = [
     "elasticsearch",
     "firewall",
     "git",
+    "gitlab",
     "glusterfs",
     "helm",
     "hosts",

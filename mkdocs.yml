@@ -209,6 +209,7 @@ nav:
           - supervisor: roles/supervisor.md
           - htpasswd: roles/htpasswd.md
           - daemonize: roles/daemonize.md
+          - gitlab: roles/gitlab.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md
