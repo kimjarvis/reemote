@@ -74,6 +74,7 @@ from .postgresql import PostgresqlVars, postgresql, postgresql_data
 from .redis import RedisVars, redis
 from .repo_epel import EpelVars, repo_epel
 from .repo_remi import RemiVars, repo_remi
+from .ruby import GemSpec, RubyVars, ruby
 from .security import SecurityVars, security
 from .supervisor import Program, SupervisorVars, supervisor
 from .swap import SwapVars, swap
@@ -98,6 +99,7 @@ __all__: list[str] = [
     "EpelVars",
     "FirewallVars",
     "ForwardedPort",
+    "GemSpec",
     "GitVars",
     "GlusterfsVars",
     "GroupSpec",
@@ -128,6 +130,7 @@ __all__: list[str] = [
     "Program",
     "RedisVars",
     "RemiVars",
+    "RubyVars",
     "SecurityVars",
     "SupervisorVars",
     "SwapVars",
@@ -169,6 +172,7 @@ __all__: list[str] = [
     "redis",
     "repo_epel",
     "repo_remi",
+    "ruby",
     "security",
     "supervisor",
     "swap",

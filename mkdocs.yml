@@ -202,6 +202,7 @@ nav:
           - elasticsearch: roles/elasticsearch.md
           - node_exporter: roles/node_exporter.md
           - apache_php_fpm: roles/apache_php_fpm.md
+          - ruby: roles/ruby.md
           - clamav: roles/clamav.md
           - mailhog: roles/mailhog.md
           - supervisor: roles/supervisor.md

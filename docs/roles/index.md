@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships thirty-eight configuration roles as **library code**. Each one is the
+reemote ships thirty-nine configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The thirty-eight roles group by what they configure. The [catalogue](#the-catalogue)
+The thirty-nine roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -69,6 +69,7 @@ and outputs.
 | [java](java.md) | Java — the distribution's default OpenJDK packages and an optional `JAVA_HOME` profile script |
 | [nodejs](nodejs.md) | Node.js — the NodeSource key and deb822 repository, the version-pinned `nodejs` package, npm's global prefix and packages |
 | [pip](pip.md) | pip — the distro's pip package, the PEP 668 `EXTERNALLY-MANAGED` marker removed, then the package list |
+| [ruby](ruby.md) | Ruby — the apt ruby packages, the rubygems package, the profile-script `$PATH` entry, Bundler and the gem list |
 | [composer](composer.md) | Composer — the signature-verified installer, the phar move, an optional `auth.json`, global packages, the `$PATH` entry |
 | [drush](drush.md) | Drush — the launcher phar and its executable bit |
 | [git](git.md) | Git — the apt-cache refresh and the `git_packages` install, as one request |
@@ -156,6 +157,7 @@ and outputs.
 | [repo_remi](repo_remi.md) | [`geerlingguy.repo-remi`](https://github.com/geerlingguy/ansible-role-repo-remi) | RedHat | 3–4 | none | no | 1 |
 | [elasticsearch](elasticsearch.md) | [`geerlingguy.elasticsearch`](https://github.com/geerlingguy/ansible-role-elasticsearch) | Ubuntu | 2 changed / 2 converged (the wait always reports) | none | **yes** | 1 |
 | [node_exporter](node_exporter.md) | [`geerlingguy.node_exporter`](https://github.com/geerlingguy/ansible-role-node_exporter) | Ubuntu | 3 fresh (4 resolving `latest`) / 3 converged | none | no | 1 |
+| [ruby](ruby.md) | [`geerlingguy.ruby`](https://github.com/geerlingguy/ansible-role-ruby) | Ubuntu | 2 | none | no | 1 |
 | [apache_php_fpm](apache_php_fpm.md) | [`geerlingguy.apache-php-fpm`](https://github.com/geerlingguy/ansible-role-apache-php-fpm) | Ubuntu | 2 fresh / 1 converged | none | no | 1 |
 | [clamav](clamav.md) | [`geerlingguy.clamav`](https://github.com/geerlingguy/ansible-role-clamav) | Ubuntu | 4 fresh / 2 converged | none | no | 1 |
 | [mailhog](mailhog.md) | [`geerlingguy.mailhog`](https://github.com/geerlingguy/ansible-role-mailhog) | Ubuntu | exactly 2 | none | no | 1 |
@@ -348,6 +350,12 @@ and outputs.
   the `checkpoint` reads the notification, and a `fact` verifies the running
   exporter — so the wave count moves with the host and the converged pass
   carries no download request rather than an unchanged one.
+- **[ruby](ruby.md)** — the apt ruby packages with the gated cache refresh, the
+  rubygems package, the `/etc/profile.d` gem-`$PATH` script, Bundler and the
+  gem loop. The gem-loop twin of `pip`: one `fact(FileExists)` barrier, because
+  the loop's `gem list` reads need the binary apt lands, and the item's
+  `user_install` scope — not a run-as parameter — decides whether the
+  request elevates.
 - **[apache_php_fpm](apache_php_fpm.md)** — the two `mods-available` →
   `mods-enabled` proxy symlinks and the checkpoint-gated `restart apache`
   handler. The corpus's smallest role — upstream `tasks/main.yml` is one
