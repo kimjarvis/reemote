@@ -83,7 +83,14 @@ deliberate porting choice).
 | `service: name=clamav-freshclam state/enabled` | the sibling request, same wave — `clamd-freshclam` on RedHat | covered (D6) |
 | handler `service: state=restarted`, `when: clamav_daemon_state != 'stopped'` | `restart_handler(notified, plan.daemon)`, the `when:` a plain `if` in the body | recipe (D5) |
 
-No library gap blocked this migration, so none was filed on either path:
+No library gap blocks this migration today, though one was found live on the
+RedHat path and filed as issue #76: two of `vars/RedHat.yml`'s four names are
+virtual `Provides:` values rather than EPEL9 RPM names, `dnf.packages` gated on
+its installed-names read alone, and the result was an install that never
+converged and re-fired the handler on every run. The fix is in the library — a
+`RpmProvides` companion fact the gate consults for a name it cannot find — not
+in the role, which still passes upstream's list through verbatim.
+Everything else mapped as written:
 `apt.packages` and `dnf.packages` are both fact-gated on their installed-package
 read (the honest read for the freshclam gate), `files.transform` and
 `files.install` read-modify-write through the spool family (the `lineinfile`
@@ -106,9 +113,14 @@ in its `connection`, and passwordless sudo (or a `privilege` section in the
 inventory): every request carries `sudo=True`, because reemote has no play-level
 `become`. The gated `freshclam` run downloads a few hundred megabytes of virus
 databases into `/var/lib/clamav`, so the host needs outbound HTTPS to the
-ClamAV CDN. On RHEL-family hosts the `clamav` / `clamav-scanner-systemd` RPMs
-ship from EPEL — compose with the shipped `repo_epel` role or enable the
-repository beforehand: upstream's `setup-RedHat.yml` has no repo task either.
+ClamAV CDN. On RHEL-family hosts the RPMs ship from EPEL — compose with the
+shipped `repo_epel` role or enable the repository beforehand: upstream's
+`setup-RedHat.yml` has no repo task either. Two of the four requested names are
+not RPM names there: `dnf` reaches `clamav-update` through the `clamav-freshclam`
+package and `clamav-scanner-systemd` through `clamd` (`Provides:`, issue #76), and
+it is `clamd` that ships the `clamd@.service` template unit whose instance name
+selects `/etc/clamd.d/scan.conf` — a file the `clamav-filesystem` dependency
+leaves behind as a packaged example, which is what the config edits then rewrite.
 
 -->
 
@@ -195,7 +207,8 @@ installed (so the freshclam act is never built), the `Example` line is gone from
 the family's daemon config, the socket directive is set, both units are running
 and enabled — and on RedHat the unit file is in place, so its reload request is
 never built. No notification, no handler wave. That is the migration's
-idempotence claim, and the offline suite asserts it on both families.
+idempotence claim; the offline suite asserts it on both families, and both sides
+have been checked against real hosts (§7).
 
 > **Shared demo host.** The `ubuntu` demo host also runs the other role
 > examples. This role leaves `clamav-daemon` listening on the
@@ -391,12 +404,26 @@ The Alpine host appears in no tree: no barrier record, no request line.
 > gate entirely — the install changed nobody — and converges to the rerun
 > tree above.
 
+> **Live-run note (2026-11-28, RedHat).** The first live pass over the two
+> CentOS Stream 9 hosts matched the offline tree above except for its
+> `daemon-reload` line: five waves, the four-spec `dnf install`, the gated
+> `freshclam`, the unit, both `scan.conf` edits, and the notified `clamd@scan`
+> restart — and the brand-new `clamd-freshclam.service` started and enabled
+> without systemd being reloaded first: the offline/live difference noted above,
+> confirmed on real hardware. What that pass also exposed was that
+> the *rerun* did not converge: the install still reported packages to install,
+> so the freshclam gate re-opened and the handler restarted again. That was
+> issue #76 — `clamav-update` and `clamav-scanner-systemd` are virtual names an
+> installed-names read cannot see — and it was fixed in `dnf.packages`, not here.
+> The rerun tree above is the post-fix result on those same hosts: three waves,
+> `[no change: all packages present]`, no handler wave.
+
 ## 8. Deliberate deviations from the Ansible role
 
 | # | Deviation | Why |
 | --- | --- | --- |
 | D1 | A host outside the `"Ubuntu"`/`"RedHat"` families emits **nothing at all** — Alpine has no `vars/Alpine.yml` upstream, so it has no port here either | the family guard is the body's opening `if`, not a `when=` on each request; the `include_vars` OS dispatch collapses to the frozen per-family constant tables, and unlike `certbot` nothing upstream keys on the *release*, so no `fact(LinuxDistribution)` barrier is needed |
-| D2 | The `with_items` package loop collapses to **one request on the family's manager** — `apt.packages` on Ubuntu, `dnf.packages` on RedHat | the generic Ansible `package` module dispatches the same way; the per-package `register.changed` becomes the union — freshclam runs when *any* package installed, the same effective gate for the play that followed the loop |
+| D2 | The `with_items` package loop collapses to **one request on the family's manager** — `apt.packages` on Ubuntu, `dnf.packages` on RedHat | the generic Ansible `package` module dispatches the same way; the per-package `register.changed` becomes the union — freshclam runs when *any* package installed, the same effective gate for the play that followed the loop; the RedHat list stays verbatim even though two names are EPEL9 virtual provides, because `dnf.packages` settles those through `RpmProvides` (issue #76) |
 | D3 | `command: freshclam` is an **`act` barrier whose `Result` the body interprets**, and its run — not a request — queues the handler | a barrier result is data, so the body reproduces the `failed_when` list *literally*: a non-zero exit OR the `locked by another process` stderr message raises the typed `CommandError` (the upstream list is an `any`, inverted from the task comment's intent to tolerate the lock). "It ran" is `changed` for the `command` module, so the body adds the host to the notified set |
 | D4 | The `lineinfile` loops become **`files.transform` requests** (pure fixpoint transforms) plus a paired `files.file` mode request | `create: yes` is free (`transform(None)` produces the file), but transform idempotence is content-only — the task's `mode: 0644` therefore rides both, and the mode request is a notifier because the Ansible task would have queued the handler on a mode-only change too |
 | D5 | The handler's `when: clamav_daemon_state != 'stopped'` is a plain **`if` in the body** | a static-variable gate needs no request-level `when`; the handler deploy is simply never yielded for a stopped daemon |

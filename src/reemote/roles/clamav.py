@@ -139,9 +139,13 @@ DEBIAN_PACKAGES = ("clamav", "clamav-base", "clamav-daemon")
 DEBIAN_DAEMON = "clamav-daemon"
 DEBIAN_FRESHCLAM_DAEMON = "clamav-freshclam"
 
-#: ``__clamav_packages`` (RedHat): the scanner split -- ``clamd@scan`` is a
-#: template-unit instance of ``clamav-scanner-systemd``'s ``clamd@.service``
-#: fed by ``/etc/sysconfig/clamd.scan``.
+#: ``__clamav_packages`` (RedHat), kept verbatim from upstream. The scanner
+#: split: ``clamd@scan`` is an instance of the ``clamd@.service`` template unit,
+#: whose ``%i`` selects ``/etc/clamd.d/scan.conf``. Two of these four names are
+#: not RPM names on EPEL9 but virtual ``Provides:`` values -- ``clamav-freshclam``
+#: carries ``clamav-update``, ``clamd`` carries ``clamav-scanner-systemd`` -- so
+#: the request converges through ``dnf.packages``' provides fallback (issue #76)
+#: rather than by substituting the carrier names here.
 REDHAT_PACKAGES = ("clamav", "clamav-update", "clamav-scanner-systemd", "clamav-data")
 
 #: ``__clamav_daemon`` / ``__clamav_freshclam_daemon`` (RedHat): the second is
