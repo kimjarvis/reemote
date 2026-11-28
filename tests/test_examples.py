@@ -133,6 +133,9 @@ OFFLINE_EXAMPLES = (
     "examples/demonstrations/waves/vars_typed.py",
     "examples/demonstrations/waves/dry_one_wave.py",
     "examples/demonstrations/waves/run_waves_report.py",
+    # The zabbix API example drives the control-side JSON-RPC seam against an
+    # in-memory fake server, so it runs end to end with no network (§16.4).
+    "examples/modules/zabbix/zabbix_api.py",
 )
 
 

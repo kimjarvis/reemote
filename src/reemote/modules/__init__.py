@@ -142,15 +142,19 @@ and installed-Pythons family, beside the six pyinfra operations
 ``modules/snap/snap.py`` holds the ``SnapPackage`` fact (with its
 ``SnapPackageInfo`` entry type) beside the ``package`` operation and the
 ``SnapInstallCommand``/``SnapRefreshCommand``/``SnapRemoveCommand``
-descriptors it yields, and
+descriptors it yields,
+``modules/zabbix/zabbix.py`` holds the control-side ``ZabbixClient`` JSON-RPC
+session (with ``ZabbixAPIError`` and the ``connect`` factory) beside the
+``host_group``/``host``/``host_macro`` coroutines the Ansible API branch maps onto,
+and
 ``modules/server/server.py`` holds the ``wait_service`` operation (which
 polls the relocated ``systemd.SystemdServiceState`` fact). The subpackages
 are re-exported here, so a deploy can keep writing
-``from reemote.modules import apk, apt, cargo, dnf, files, firewalld, flatpak, gem, git, go, gpg, hardware, iptables, lxd, mysql, npm, openrc, pip, postgresql, rustup, selinux, snap, sysctl, systemd, ufw, uv, server``
+``from reemote.modules import apk, apt, cargo, dnf, files, firewalld, flatpak, gem, git, go, gpg, hardware, iptables, lxd, mysql, npm, openrc, pip, postgresql, rustup, selinux, snap, sysctl, systemd, ufw, uv, zabbix, server``
 and read ``apk.ApkInstalledPackages`` / ``apt.AptKeys`` / ``cargo.CargoPackages`` / ``cargo.packages`` / ``dnf.packages`` /
 ``files.link`` / ``firewalld.FirewalldZones`` / ``gem.GemPackages`` / ``git.GitBranch`` / ``go.GoPackages`` / ``gpg.GpgKeys`` / ``hardware.BlockDevices`` /
 ``iptables.IptablesChains`` / ``lxd.LxdInstances`` / ``mysql.MysqlDatabases`` / ``npm.NpmPackages`` / ``openrc.OpenrcStatus`` / ``postgresql.PostgresqlRoles`` / ``rustup.RustupToolchains`` /
-``selinux.Mode`` / ``sysctl.setting`` / ``systemd.service`` / ``ufw.UfwRules`` / ``uv.Info`` / ``uv.Packages`` / ``uv.Pythons`` / ``uv.Tools`` / ``uv.packages`` / ``uv.tools`` / ``uv.venv`` / ``server.wait_service``.
+``selinux.Mode`` / ``sysctl.setting`` / ``systemd.service`` / ``ufw.UfwRules`` / ``uv.Info`` / ``uv.Packages`` / ``uv.Pythons`` / ``uv.Tools`` / ``uv.packages`` / ``uv.tools`` / ``uv.venv`` / ``zabbix.host`` / ``server.wait_service``.
 """
 
 from . import (
@@ -182,6 +186,7 @@ from . import (
     systemd,
     ufw,
     uv,
+    zabbix,
 )
 
 __all__ = [
@@ -213,4 +218,5 @@ __all__ = [
     "systemd",
     "ufw",
     "uv",
+    "zabbix",
 ]

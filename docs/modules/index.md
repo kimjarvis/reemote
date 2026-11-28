@@ -1,6 +1,6 @@
 # Modules
 
-reemote's facts and operations are grouped into twenty-seven self-contained
+reemote's facts and operations are grouped into twenty-eight self-contained
 *module namespaces*, each shipped under `reemote.modules.<name>` and
 imported into a deploy by that name — `from reemote import apt, files,
 systemd`. A namespace keeps its own facts, operations, typed entry shapes
@@ -78,3 +78,9 @@ operations; typed entry shapes describe returned data, not extra commands.
 | Module | Purpose |
 | --- | --- |
 | [lxd](lxd.md) | LXD instances, images, profiles, projects, networks, storage pools/volumes, snapshots, operations |
+
+## Monitoring
+
+| Module | Purpose |
+| --- | --- |
+| [zabbix](zabbix.md) | Zabbix server API (control-side JSON-RPC) — host groups, monitored hosts and interfaces, host macros |

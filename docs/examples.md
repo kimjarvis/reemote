@@ -8,7 +8,7 @@ three: `examples/modules/<namespace>/` holds one script per fact or operation
 of a library module (currently `apk`, `apt`, `cargo`, `dnf`, `files`, `firewalld`,
 `flatpak`, `gem`, `git`, `go`, `gpg`, `hardware`, `iptables`, `lxd`, `mysql`, `npm`,
 `openrc`, `pip`, `postgresql`, `rustup`, `selinux`,
-`server`, `snap`, `sysctl`, `systemd`, `ufw` and `uv`), plus the cross-module `dnf_put_get`
+`server`, `snap`, `sysctl`, `systemd`, `ufw`, `uv` and `zabbix`), plus the cross-module `dnf_put_get`
 health-check scenario under `files/`,
 `examples/actions/` holds [action](actions.md) demonstrations (bespoke shell,
 staged scripts, connection waits), and
@@ -51,6 +51,7 @@ sub-directory. Pick a page from the navigation, or start from this table:
 | `examples/modules/systemd/` | [Module examples: systemd](examples/modules/systemd.md) |
 | `examples/modules/ufw/` | [Module examples: ufw](examples/modules/ufw.md) |
 | `examples/modules/uv/` | [Module examples: uv](examples/modules/uv.md) |
+| `examples/modules/zabbix/` | [Module examples: zabbix](examples/modules/zabbix.md) |
 | `examples/actions/` | [Action examples](examples/actions.md) |
 | `examples/demonstrations/privilege/` | [Privilege demonstrations](examples/demonstrations/privilege.md) |
 | `examples/demonstrations/composition/` | [Composing deploys](examples/demonstrations/composition.md) |

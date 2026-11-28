@@ -117,6 +117,7 @@ from .modules import (
     systemd,
     ufw,
     uv,
+    zabbix,
 )
 from .modules.apk.apk import (
     ApkAutoremovablePackages,
@@ -1531,4 +1532,5 @@ __all__ = [
     "ufw",
     "uv",
     "validate_inventory",
+    "zabbix",
 ]

@@ -67,6 +67,7 @@ plugins:
             - examples/modules/systemd
             - examples/modules/ufw
             - examples/modules/uv
+            - examples/modules/zabbix
             - examples/actions
             - examples/demonstrations/composition
             - examples/demonstrations/connectors
@@ -155,6 +156,7 @@ nav:
           - systemd: modules/systemd.md
           - ufw: modules/ufw.md
           - uv: modules/uv.md
+          - zabbix: modules/zabbix.md
       - Actions: actions/actions.md
       - Connectors:
           - docker: connectors/docker.md
