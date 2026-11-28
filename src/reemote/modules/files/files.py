@@ -50,11 +50,13 @@
 # """
 
 import asyncio
+import base64
 import hashlib
 import io
 import os
 import posixpath
 import re
+import secrets
 import shlex
 import stat
 import urllib.parse
@@ -3724,6 +3726,888 @@ async def ini_option(
         yield command
 
 
+# --- htpasswd support: the control-side hash schemes ---------------------------
+#
+# ``files.htpasswd`` manages ``name:hash`` lines, and every hash below is
+# computed on the *control* machine in pure Python. Three reasons conspire to
+# make that the only workable place: the library ships no third-party
+# dependency (asyncssh/distro/pydantic only), the stdlib ``crypt`` module is
+# gone in Python 3.13+, and an htpasswd file stores plain hash *text* -- the
+# target never runs a hashing program, it just serves the bytes. Each scheme is
+# pinned against a reference implementation in ``tests/test_files_htpasswd.py``:
+# ``$apr1$``/``$1$`` against ``openssl passwd``, ``{SHA}`` against
+# ``base64(sha1)``, ``$2y$`` against the C ``bcrypt`` package's output, and
+# traditional DES against ``perl -e 'print crypt($p, $s)'``. The tables are
+# transcribed from libxcrypt's ``gen-des-tables.c`` and the algorithms from
+# libxcrypt's ``crypt-des.c``/``alg-des.c`` and OpenBSD's ``bcrypt.c``, and the
+# Blowfish initial tables are derived -- they *are* the hex digits of pi, so
+# ``_pi_hex_digits`` reproduces them instead of embedding 8 KB of constants.
+
+_MASK32 = 0xFFFFFFFF
+
+#: The htpasswd/htdigest base-64 alphabet (``./``, then digits, then upper- and
+#: lowercase): MD5-crypt, traditional DES and their salts all encode through it.
+_H64 = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+#: OpenBSD bcrypt's variant base-64 (``./``, then upper- and lowercase, then
+#: digits) -- the same characters, a different value for each symbol.
+_BCRYPT_B64 = "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+
+#: The MD5-crypt byte transposition applied to the final digest before the h64
+#: encoding (PHK's and Apache's, not the natural order).
+_MD5_TRANSPOSE = (12, 6, 0, 13, 7, 1, 14, 8, 2, 15, 9, 3, 5, 10, 4, 11)
+
+#: The schemes ``htpasswd_hash`` implements, in canonical spelling.
+HTPASSWD_SCHEMES: tuple[str, ...] = (
+    "plain",
+    "apr_md5_crypt",
+    "md5_crypt",
+    "apr_sha1",
+    "bcrypt",
+    "descrypt",
+)
+
+#: Alternate spellings accepted for those schemes: Ansible's/passlib's handler
+#: names, ``htpasswd(1)``'s flag letters and the role's historical ``sha1``.
+_HTPASSWD_SCHEME_ALIASES: dict[str, str] = {
+    "apache_md5": "apr_md5_crypt",
+    "apr1": "apr_md5_crypt",
+    "bsdi": "descrypt",
+    "crypt": "descrypt",
+    "des": "descrypt",
+    "des_crypt": "descrypt",
+    "ldap_sha1": "apr_sha1",
+    "md5": "md5_crypt",
+    "plaintext": "plain",
+    "sha1": "apr_sha1",
+}
+
+#: The default cost for ``bcrypt``, matching ``htpasswd -B`` and passlib's
+#: ``htpasswd_context`` bcrypt handler (whose own default rounds are 5).
+HTPASSWD_BCRYPT_COST = 5
+
+
+def _h64_salt(length: int) -> str:
+    """A fresh salt of ``length`` characters from the htpasswd h64 alphabet."""
+    return "".join(secrets.choice(_H64) for _ in range(length))
+
+
+def _md5_crypt(password: str, salt: str, magic: str = "$apr1$") -> str:
+    """PHK's MD5-crypt: Apache's ``$apr1$`` and glibc's ``$1$`` form.
+
+    Pure ``hashlib`` implementation of the 1000-round mixing, verified against
+    ``openssl passwd -apr1 -salt``/``-1 -salt`` vectors and randomized passlib
+    cross-checks. ``magic`` selects the variant, ``salt`` is 1-8 h64 characters
+    (``htpasswd -m`` draws 8).
+    """
+    pwd = password.encode("utf-8")
+    salt_b = salt.encode("ascii")
+    magic_b = magic.encode("ascii")
+
+    # Alternate digest: MD5(pwd || salt || pwd), repeated over the password.
+    db = hashlib.md5(pwd + salt_b + pwd).digest()
+
+    ctx = hashlib.md5()
+    ctx.update(pwd)
+    ctx.update(magic_b)
+    ctx.update(salt_b)
+    n = len(pwd)
+    ctx.update((db * (n // 16 + 1))[:n])
+    i = n
+    while i:
+        # One bit of the length per round: odd -> NUL, even -> first byte.
+        ctx.update(b"\x00" if i & 1 else pwd[:1])
+        i >>= 1
+    dc = ctx.digest()
+
+    for r in range(1000):
+        t = hashlib.md5(pwd if r & 1 else dc)
+        if r % 3:
+            t.update(salt_b)
+        if r % 7:
+            t.update(pwd)
+        t.update(dc if r & 1 else pwd)
+        dc = t.digest()
+
+    # h64 encoding of the transposed digest, little-endian per 3-byte group.
+    reordered = bytes(dc[off] for off in _MD5_TRANSPOSE)
+    out = []
+    for group in range(0, 15, 3):
+        v1, v2, v3 = reordered[group], reordered[group + 1], reordered[group + 2]
+        out.append(_H64[v1 & 0x3F])
+        out.append(_H64[((v2 & 0x0F) << 2) | (v1 >> 6)])
+        out.append(_H64[((v3 & 0x03) << 4) | (v2 >> 4)])
+        out.append(_H64[v3 >> 2])
+    v1 = reordered[15]
+    out.append(_H64[v1 & 0x3F])
+    out.append(_H64[v1 >> 6])
+    return magic + salt + "$" + "".join(out)
+
+
+def _sha1_crypt(password: str) -> str:
+    """Apache's ``{SHA}`` form: base64 of the password's raw SHA-1 digest."""
+    digest = hashlib.sha1(password.encode("utf-8")).digest()
+    return "{SHA}" + base64.b64encode(digest).decode("ascii")
+
+
+# --- traditional BSD DES-crypt -------------------------------------------------
+
+_DES_IP: tuple[int, ...] = (
+    58, 50, 42, 34, 26, 18, 10, 2,
+    60, 52, 44, 36, 28, 20, 12, 4,
+    62, 54, 46, 38, 30, 22, 14, 6,
+    64, 56, 48, 40, 32, 24, 16, 8,
+    57, 49, 41, 33, 25, 17, 9, 1,
+    59, 51, 43, 35, 27, 19, 11, 3,
+    61, 53, 45, 37, 29, 21, 13, 5,
+    63, 55, 47, 39, 31, 23, 15, 7,
+)
+_DES_FP: tuple[int, ...] = (
+    40, 8, 48, 16, 56, 24, 64, 32,
+    39, 7, 47, 15, 55, 23, 63, 31,
+    38, 6, 46, 14, 54, 22, 62, 30,
+    37, 5, 45, 13, 53, 21, 61, 29,
+    36, 4, 44, 12, 52, 20, 60, 28,
+    35, 3, 43, 11, 51, 19, 59, 27,
+    34, 2, 42, 10, 50, 18, 58, 26,
+    33, 1, 41, 9, 49, 17, 57, 25,
+)
+_DES_PC1: tuple[int, ...] = (
+    57, 49, 41, 33, 25, 17, 9,
+    1, 58, 50, 42, 34, 26, 18,
+    10, 2, 59, 51, 43, 35, 27,
+    19, 11, 3, 60, 52, 44, 36,
+    63, 55, 47, 39, 31, 23, 15,
+    7, 62, 54, 46, 38, 30, 22,
+    14, 6, 61, 53, 45, 37, 29,
+    21, 13, 5, 28, 20, 12, 4,
+)
+_DES_PC2: tuple[int, ...] = (
+    14, 17, 11, 24, 1, 5,
+    3, 28, 15, 6, 21, 10,
+    23, 19, 12, 4, 26, 8,
+    16, 7, 27, 20, 13, 2,
+    41, 52, 31, 37, 47, 55,
+    30, 40, 51, 45, 33, 48,
+    44, 49, 39, 56, 34, 53,
+    46, 42, 50, 36, 29, 32,
+)
+_DES_EXPANSION: tuple[int, ...] = (
+    32, 1, 2, 3, 4, 5,
+    4, 5, 6, 7, 8, 9,
+    8, 9, 10, 11, 12, 13,
+    12, 13, 14, 15, 16, 17,
+    16, 17, 18, 19, 20, 21,
+    20, 21, 22, 23, 24, 25,
+    24, 25, 26, 27, 28, 29,
+    28, 29, 30, 31, 32, 1,
+)
+_DES_P: tuple[int, ...] = (
+    16, 7, 20, 21,
+    29, 12, 28, 17,
+    1, 15, 23, 26,
+    5, 18, 31, 10,
+    2, 8, 24, 14,
+    32, 27, 3, 9,
+    19, 13, 30, 6,
+    22, 11, 4, 25,
+)
+_DES_SHIFTS: tuple[int, ...] = (1, 1, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 1)
+_DES_SBOXES: tuple[tuple[int, ...], ...] = (
+    (
+        14, 4, 13, 1, 2, 15, 11, 8, 3, 10, 6, 12, 5, 9, 0, 7,
+        0, 15, 7, 4, 14, 2, 13, 1, 10, 6, 12, 11, 9, 5, 3, 8,
+        4, 1, 14, 8, 13, 6, 2, 11, 15, 12, 9, 7, 3, 10, 5, 0,
+        15, 12, 8, 2, 4, 9, 1, 7, 5, 11, 3, 14, 10, 0, 6, 13,
+    ),
+    (
+        15, 1, 8, 14, 6, 11, 3, 4, 9, 7, 2, 13, 12, 0, 5, 10,
+        3, 13, 4, 7, 15, 2, 8, 14, 12, 0, 1, 10, 6, 9, 11, 5,
+        0, 14, 7, 11, 10, 4, 13, 1, 5, 8, 12, 6, 9, 3, 2, 15,
+        13, 8, 10, 1, 3, 15, 4, 2, 11, 6, 7, 12, 0, 5, 14, 9,
+    ),
+    (
+        10, 0, 9, 14, 6, 3, 15, 5, 1, 13, 12, 7, 11, 4, 2, 8,
+        13, 7, 0, 9, 3, 4, 6, 10, 2, 8, 5, 14, 12, 11, 15, 1,
+        13, 6, 4, 9, 8, 15, 3, 0, 11, 1, 2, 12, 5, 10, 14, 7,
+        1, 10, 13, 0, 6, 9, 8, 7, 4, 15, 14, 3, 11, 5, 2, 12,
+    ),
+    (
+        7, 13, 14, 3, 0, 6, 9, 10, 1, 2, 8, 5, 11, 12, 4, 15,
+        13, 8, 11, 5, 6, 15, 0, 3, 4, 7, 2, 12, 1, 10, 14, 9,
+        10, 6, 9, 0, 12, 11, 7, 13, 15, 1, 3, 14, 5, 2, 8, 4,
+        3, 15, 0, 6, 10, 1, 13, 8, 9, 4, 5, 11, 12, 7, 2, 14,
+    ),
+    (
+        2, 12, 4, 1, 7, 10, 11, 6, 8, 5, 3, 15, 13, 0, 14, 9,
+        14, 11, 2, 12, 4, 7, 13, 1, 5, 0, 15, 10, 3, 9, 8, 6,
+        4, 2, 1, 11, 10, 13, 7, 8, 15, 9, 12, 5, 6, 3, 0, 14,
+        11, 8, 12, 7, 1, 14, 2, 13, 6, 15, 0, 9, 10, 4, 5, 3,
+    ),
+    (
+        12, 1, 10, 15, 9, 2, 6, 8, 0, 13, 3, 4, 14, 7, 5, 11,
+        10, 15, 4, 2, 7, 12, 9, 5, 6, 1, 13, 14, 0, 11, 3, 8,
+        9, 14, 15, 5, 2, 8, 12, 3, 7, 0, 4, 10, 1, 13, 11, 6,
+        4, 3, 2, 12, 9, 5, 15, 10, 11, 14, 1, 7, 6, 0, 8, 13,
+    ),
+    (
+        4, 11, 2, 14, 15, 0, 8, 13, 3, 12, 9, 7, 5, 10, 6, 1,
+        13, 0, 11, 7, 4, 9, 1, 10, 14, 3, 5, 12, 2, 15, 8, 6,
+        1, 4, 11, 13, 12, 3, 7, 14, 10, 15, 6, 8, 0, 5, 9, 2,
+        6, 11, 13, 8, 1, 4, 10, 7, 9, 5, 0, 15, 14, 2, 3, 12,
+    ),
+    (
+        13, 2, 8, 4, 6, 15, 11, 1, 10, 9, 3, 14, 5, 0, 12, 7,
+        1, 15, 13, 8, 10, 3, 7, 4, 12, 5, 6, 11, 0, 14, 9, 2,
+        7, 11, 4, 1, 9, 12, 14, 2, 0, 6, 10, 13, 15, 3, 5, 8,
+        2, 1, 14, 7, 4, 10, 8, 13, 15, 12, 9, 0, 3, 5, 6, 11,
+    ),
+)
+
+
+def _des_bits(value: int, width: int) -> list[int]:
+    """``value`` as ``width`` most-significant-first bits."""
+    return [(value >> (width - 1 - index)) & 1 for index in range(width)]
+
+
+def _des_perm(bits: list[int], table: tuple[int, ...]) -> int:
+    """Permute ``bits`` through a 1-based DES table, packing MSB-first."""
+    out = 0
+    for position in table:
+        out = (out << 1) | bits[position - 1]
+    return out
+
+
+def _des_rotate28(word: int, count: int) -> int:
+    """Rotate a 28-bit half-key left by ``count`` (the key schedule's step)."""
+    return ((word << count) | (word >> (28 - count))) & 0x0FFFFFFF
+
+
+def _des_subkeys(key_bytes: bytes) -> list[int]:
+    """The 16 48-bit DES subkeys for ``key_bytes`` (PC1, shifts, PC2)."""
+    cd = _des_perm(_des_bits(int.from_bytes(key_bytes[:8], "big"), 64), _DES_PC1)
+    c, d = cd >> 28, cd & 0x0FFFFFFF
+    keys: list[int] = []
+    for shift in _DES_SHIFTS:
+        c = _des_rotate28(c, shift)
+        d = _des_rotate28(d, shift)
+        combined = (c << 28) | d
+        keys.append(_des_perm(_des_bits(combined, 56), _DES_PC2))
+    return keys
+
+
+def _des_feistel(right: int, subkey: int, pairs: tuple[tuple[int, int], ...]) -> int:
+    """Expand ``right``, XOR the subkey, run the eight S-boxes and P.
+
+    ``pairs`` are the salt's bit-exchanges, applied to the 48-bit expansion
+    *after* expansion and *before* the XOR -- libxcrypt folds its
+    ``r48l ^ r48r`` swap into the same positions.
+    """
+    x = _des_perm(_des_bits(right, 32), _DES_EXPANSION)
+    for first, second in pairs:
+        if ((x >> first) ^ (x >> second)) & 1:
+            x ^= (1 << first) | (1 << second)
+    x ^= subkey
+    out = 0
+    for index in range(8):
+        block = (x >> (42 - 6 * index)) & 0x3F
+        row = ((block & 0x20) >> 4) | (block & 0x01)
+        column = (block >> 1) & 0x0F
+        out = (out << 4) | _DES_SBOXES[index][row * 16 + column]
+    return _des_perm(_des_bits(out, 32), _DES_P)
+
+
+def _des_block(
+    key_bytes: bytes,
+    block_bytes: bytes,
+    pairs: tuple[tuple[int, int], ...] = (),
+    rounds: int = 1,
+) -> bytes:
+    """DES on one 64-bit block: IP, ``rounds`` x 16 Feistel rounds, FP.
+
+    ``rounds > 1`` repeats the *same* 16 subkeys, swapping the halves once more
+    per pass and never rotating the key -- that is BSD crypt's iteration, not
+    iterated DES. ``pairs`` carries the salt's bit-exchanges.
+    """
+    keys = _des_subkeys(key_bytes)
+    pre = _des_perm(_des_bits(int.from_bytes(block_bytes, "big"), 64), _DES_IP)
+    left, right = pre >> 32, pre & 0xFFFFFFFF
+    for _ in range(rounds):
+        for key in keys:
+            left, right = right, (left ^ _des_feistel(right, key, pairs)) & 0xFFFFFFFF
+        left, right = right, left
+    return (
+        _des_perm(_des_bits((left << 32) | right, 64), _DES_FP).to_bytes(8, "big")
+    )
+
+
+def _des_salt_pairs(salt12: int) -> tuple[tuple[int, int], ...]:
+    """The 12 salt bits as (high, low) bit-index pairs of the 48-bit expansion.
+
+    Salt bit ``i`` exchanges the expansion's most-significant-first positions
+    ``i`` and ``i + 24``; in the integer the S-boxes read, position ``p`` is bit
+    ``47 - p``.
+    """
+    return tuple(
+        (47 - index, 23 - index) for index in range(12) if (salt12 >> index) & 1
+    )
+
+
+def _h64_encode(block: bytes) -> str:
+    """Pack ``block`` MSB-first into h64 characters (6 bits each)."""
+    out: list[str] = []
+    acc = 0
+    bits = 0
+    for byte in block:
+        acc = (acc << 8) | byte
+        bits += 8
+        while bits >= 6:
+            bits -= 6
+            out.append(_H64[(acc >> bits) & 0x3F])
+    if bits:
+        out.append(_H64[(acc << (6 - bits)) & 0x3F])
+    return "".join(out)
+
+
+def _des_crypt(password: str, salt: str) -> str:
+    """Classic BSD DES-crypt: the 13-character ``crypt(3)`` password hash.
+
+    The first two characters of ``salt`` are the stored salt. ``password``
+    contributes its first 8 bytes, each shifted left by one (the 64-bit DES
+    key), the block encrypted is eight zero bytes, and 25 passes of one fixed
+    subkey schedule run with the salt exchanging expansion bits -- verified
+    byte-for-byte against ``perl``'s ``crypt()``.
+    """
+    pwd = password.encode("utf-8")[:8].ljust(8, b"\x00")
+    key = bytes((char << 1) & 0xFF for char in pwd)
+    salt12 = _H64.index(salt[0]) | (_H64.index(salt[1]) << 6)
+    cipher = _des_block(key, b"\x00" * 8, _des_salt_pairs(salt12), 25)
+    return salt[:2] + _h64_encode(cipher)
+
+
+# --- OpenBSD bcrypt ------------------------------------------------------------
+
+
+def _pi_hex_digits(digits: int) -> str:
+    """The first ``digits`` fractional hex digits of pi (Machin's formula).
+
+    Blowfish's initial P-array and S-boxes *are* the hexadecimal digits of pi,
+    so deriving them keeps 1042 constants out of the source. Ten extra digits
+    are computed and discarded so the truncation cannot round the last word.
+    """
+    scale = 16 ** (digits + 10)
+
+    def arctan_inverse(k: int) -> int:
+        total = 0
+        power = scale // k
+        n = 0
+        while power:
+            term = power // (2 * n + 1)
+            total = total - term if n % 2 else total + term
+            power //= k * k
+            n += 1
+        return total
+
+    pi_scaled = 16 * arctan_inverse(5) - 4 * arctan_inverse(239)
+    text = f"{pi_scaled:x}"
+    if text[0] != "3":  # pragma: no cover - guards the fixed-point scaling
+        raise RuntimeError("failed to derive the hex digits of pi")
+    return text[1 : 1 + digits]
+
+
+_BLOWFISH_TABLES: tuple[list[int], list[list[int]]] | None = None
+
+
+def _blowfish_tables() -> tuple[list[int], list[list[int]]]:
+    """The 18 P-array words and four 256-entry S-boxes from pi's hex digits."""
+    global _BLOWFISH_TABLES
+    if _BLOWFISH_TABLES is None:
+        hexs = _pi_hex_digits((18 + 4 * 256) * 8)
+        words = [int(hexs[i : i + 8], 16) for i in range(0, len(hexs), 8)]
+        _BLOWFISH_TABLES = (
+            words[:18],
+            [words[18 + 256 * i : 18 + 256 * (i + 1)] for i in range(4)],
+        )
+    return _BLOWFISH_TABLES
+
+
+def _bcrypt_b64_encode(data: bytes) -> str:
+    """OpenBSD bcrypt's base-64: 6-bit groups, MSB-first, no padding."""
+    out: list[str] = []
+    index = 0
+    while index < len(data):
+        chunk = 0
+        used = 0
+        for offset in range(3):
+            if index + offset < len(data):
+                chunk = (chunk << 8) | data[index + offset]
+                used += 1
+            else:
+                chunk <<= 8
+        for group in range((used * 8 + 5) // 6):
+            out.append(_BCRYPT_B64[(chunk >> (24 - (group + 1) * 6)) & 0x3F])
+        index += used
+    return "".join(out)
+
+
+def _bcrypt_b64_decode(text: str) -> bytes:
+    """Inverse of ``_bcrypt_b64_encode``, dropping the trailing bits."""
+    out = bytearray()
+    acc = 0
+    bits = 0
+    for char in text:
+        acc = (acc << 6) | _BCRYPT_B64.index(char)
+        bits += 6
+        if bits >= 8:
+            bits -= 8
+            out.append((acc >> bits) & 0xFF)
+    return bytes(out)
+
+
+def _bf_stream_word(data: bytes, offset: int) -> int:
+    """The 4 big-endian key/data bytes bcrypt XORs in, cycling past the end."""
+    if not data:
+        return 0
+    word = 0
+    for step in range(4):
+        word = ((word << 8) | data[(offset + step) % len(data)]) & _MASK32
+    return word
+
+
+class _Blowfish:
+    """Blowfish subkeys plus the two salted expansions bcrypt needs.
+
+    A minimal port of OpenBSD's ``blowfish`` block cipher: 16 Feistel rounds
+    over the P-array and S-boxes, and the two key schedules bcrypt uses --
+    ``expandstate`` (XOR the key into P, then walk the whole subkey array
+    self-encrypting with the *data* stream XORed into the running block) and
+    ``expand0state`` (the same walk with no data stream).
+    """
+
+    def __init__(self, p_init: list[int], s_init: list[list[int]]):
+        self._p_init = p_init
+        self._s_init = s_init
+        self.p = list(p_init)
+        self.s = [list(box) for box in s_init]
+
+    def reset(self) -> None:
+        """Restore the pi-derived tables so one engine can hash repeatedly."""
+        self.p = list(self._p_init)
+        self.s = [list(box) for box in self._s_init]
+
+    def _f(self, x: int) -> int:
+        s = self.s
+        v = (s[0][(x >> 24) & 0xFF] + s[1][(x >> 16) & 0xFF]) & _MASK32
+        v ^= s[2][(x >> 8) & 0xFF]
+        return (v + s[3][x & 0xFF]) & _MASK32
+
+    def encipher(self, left: int, right: int) -> tuple[int, int]:
+        """One 64-bit Blowfish block, as the pair of 32-bit halves."""
+        p = self.p
+        for index in range(16):
+            left ^= p[index]
+            right = (self._f(left) ^ right) & _MASK32
+            left, right = right, left
+        left, right = right, left
+        right ^= p[16]
+        left ^= p[17]
+        return left & _MASK32, right & _MASK32
+
+    def _xor_key(self, key: bytes) -> None:
+        j = 0
+        for index in range(18):
+            self.p[index] ^= _bf_stream_word(key, j)
+            j += 4
+
+    def _walk(self, data: bytes | None) -> None:
+        """Self-encrypt the whole subkey array, optionally XORing ``data`` in."""
+        datal = datar = 0
+        j = 0
+        cycle = max(len(data), 1) if data else 1
+        for index in range(0, 18, 2):
+            if data:
+                datal ^= _bf_stream_word(data, j)
+                j = (j + 4) % cycle
+                datar ^= _bf_stream_word(data, j)
+                j = (j + 4) % cycle
+            datal, datar = self.encipher(datal, datar)
+            self.p[index], self.p[index + 1] = datal, datar
+        for box in range(4):
+            for pair in range(0, 256, 2):
+                if data:
+                    datal ^= _bf_stream_word(data, j)
+                    j = (j + 4) % cycle
+                    datar ^= _bf_stream_word(data, j)
+                    j = (j + 4) % cycle
+                datal, datar = self.encipher(datal, datar)
+                self.s[box][pair], self.s[box][pair + 1] = datal, datar
+
+    def expand0state(self, key: bytes) -> None:
+        """``Blowfish_expand0state``: key into P, then walk with no data."""
+        self._xor_key(key)
+        self._walk(None)
+
+    def expandstate(self, data: bytes, key: bytes) -> None:
+        """``Blowfish_expandstate``: key into P, walk with the data stream."""
+        self._xor_key(key)
+        self._walk(data)
+
+
+#: The fixed plaintext bcrypt encrypts 64 times: "OrpheanBeholderScryDoubt".
+_BCRYPT_CTEXT = (
+    0x4F727068, 0x65616E42, 0x65686F6C, 0x64657253, 0x63727944, 0x6F756274
+)
+
+
+def _bcrypt_crypt(password: str, salt: str, cost: int, ident: str = "2y") -> str:
+    """OpenBSD bcrypt in the Apache-compatible ``$2y$`` form.
+
+    ``salt`` is the 22-character bcrypt base-64 of 16 salt bytes, ``cost`` the
+    log2 iteration count rendered as two digits. The password (including its
+    terminating NUL, truncated to 72 bytes as the format mandates) drives
+    ``expandstate`` against the salt, then ``2**cost`` pairs of
+    ``expand0state`` -- password, then salt -- and finally the fixed ciphertext
+    through 64 passes of three blocks; the digest's first 23 bytes encode in
+    bcrypt base-64. Verified byte-for-byte against the reference C
+    implementation.
+    """
+    engine = _Blowfish(*_blowfish_tables())
+    salt_bytes = _bcrypt_b64_decode(salt)[:16]
+    key = password.encode("utf-8")[:72] + b"\x00"
+    engine.reset()
+    engine.expandstate(salt_bytes, key)
+    for _ in range(1 << cost):
+        engine.expand0state(key)
+        engine.expand0state(salt_bytes)
+    data = list(_BCRYPT_CTEXT)
+    for _ in range(64):
+        for index in range(0, 6, 2):
+            data[index], data[index + 1] = engine.encipher(data[index], data[index + 1])
+    digest = b"".join(word.to_bytes(4, "big") for word in data)
+    return f"${ident}${cost:02d}${salt}{_bcrypt_b64_encode(digest[:23])}"
+
+
+def _bcrypt_salt() -> str:
+    """A fresh 16-byte salt, encoded in the 22-character bcrypt base-64."""
+    return _bcrypt_b64_encode(secrets.token_bytes(16))
+
+
+def _bcrypt_parse(stored: str) -> tuple[str, int, str] | None:
+    """``(ident, cost, salt)`` from a stored ``$2[a-y]$`` hash, None if not one.
+
+    The layout is ``$``, the two-character ident, ``$``, the two-digit cost,
+    ``$`` and the 22-character salt, so 60 characters in total. A value that
+    merely *looks* like bcrypt (a shorter line, a non-digit cost, a character
+    outside the bcrypt alphabet) is rejected here rather than raising from the
+    decoder, so ``htpasswd_verify`` can fall through to the next handler.
+    """
+    if len(stored) < 29 or not stored.startswith("$2"):
+        return None
+    if stored[3] != "$" or stored[6] != "$":
+        return None
+    ident = f"2{stored[2]}"
+    cost = stored[4:6]
+    salt = stored[7:29]
+    if ident not in ("2a", "2b", "2x", "2y") or not cost.isdigit():
+        return None
+    if any(char not in _BCRYPT_B64 for char in salt):
+        return None
+    return ident, int(cost), salt
+
+
+# --- the scheme dispatch -------------------------------------------------------
+
+
+def htpasswd_scheme(hash_scheme: str) -> str:
+    """The canonical ``hash_scheme`` name, raising on an unimplemented one.
+
+    The single source of truth for what a caller may ask for: the six
+    ``HTPASSWD_SCHEMES`` spellings plus the Ansible-side aliases they are
+    reached through (``"sha1"``, ``"crypt"``, ...). Callers that store or
+    display the scheme can validate through this without hashing.
+    """
+    scheme = hash_scheme.strip().lower()
+    scheme = _HTPASSWD_SCHEME_ALIASES.get(scheme, scheme)
+    if scheme not in HTPASSWD_SCHEMES:
+        raise ValueError(
+            f"unsupported hash_scheme {hash_scheme!r}; files.htpasswd implements "
+            f"{', '.join(HTPASSWD_SCHEMES)} (sha256_crypt, sha512_crypt and the "
+            "other passlib handlers are not htpasswd-portable and are not "
+            "implemented)"
+        )
+    return scheme
+
+
+def htpasswd_hash(password: str, hash_scheme: str = "apr_md5_crypt") -> str:
+    """Hash ``password`` for an htpasswd line in ``hash_scheme``.
+
+    Every hashed scheme draws a fresh salt from the CSPRNG, so two calls never
+    return the same text -- which is why the entry edit verifies a stored hash
+    instead of comparing it (``htpasswd_verify``). ``bcrypt`` hashes at
+    ``HTPASSWD_BCRYPT_COST`` and ``descrypt`` uses only the password's
+    first 8 characters, as the format itself dictates.
+    """
+    scheme = htpasswd_scheme(hash_scheme)
+    if scheme == "plain":
+        return password
+    if scheme == "apr_md5_crypt":
+        return _md5_crypt(password, _h64_salt(8), "$apr1$")
+    if scheme == "md5_crypt":
+        return _md5_crypt(password, _h64_salt(8), "$1$")
+    if scheme == "apr_sha1":
+        return _sha1_crypt(password)
+    if scheme == "bcrypt":
+        return _bcrypt_crypt(password, _bcrypt_salt(), HTPASSWD_BCRYPT_COST, "2y")
+    return _des_crypt(password, _h64_salt(2))
+
+
+def htpasswd_verify(password: str, stored: str) -> bool:
+    """Whether ``password`` verifies against one line's stored ``hash`` field.
+
+    The mirror of the Ansible module's verify-then-keep: it dispatches on the
+    stored form, not on the requested scheme, so a managed line whose hash
+    already proves the desired password is reproduced byte-for-byte. A stored
+    field equal to the password verifies outright -- passlib's htpasswd context
+    carries a ``plaintext`` handler for exactly that case, and checking it first
+    keeps a 13-character plaintext password (which is also a well-formed DES
+    hash shape) from churning on every deploy.
+    """
+    if stored == password:
+        return True
+    if stored.startswith(("$apr1$", "$1$")):
+        parts = stored.split("$")
+        if len(parts) != 4:
+            return False
+        return _md5_crypt(password, parts[2], f"${parts[1]}$") == stored
+    if stored.startswith("{SHA}"):
+        return stored == _sha1_crypt(password)
+    bcrypt = _bcrypt_parse(stored)
+    if bcrypt is not None:
+        ident, cost, salt = bcrypt
+        return _bcrypt_crypt(password, salt, cost, ident) == stored
+    if len(stored) == 13 and all(char in _H64 for char in stored):
+        return _des_crypt(password, stored[:2]) == stored
+    return False
+
+
+def htpasswd_entry(
+    current: str | None,
+    username: str,
+    password: str | None = None,
+    hash_scheme: str = "apr_md5_crypt",
+    present: bool = True,
+) -> str:
+    """The desired file text for one ``name:hash`` entry of an htpasswd file.
+
+    Pure, control-side and a fixpoint: the managed line is *verified* rather
+    than compared, so a stored hash that already proves ``password`` is
+    reproduced byte-for-byte (no fresh salt) and applying the edit to its own
+    output changes nothing. A new or stale line is appended or rewritten with a
+    freshly hashed one, ``present=False`` drops the line, and every other line
+    -- comment, blank, another user -- keeps its place and content.
+
+    Args:
+        current (str | None): The file's present text, ``None`` when absent.
+        username (str): The credential's user name (no colon).
+        password (str | None, optional): The password to hash; required when
+            ``present``. Defaults to None.
+        hash_scheme (str, optional): The scheme to hash a changed entry with;
+            see ``htpasswd_hash``. Defaults to "apr_md5_crypt".
+        present (bool, optional): Ensure the entry, or remove it. Defaults
+            to True.
+
+    Returns:
+        str: The whole file's desired text, newline-terminated.
+    """
+    if not username:
+        raise ValueError("htpasswd username must be a non-empty string")
+    if ":" in username:
+        raise ValueError(
+            f"htpasswd username must not contain a colon, got {username!r}"
+        )
+    lines = current.split("\n") if current else []
+    if lines and lines[-1] == "":
+        # The trailing newline is a line terminator, not an entry; the join
+        # below restores it, so a file converges to exactly one of them.
+        lines.pop()
+    prefix = f"{username}:"
+    index = next(
+        (position for position, line in enumerate(lines) if line.startswith(prefix)),
+        None,
+    )
+    if present:
+        if password is None:
+            raise ValueError(
+                f"a password is required to manage the htpasswd entry {username!r} "
+                "(pass present=False to remove it)"
+            )
+        # The scheme is only paid for when the line actually changes, so a
+        # converged file costs one verification pass, not a re-hash.
+        stored = lines[index].split(":", 1)[1] if index is not None else None
+        if stored is None:
+            lines.append(f"{username}:{htpasswd_hash(password, hash_scheme)}")
+        elif not htpasswd_verify(password, stored):
+            lines[index] = f"{username}:{htpasswd_hash(password, hash_scheme)}"
+    elif index is not None:
+        lines.pop(index)
+    return "".join(f"{line}\n" for line in lines)
+
+
+async def htpasswd(
+    ctx: OpContext,
+    path: str,
+    username: str,
+    password: str | None = None,
+    hash_scheme: str = "apr_md5_crypt",
+    owner: str | None = None,
+    group: str | None = None,
+    mode: str = "0640",
+    present: bool = True,
+    validate: str | None = None,
+    **kwargs: Any,
+) -> AsyncGenerator[Command]:
+    """Add, update or remove one entry in an Apache htpasswd file.
+
+    Args:
+        ctx (OpContext): Execution context for the operation.
+        path (str): The remote htpasswd file to manage (eg
+            ``/etc/apache2/.htpasswd``). Created with its parent directory
+            when absent.
+        username (str): The credential's user name -- Ansible's ``name``, which
+            cannot be spelled here because ``op()`` consumes ``name`` for the
+            request label (``username`` is that parameter's own alias).
+        password (str | None, optional): The password to hash for ``username``;
+            required when ``present``. Defaults to None.
+        hash_scheme (str, optional): How to hash a new or changed entry: the
+            Apache default ``"apr_md5_crypt"`` (``$apr1$``), ``"md5_crypt"``
+            (``$1$``), ``"apr_sha1"`` (``{SHA}``, also accepted as ``"sha1"`` /
+            ``"ldap_sha1"``), ``"bcrypt"`` (``$2y$``), ``"descrypt"``
+            (traditional DES, also ``"crypt"``/``"des_crypt"``) or ``"plain"``.
+            Defaults to "apr_md5_crypt".
+        owner (str | None, optional): The user to own the file after the
+            install. Defaults to None (leaves the file's owner unchanged).
+        group (str | None, optional): The group to own the file after the
+            install. Defaults to None (leaves the file's group unchanged).
+        mode (str, optional): The installed file's permissions as octal-digit
+            text (``"0640"``, ``"600"``). Defaults to "0640" -- stored hashes
+            are readable by any local user at ``0644``.
+        present (bool, optional): Ensure the entry exists, or remove it
+            (Ansible's ``state: absent``). Defaults to True.
+        validate (str | None, optional): A command template run on the spooled
+            ``/tmp`` file between the transfer and the install, forwarded
+            straight to ``files.install``. Defaults to None (no validation).
+        **kwargs: Additional keyword arguments.
+
+    Yields:
+        Command: The spool transfer and the elevated install command, only
+            when the managed line changes.
+
+    **Raises:**
+
+    ```python
+    CommandNotFoundError, HostConnectionError, ValueError
+    ```
+
+    Examples:
+        ```python
+        from reemote import op, files
+
+        # Add or update one user in a root-owned file only the web server can
+        # read; the hash is computed on the control machine, so the target
+        # needs no htpasswd(1) and no password ever reaches a command line.
+        yield op(
+            files.htpasswd,
+            name="Allow the deploy user",
+            path="/etc/apache2/.htpasswd",
+            username="deploy",
+            password="s3cr3t",
+            owner="root",
+            group="www-data",
+            sudo=True,
+        )
+
+        # ``bcrypt`` for a stronger stored hash; ``present=False`` removes a
+        # departed user and leaves every other line untouched.
+        yield op(
+            files.htpasswd,
+            name="Allow the admin user",
+            path="/etc/nginx/passwdfile",
+            username="admin",
+            password="hunter2",
+            hash_scheme="bcrypt",
+            group="www-data",
+            sudo=True,
+        )
+        yield op(
+            files.htpasswd,
+            name="Drop the intern user",
+            path="/etc/nginx/passwdfile",
+            username="intern",
+            present=False,
+            sudo=True,
+        )
+        ```
+
+        Examples can be found in ``examples/modules/files/files_htpasswd.py``.
+    """
+
+    # Ansible ``community.general.htpasswd`` parity (issue #74), and the shape
+    # of the two neighbours this file already ships: read the file's text with
+    # the ``FileContents`` fact, apply a pure edit, and delegate the write to
+    # ``files.install`` (spool over unprivileged scp to a dest-derived ``/tmp``
+    # path, then an elevated ``sh -c`` install). One ``sudo=True`` request
+    # therefore converges the usual ``0640 root:www-data`` file in a SINGLE
+    # deploy -- ``files.edit``/``files.put`` cannot, because their scp runs
+    # unprivileged -- and the two-tier read re-reads the file elevated, so a
+    # restrictive mode does not re-install every deploy.
+    #
+    # The hashing is control-side and pure Python (see the scheme helpers
+    # above): the library has no crypto dependency, ``crypt()`` is gone from
+    # Python 3.13+, and an htpasswd file only stores hash *text*, so the target
+    # never runs a hashing program. Because every fresh hash draws a random
+    # salt, idempotence cannot come from comparing the line's text: it comes
+    # from ``htpasswd_entry`` verifying the stored hash against the desired
+    # password and keeping the line verbatim when it proves. That is also why
+    # changing ``hash_scheme`` alone does not rewrite an entry -- the Ansible
+    # module documents the same blind spot, since a stored ``$apr1$`` line and a
+    # stored ``{SHA}`` line both verify and neither reveals which scheme the
+    # caller asked for.
+    #
+    # ``username`` is Ansible's ``name``/``username`` parameter renamed, the
+    # ``crontab.crontab`` ``cron_name`` precedent: ``op()`` reads ``name`` as the
+    # request label, so no operation can take it as an argument. ``owner`` keeps
+    # Ansible's spelling (``username`` already took the credential), and maps to
+    # install's ``user``.
+    #
+    # ``mode`` defaults to ``"0640"`` rather than the files family's ``"0644"``:
+    # every line of this file is a password hash, and a world-readable one is
+    # offline-crackable by any local account. ``**kwargs`` absorbs any further
+    # global arguments (``op()`` already strips ``name``/``sudo``/``su``).
+    # Deliberately unshipped, like ``ini_option``'s removal branch: ``create``
+    # (an absent file is created, as Ansible's default does) and per-entry
+    # ``backup`` (non-deterministic, the project-wide drop). Idempotence is
+    # content-only, as install's: an owner/group/mode-only drift does not
+    # re-install -- ``files.file`` converges metadata.
+    current = await ctx.facts.get(FileContents, path)
+    if not present and current is None:
+        # Nothing to remove: creating an empty file would be a change Ansible
+        # itself refuses to make (it warns and reports no change).
+        ctx.reason = f"htpasswd file {path} is absent, nothing to remove"
+        return
+    new = htpasswd_entry(current, username, password, hash_scheme, present)
+    async for command in install(
+        ctx,
+        new,
+        path,
+        mode=mode,
+        user=owner,
+        group=group,
+        validate=validate,
+        **kwargs,
+    ):
+        yield command
+
+
 def _fetch_url_bytes(url: str) -> bytes:
     """Fetch an ``http(s)`` ``url`` control-side and return its body bytes.
 
@@ -5224,6 +6108,7 @@ async def flags(
 
 
 __all__ = [
+    "HTPASSWD_SCHEMES",
     "ChattrCommand",
     "ChmodCommand",
     "ChownCommand",
@@ -5271,6 +6156,11 @@ __all__ = [
     "file",
     "flags",
     "get",
+    "htpasswd",
+    "htpasswd_entry",
+    "htpasswd_hash",
+    "htpasswd_scheme",
+    "htpasswd_verify",
     "ini_option",
     "install",
     "link",

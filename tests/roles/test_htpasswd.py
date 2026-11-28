@@ -12,6 +12,12 @@ second pass must report **no change anywhere**, because the ``FileContents``
 read-back feeds a verify-then-keep merge -- a managed line whose stored hash
 already verifies against the desired password is reproduced byte-for-byte.
 
+The hashing itself lives in the operation the role used to work around, so
+these tests exercise the role's *composition* of it (``merge_credentials``
+over ``files.htpasswd_entry``) and only call ``files.htpasswd_hash`` /
+``files.htpasswd_verify`` to state expectations; the primitives' own vectors
+are pinned in ``tests/test_files_htpasswd.py``.
+
 The seams the role consults are the ordinary files ones:
 
 * ``apt_packages`` -- ``install_apt_packages`` records the package the way
@@ -39,14 +45,9 @@ import pytest
 from pydantic import ValidationError
 
 from reemote import run_waves
+from reemote.modules.files import HTPASSWD_SCHEMES, htpasswd_hash, htpasswd_verify
 from reemote.roles import HtpasswdCredential, HtpasswdVars, htpasswd
-from reemote.roles.htpasswd import (
-    SUPPORTED_SCHEMES,
-    hash_password,
-    md5_crypt,
-    merge_credentials,
-    verify_password,
-)
+from reemote.roles.htpasswd import SUPPORTED_SCHEMES, merge_credentials
 from reemote.rolevars import RoleVarsError, resolve_vars
 from tests.simulated_host import SimulatedHost
 
@@ -61,9 +62,9 @@ BOB = "bob"
 PASS_BOB = "bob-password-2"
 
 # Fixed-hash literals for the two schemes, so a converged seed is a verbatim
-# string. Generated with the role's own helpers (salt ``Qux7Yh3z`` and a
-# base64 SHA-1); the algorithm itself is pinned against openssl vectors in
-# test_md5_crypt_matches_openssl_vectors below.
+# string. Generated with the operation's own helpers (salt ``Qux7Yh3z`` and a
+# base64 SHA-1); the algorithms are pinned against openssl/perl vectors in
+# tests/test_files_htpasswd.py below.
 ALICE_HASH = "$apr1$Qux7Yh3z$Y0pHsg2yeq6DVprpMeCMb0"
 BOB_HASH = "{SHA}/EjZqc5FO6inlw9PI4BynEAxq9I="
 SEED_TEXT = f"{ALICE}:{ALICE_HASH}\n{BOB}:{BOB_HASH}\n"
@@ -231,47 +232,37 @@ def stored_hash(host: SimulatedHost, name: str, path: str = HT_FILE) -> str:
     raise AssertionError(f"no line for {name} in {path}")
 
 
-# --- the pure hashing half, unit-tested directly ---------------------------------
+def verify_or_rehash(
+    host: SimulatedHost, name: str, password: str, prefix: str
+) -> bool:
+    """Is *name*'s stored line in *prefix* and does it verify *password*?"""
+    stored = stored_hash(host, name)
+    return stored.startswith(prefix) and htpasswd_verify(password, stored)
 
 
-def test_md5_crypt_matches_openssl_vectors():
-    """The embedded PHK/Apache MD5-crypt against ``openssl passwd -apr1/-1`` output."""
-    vectors = [
-        ("$apr1$", "supersecure", "XIXoX/xx", "$apr1$XIXoX/xx$zJgp/zw7/8B/BDCoEVedw1"),
-        ("$apr1$", "password", "abcdefgh", "$apr1$abcdefgh$FBwExRW4dCc8aL.OvjpIE1"),
-        ("$apr1$", "", "XIXoX/xx", "$apr1$XIXoX/xx$oEI0DiN.nBCXg/1rK2IpP/"),
-        (
-            "$apr1$",
-            "a-very-long-password-for-the-16-byte-loop-test",
-            "12345678",
-            "$apr1$12345678$x0StuO92WWy2rML8oDRbw.",
-        ),
-        ("$1$", "supersecure", "XIXoX/xx", "$1$XIXoX/xx$1CY1jJukH7ehKKii3ecU1/"),
-        ("$1$", "password", "abcdefgh", "$1$abcdefgh$G//4keteveJp0qb8z2DxG/"),
-    ]
-    for magic, password, salt, expected in vectors:
-        assert md5_crypt(password, salt, magic) == expected
+# --- the pure hashing half, as the role composes it -------------------------------
 
 
-def test_verify_password_all_three_stored_forms():
-    assert verify_password(PASS_ALICE, ALICE_HASH)
-    assert not verify_password("wrong", ALICE_HASH)
-    assert verify_password(PASS_BOB, BOB_HASH)
-    assert not verify_password("wrong", BOB_HASH)
-    assert verify_password("clear-text", "clear-text")
-    assert not verify_password("clear-text", "other")
+def test_stored_forms_verify():
+    """The verify-then-keep merge consults the operation's verifier."""
+    assert htpasswd_verify(PASS_ALICE, ALICE_HASH)
+    assert not htpasswd_verify("wrong", ALICE_HASH)
+    assert htpasswd_verify(PASS_BOB, BOB_HASH)
+    assert not htpasswd_verify("wrong", BOB_HASH)
+    assert htpasswd_verify("clear-text", "clear-text")
+    assert not htpasswd_verify("clear-text", "other")
 
 
-def test_hash_password_shapes():
-    apr = hash_password(PASS_ALICE, "apr_md5_crypt")
-    assert apr.startswith("$apr1$") and verify_password(PASS_ALICE, apr)
-    assert apr != hash_password(PASS_ALICE, "apr_md5_crypt")  # fresh salt
+def test_hash_shapes():
+    apr = htpasswd_hash(PASS_ALICE, "apr_md5_crypt")
+    assert apr.startswith("$apr1$") and htpasswd_verify(PASS_ALICE, apr)
+    assert apr != htpasswd_hash(PASS_ALICE, "apr_md5_crypt")  # fresh salt
     for scheme in ("sha1", "apr_sha1"):
-        sha = hash_password(PASS_BOB, scheme)
+        sha = htpasswd_hash(PASS_BOB, scheme)
         assert sha == "{SHA}" + base64.b64encode(
             hashlib.sha1(PASS_BOB.encode("utf-8")).digest()
         ).decode("ascii")
-    assert hash_password("x", "plain") == "x"
+    assert htpasswd_hash("x", "plain") == "x"
 
 
 def test_merge_is_a_fixpoint_and_preserves_unmanaged_lines():
@@ -295,7 +286,7 @@ def test_merge_replaces_only_the_stale_line():
     assert "legacy:keep-me" in merged
     new_hash = merged.splitlines()[0].split(":", 1)[1]
     assert new_hash != ALICE_HASH
-    assert verify_password(PASS_ALICE, new_hash)
+    assert htpasswd_verify(PASS_ALICE, new_hash)
 
 
 def test_merge_appends_new_names_and_last_duplicate_wins():
@@ -349,9 +340,23 @@ def test_credential_validation():
         HtpasswdCredential(**cred(mode="0999"))
 
 
-def test_unsupported_scheme_names_the_gap_issue():
-    with pytest.raises(ValidationError, match=r"issues/74"):
-        HtpasswdCredential(**cred(hash_scheme="bcrypt"))
+def test_the_widened_schemes_are_accepted():
+    """D4 is closed: the role accepts the operation's whole scheme set (#74)."""
+    assert SUPPORTED_SCHEMES == HTPASSWD_SCHEMES
+    for scheme in ("bcrypt", "descrypt", "crypt", "sha1", "plaintext"):
+        assert HtpasswdCredential(**cred(hash_scheme=scheme)).hash_scheme == scheme
+    bcrypt = merge_credentials(
+        None, (HtpasswdCredential(**cred(hash_scheme="bcrypt")),)
+    )
+    assert bcrypt.startswith(f"{ALICE}:$2y$")
+    assert htpasswd_verify(PASS_ALICE, bcrypt.split(":", 1)[1].strip())
+    des = merge_credentials(None, (HtpasswdCredential(**cred(hash_scheme="crypt")),))
+    assert htpasswd_verify(PASS_ALICE, des.split(":", 1)[1].strip())
+
+
+def test_unknown_scheme_is_rejected():
+    with pytest.raises(ValidationError, match="unsupported hash_scheme"):
+        HtpasswdCredential(**cred(hash_scheme="sha512_crypt"))
     assert "apr_md5_crypt" in SUPPORTED_SCHEMES
 
 
@@ -388,10 +393,8 @@ async def test_first_pass_creates_the_file():
 
     lines = host.remote_files[HT_FILE].decode("utf-8").splitlines()
     assert [line.split(":", 1)[0] for line in lines] == [ALICE, BOB]
-    assert verify_password(PASS_ALICE, stored_hash(host, ALICE))
-    assert stored_hash(host, ALICE).startswith("$apr1$")
-    assert verify_password(PASS_BOB, stored_hash(host, BOB))
-    assert stored_hash(host, BOB).startswith("{SHA}")
+    assert verify_or_rehash(host, ALICE, PASS_ALICE, "$apr1$")
+    assert verify_or_rehash(host, BOB, PASS_BOB, "{SHA}")
     # The install's elevated chain applied owner, group and the octal mode.
     assert host.file_stats[HT_FILE]["mode"] == 640
     assert host.file_stats[HT_FILE]["user"] == "root"
@@ -418,8 +421,8 @@ async def test_second_pass_after_a_drifted_hash_converges_once():
     # alice rewritten (verifies now), the unmanaged line preserved in place,
     # bob appended.
     assert lines[1] == "legacy:keep"
-    assert verify_password(PASS_ALICE, stored_hash(host, ALICE))
-    assert verify_password(PASS_BOB, stored_hash(host, BOB))
+    assert htpasswd_verify(PASS_ALICE, stored_hash(host, ALICE))
+    assert htpasswd_verify(PASS_BOB, stored_hash(host, BOB))
 
     second = await run_role(inventory, hosts)
     assert changed_entries(second) == []

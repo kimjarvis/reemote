@@ -32,7 +32,7 @@ operations; typed entry shapes describe returned data, not extra commands.
 
 | Module | Purpose |
 | --- | --- |
-| [files](files.md) | Files, directories, links, copies/moves, block edits, put/get transfers, install-from-content, root-owned transform edits, section-scoped INI option edits, URL downloads, control-side content fetches, extended attributes |
+| [files](files.md) | Files, directories, links, copies/moves, block edits, put/get transfers, install-from-content, root-owned transform edits, section-scoped INI option edits, htpasswd entry management, URL downloads, control-side content fetches, extended attributes |
 | [git](git.md) | Git working copies — clone/pull, config, worktrees |
 
 ## Services

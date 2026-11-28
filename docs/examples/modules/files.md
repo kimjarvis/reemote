@@ -378,6 +378,33 @@ every request reporting no change.
     options:
       members: []
 
+## Managing htpasswd entries (Ansible community.general.htpasswd parity)
+
+`files.htpasswd` (Ansible `community.general.htpasswd` parity, issue #74) adds,
+updates or removes **one** `name:hash` entry of an Apache/Nginx password file and
+preserves every other line. It is `files.transform` with the entry edit built in:
+read `FileContents`, fold in the one line, delegate the write to
+`files.install` — unprivileged scp spool plus elevated `sh -c` install — so one
+`sudo=True` request converges the usual `0640 root:www-data` file, with no
+`htpasswd(1)` and no passlib on the target. The hashing runs on the control
+machine in pure Python (`$apr1$`, `$1$`, `{SHA}`, `$2y$` bcrypt, traditional DES),
+so the password is never part of a command, a plan line or a log line. Because
+every fresh hash draws a random salt, the edit *verifies* the stored hash instead
+of comparing the text: a line that already proves the wanted password is
+reproduced byte-for-byte, which is what makes a rerun a no-op — and, as in
+Ansible, why changing `hash_scheme` alone does not rewrite an entry. The example
+ensures two users in one demo file under `/etc` (`alice` in `$apr1$`, `bob` in
+`bcrypt`) and then ensures a third user is *absent* (`present=False`, no password
+needed), the three requests sharing one file: the driver applies each before
+pulling the next, so the second edit sees the first line and the removal sees
+both. The parameter is `username`, not Ansible's `name` — `op()` reads `name` as
+the request label — and `mode` defaults to the restrictive `"0640"`. The script
+runs the same deploy twice to show every request reporting no change.
+
+::: files_htpasswd
+    options:
+      members: []
+
 ## Downloading a URL to a root-owned path
 
 `files.download` (a reemote original) is the general download-to-path operation

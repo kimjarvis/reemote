@@ -36,20 +36,28 @@ The role's two task shapes map onto reemote like this:
 | `include_vars: {{ ansible_facts.os_family }}.yml` | the Ubuntu constants at the top of the module + the family guard | recipe |
 | `set_fact: htpasswd_required_packages` fallback | `HtpasswdVars.required_packages` default | covered |
 | `package: name={{ htpasswd_required_packages }}` | `op(apt.packages, packages=…, sudo=True)` | covered |
-| `htpasswd: path/name/password` (the module's read + verify) | `yield fact(FileContents, path=…)` + control-side verify/hash | workaround ([#74](https://github.com/kimjarvis/reemote/issues/74)) |
+| `htpasswd: path/name/password` (the module's read + verify) | `yield fact(FileContents, path=…)` + control-side verify/hash through `files.htpasswd_entry` | covered ([#74](https://github.com/kimjarvis/reemote/issues/74) shipped) |
 | `htpasswd: …` (the module's write + owner/group/mode) | `op(files.install, content=…, dest=…, mode/user/group, sudo=True)` + `files.file` companion | covered |
 
-The middle row is the migration's one genuine gap: reemote ships no
-entry-management operation for htpasswd files, so the role composes the
+The middle row was the migration's one genuine gap: reemote shipped no
+entry-management operation for htpasswd files, so the role had to compose the
 behavior from the ordinary spool-and-install family — read the file with a
 barrier, merge lines against the desired passwords, install the whole file
-back. Issue [#74](https://github.com/kimjarvis/reemote/issues/74) tracks a
-first-class `files.htpasswd` operation.
+back. Issue [#74](https://github.com/kimjarvis/reemote/issues/74) has since
+shipped as the first-class `files.htpasswd` operation, and the role now runs on
+top of it: the merge is `files.htpasswd_entry` folded over the credentials for
+one path.
 
-The hashing itself needed no library: the role implements Apache's
-`$apr1$` (MD5-crypt) and `{SHA}` forms in pure standard-library `hashlib`,
-verified against `openssl passwd -apr1` vectors and randomized passlib
-cross-checks (the pinning lives in the offline test).
+The role still batches a path's credentials into one read/write pair instead of
+one `files.htpasswd` request each (D6) — same-wave requests share one
+`FactCache`, so two entry operations for one file would each read the pre-write
+text and the second would clobber the first.
+
+The hashing lives in the operation, not the role: pure standard-library Python
+for `$apr1$` (Apache's MD5-crypt), `$1$`, `{SHA}`, `$2y$` bcrypt and traditional
+DES, each verified against a reference implementation — `openssl passwd`, the
+system's `crypt()` and the OpenBSD bcrypt digest (the pinning lives in
+`tests/test_files_htpasswd.py`).
 
 ## 2. Install
 
@@ -95,8 +103,9 @@ role name passed to `resolve_vars` binds the entry's `htpasswd` role mapping.
 Each `credentials` item is itself a frozen model: `path` (absolute), `name`
 (no colon — `name:hash` is the file format), `password`, `owner`, `group`,
 `mode` (octal digits, default `"0640"`) and `hash_scheme` (default
-`apr_md5_crypt`). Validation is fail-fast: a relative path, a colon in a
-name, a symbolic mode like the upstream default `u+rw,g+r` (say `"0640"`
+`apr_md5_crypt`, any scheme `files.htpasswd` accepts — including the upstream
+`sha1` and `crypt` spellings). Validation is fail-fast: a relative path, a colon
+in a name, a symbolic mode like the upstream default `u+rw,g+r` (say `"0640"`
 instead) or an unsupported scheme raises in `resolve_vars`, before any host is
 contacted.
 
@@ -219,9 +228,9 @@ no request line.
 | # | Deviation | Why |
 | --- | --- | --- |
 | D1 | Ubuntu only: the `include_vars` Debian/RedHat/Archlinux dispatch collapses to frozen module constants, and an off-target host emits **nothing at all** | the family guard is the body's opening `if`; the other families' package lists are a different role |
-| D2 | `python3-passlib` is dropped from the default packages | the hashing moved control-side into pure-Python `$apr1$`/`{SHA}` implementations, so the target needs no passlib; `required_packages` still overrides |
+| D2 | `python3-passlib` is dropped from the default packages | the hashing moved control-side into pure-Python `$apr1$`/`{SHA}`/bcrypt/DES implementations, so the target needs no passlib; `required_packages` still overrides |
 | D3 | The symbolic default mode `u+rw,g+r` becomes the octal `"0640"` | the spool-and-install family takes octal digits only; the value is identical |
-| D4 | Only `apr_md5_crypt`, `sha1`/`apr_sha1` and `plain` hash schemes are implemented | `bcrypt`, `descrypt` and `crypt` need an OpenBSD-DES/Blowfish implementation the standard library does not ship; any other scheme raises `ValueError` naming [#74](https://github.com/kimjarvis/reemote/issues/74) |
+| D4 | Closed by [#74](https://github.com/kimjarvis/reemote/issues/74): the accepted `hash_scheme` set is the operation's, `files.HTPASSWD_SCHEMES` | `plain`, `apr_md5_crypt`, `md5_crypt`, `apr_sha1`, `bcrypt` and `descrypt`, reached through the upstream `sha1`/`crypt`/`apache_md5` spellings too; only the passlib-only `sha256_crypt`/`sha512_crypt` handlers stay unimplemented, being outside what Apache or Nginx read |
 | D5 | `htpasswd_nolog` is inert | request lines never render install content; the one visible surface is the `FileContents` barrier line, which echoes the file's current text like `repo_epel`'s `fetch_url` line does — prefer a hashed scheme over `plain` |
 | D6 | Credentials sharing one path merge in a single read/write pair, and the **last** credential for a path decides its owner/group/mode | Ansible ran one `htpasswd` task per credential, each re-reading the file; the in-order merge reproduces the same final content in one write |
 | D7 | Install idempotence is **content-only**; the companion `files.file` converges owner/group/mode drift | the install family's contract; the role's per-task `owner`/`group`/`mode` re-applied every run, so the pair reproduces it |
@@ -229,15 +238,15 @@ no request line.
 ## 9. Scoped out
 
 * **Removing entries.** The upstream module's `state=absent` (delete a user,
-  delete the whole file if empty) is not migrated — the shipped role's task
-  list never uses it. Removal is a plain `files.transform`/`files.file`
-  request in the caller's own program.
+  delete the whole file if empty) is not part of the role's task list, so the
+  role never removes anything. The operation ships it as
+  `files.htpasswd(present=False)`; emptying the file is `files.file(present=False)`.
 * **Unmanaged users.** The role never deletes a line it does not manage; a
   file may hold more users than `credentials` lists.
 * **Other families.** See D1; the RedHat `httpd-tools` and Archlinux variants
   are the same two requests with different constants.
-* **`bcrypt`/`descrypt`/`crypt` schemes.** See D4 and
-  [#74](https://github.com/kimjarvis/reemote/issues/74).
+* **passlib-only schemes.** `sha256_crypt`/`sha512_crypt` and the other
+  passlib handlers stay unimplemented (D4): Apache and Nginx do not read them.
 * **The webserver role itself.** The upstream molecule scenarios pair this
   role with `geerlingguy.nginx`/`geerlingguy.apache` and point a vhost's
   `auth_basic_user_file` at the managed file; that wiring is a caller-side

@@ -6,9 +6,11 @@
 Re-exports everything from ``files.py`` so the operations (``files.link``,
 ``files.file``, ``files.put``, ``files.get``, ``files.edit``,
 ``files.install``, ``files.transform``, ``files.ini_option``,
-``files.download``, ``files.move``,
+``files.htpasswd``, ``files.download``, ``files.move``,
 ``files.copy``, ``files.unarchive``, ``files.directory`` and ``files.flags``),
-the control-side content-fetch helper (``files.fetch_url``) and the facts
+the control-side content-fetch helper (``files.fetch_url``), the htpasswd hash
+helpers (``files.htpasswd_hash``, ``files.htpasswd_scheme``,
+``files.htpasswd_verify``, ``files.htpasswd_entry``) and the facts
 (``files.FileLink``, ``files.FileExists``,
 ``files.RemoteFileSha1``, ``files.Sha256File``, ``files.Sha384File``,
 ``files.Md5File``, ``files.FileContents``, ``files.FileFlags``,
@@ -22,6 +24,7 @@ are reachable through the package name alone.
 
 from . import files
 from .files import (
+    HTPASSWD_SCHEMES,
     ChattrCommand,
     ChmodCommand,
     ChownCommand,
@@ -69,6 +72,11 @@ from .files import (
     file,
     flags,
     get,
+    htpasswd,
+    htpasswd_entry,
+    htpasswd_hash,
+    htpasswd_scheme,
+    htpasswd_verify,
     ini_option,
     install,
     link,
@@ -79,6 +87,7 @@ from .files import (
 )
 
 __all__ = [
+    "HTPASSWD_SCHEMES",
     "ChattrCommand",
     "ChmodCommand",
     "ChownCommand",
@@ -127,6 +136,11 @@ __all__ = [
     "files",
     "flags",
     "get",
+    "htpasswd",
+    "htpasswd_entry",
+    "htpasswd_hash",
+    "htpasswd_scheme",
+    "htpasswd_verify",
     "ini_option",
     "install",
     "link",

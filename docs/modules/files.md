@@ -35,6 +35,11 @@
         - file
         - flags
         - get
+        - htpasswd
+        - htpasswd_entry
+        - htpasswd_hash
+        - htpasswd_scheme
+        - htpasswd_verify
         - ini_option
         - install
         - link
@@ -55,7 +60,8 @@ in a single source, so the read side (`FileLink`, `FileExists`,
 `FileFlags`, `FindFiles`, `FindDirectories`, `FindLinks`, `FindInFile`,
 `FindInFiles`, `FindFilesInfo`, `DirectoryEntries`)
 sits beside the `files.link`, `files.file`, `files.put`, `files.get`,
-`files.edit`, `files.install`, `files.transform`, `files.ini_option`, `files.move`, `files.copy`, `files.directory`,
+`files.edit`, `files.install`, `files.transform`, `files.ini_option`,
+`files.htpasswd`, `files.move`, `files.copy`, `files.directory`,
 `files.unarchive`
 and `files.flags`
 operations that consume it.
@@ -239,7 +245,7 @@ leading `~/` stays unquoted so the remote shell expands it.
 
 Operations live in namespace modules so a deploy reads `files.link`,
 `files.file`, `files.put`, `files.get`, `files.edit`, `files.install`,
-`files.transform`, `files.ini_option`,
+`files.transform`, `files.ini_option`, `files.htpasswd`,
 `files.move`,
 `files.copy`, `files.directory`, `files.unarchive` and `files.flags`,
 mirroring the baseline's
@@ -413,6 +419,52 @@ forward straight to the install and idempotence stays content-only, exactly
 as for `files.transform`; flag the request `sudo=True` for `/etc` targets.
 See [Migrating an INI option edit](../migrating.md#migrating-an-ini-option-edit-ini_file)
 for the `ini_file` mapping.
+
+`files.htpasswd` is Ansible `community.general.htpasswd` parity (issue #74): it
+adds, updates or removes **one** `name:hash` entry of an Apache/Nginx htpasswd
+file and preserves every other line — comments, blanks, the other users. It is
+again `files.transform` with the edit built in: read `FileContents`, apply the
+pure `htpasswd_entry` edit, delegate the write to `files.install` above, so one
+`sudo=True` request converges the usual `0640 root:www-data` file (the
+`files.edit`/`files.put` scp never elevates), and `mode`, `owner`, `group` and
+`validate` forward straight through.
+
+The hashing is **control-side and pure Python**, because the library ships no
+crypto dependency and `crypt()` is gone from Python 3.13: `htpasswd_hash`
+implements `$apr1$` (Apache's MD5-crypt) and `$1$`, the `{SHA}` form, OpenBSD
+bcrypt (`$2y$`, the cost `htpasswd -B` and passlib default to) and traditional
+BSD DES, each verified against a reference implementation — `openssl passwd`
+for the MD5 forms, `perl`'s `crypt()` for DES, the OpenBSD `crypt_blowfish`
+digest for bcrypt. The Blowfish P-array and S-boxes are derived as the
+hexadecimal digits of π rather than embedded, since that is exactly what they
+are, and cached after the first bcrypt hash. The target runs no hashing program
+and no password ever reaches a command line, a plan line or a log line.
+
+Because every fresh hash draws a random salt, idempotence cannot come from
+comparing the line's text: `htpasswd_verify` **verifies** the stored hash
+against the wanted password, dispatching on the stored form rather than the
+requested scheme, and a proving line is reproduced byte-for-byte. That is also
+why a `hash_scheme` change alone does not rewrite an entry — a stored `$apr1$`
+line and a stored `{SHA}` line both verify, and neither reveals which scheme the
+caller asked for; Ansible's module documents the same blind spot. `htpasswd_entry`
+is the whole edit (the file's text in, the desired text out) and is exported so a
+deploy that manages several users in one file can fold it over them and write
+once — the `htpasswd` role does exactly that, because same-wave requests share
+one `FactCache` and two entry operations for one file would each read the
+pre-write text.
+
+`username` is Ansible's `name`/`username` parameter renamed, the `crontab`'s
+`cron_name` precedent: `op()` reads `name` as the request label, so no operation
+can take it. `owner` keeps Ansible's spelling. `mode` defaults to `"0640"`
+rather than the files family's `"0644"` — every line of this file is a password
+hash, and a world-readable one is offline-crackable by any local account.
+`present=False` mirrors `state: absent` (removing an entry from an absent file
+writes nothing rather than creating an empty one). Deliberately unshipped, like
+`files.ini_option`: `create` (an absent file is created, as Ansible's default
+does) and per-entry `backup` (non-deterministic, the project-wide drop).
+Idempotence is content-only, so an owner/group/mode-only drift does not
+re-install — `files.file` converges metadata, which is the companion step the
+`htpasswd` role runs.
 
 `files.download` is the general download-to-path operation and a reemote
 original: it takes an `http(s)` `url` and lands its body at a (root-owned)

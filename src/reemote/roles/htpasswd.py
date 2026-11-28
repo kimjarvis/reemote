@@ -21,9 +21,11 @@
 # read-back sees the file as the previous path's write left it, and the
 # verify-then-keep merge makes the pair converge on a rerun.
 #
-# Hashing happens **control-side**, in pure Python: ``$apr1$`` (Apache's MD5-
-# crypt, verified against ``htpasswd``/openssl output), ``{SHA}`` (base64
-# SHA-1) and plain text. Deviations from the Ansible role, all deliberate:
+# Hashing happens **control-side**, in pure Python, through the operation this
+# role used to work around: ``files.htpasswd`` hashes ``$apr1$`` (Apache's
+# MD5-crypt), ``$1$``, ``{SHA}``, ``$2y$`` bcrypt and traditional DES itself,
+# with no third-party dependency and each scheme verified against a reference
+# implementation. Deviations from the Ansible role, all deliberate:
 #
 # * D1: the target is the Ubuntu family; the ``include_vars`` OS dispatch
 #   collapses to the frozen constants here and an off-target host returns at
@@ -33,9 +35,11 @@
 #   library. ``required_packages`` still overrides.
 # * D3: the symbolic default mode ``u+rw,g+r`` becomes the octal ``"0640"``;
 #   the spool-and-install family takes octal digits only.
-# * D4: only ``apr_md5_crypt``, ``sha1``/``apr_sha1`` and ``plain`` are
-#   supported; any other ``hash_scheme`` raises ``ValueError`` naming
-#   https://github.com/kimjarvis/reemote/issues/74.
+# * D4: the accepted ``hash_scheme`` set is the operation's, inherited from
+#   ``files.HTPASSWD_SCHEMES`` -- the Ansible role's ``sha1`` and
+#   ``crypt`` spellings are aliases, so ``bcrypt`` and ``descrypt`` work too.
+#   Only ``sha256_crypt``/``sha512_crypt`` and the other passlib handlers stay
+#   unimplemented, being outside what Apache or Nginx read.
 # * D5: ``htpasswd_nolog`` is inert -- the composed file rides the install
 #   spool descriptor, so no request line ever renders a password or hash. The
 #   one visible surface is the ``FileContents`` barrier line, which echoes the
@@ -43,12 +47,14 @@
 #   hashed scheme over ``plain``.
 # * D6: credentials sharing one path are merged in a single read/write pair
 #   (Ansible ran one ``htpasswd`` task per credential); the last credential
-#   for a path decides its owner/group/mode.
+#   for a path decides its owner/group/mode. That batching is why the role
+#   composes ``files.htpasswd_entry`` with ``files.install`` instead of one
+#   ``files.htpasswd`` request per credential: requests in the same wave share
+#   one ``FactCache``, so two entry operations for one file would each read
+#   the pre-write text and the second would clobber the first, while the
+#   barrier between paths serializes the pairs.
 # """
 
-import base64
-import hashlib
-import secrets
 from collections.abc import Generator
 from typing import Any
 
@@ -57,7 +63,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from ..core import op
 from ..hosts import Host
 from ..modules import apt, files
-from ..modules.files import FileContents
+from ..modules.files import HTPASSWD_SCHEMES, FileContents
 from ..rolevars import VarsSet
 from ..stages import Deploy, StageItem, fact
 
@@ -73,134 +79,26 @@ DEFAULT_MODE = "0640"
 #: The ``hash_scheme`` defaults/main.yml sets, kept as the default here.
 DEFAULT_HASH_SCHEME = "apr_md5_crypt"
 
-#: The schemes :func:`hash_password` implements (D4). ``sha1`` and
-#: ``apr_sha1`` are the same ``{SHA}`` form in the Ansible module.
-SUPPORTED_SCHEMES = ("apr_md5_crypt", "sha1", "apr_sha1", "plain")
-
-#: The tracking issue for the missing entry-management operation (D4).
-GAP_ISSUE_URL = "https://github.com/kimjarvis/reemote/issues/74"
-
-# The PHK/Apache MD5-crypt base-64 alphabet and the byte transposition applied
-# to the final digest before encoding.
-ITOA64 = "./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-_TRANSPOSE = (12, 6, 0, 13, 7, 1, 14, 8, 2, 15, 9, 3, 5, 10, 4, 11)
-
-
-def md5_crypt(password: str, salt: str, magic: str = "$apr1$") -> str:
-    """Apache's MD5-crypt (``$apr1$``) / PHK's ``$1$`` password hash.
-
-    Pure standard-library ``hashlib`` implementation, verified against
-    ``openssl passwd -apr1 -salt`` vectors and 300 randomized passlib
-    cross-checks. ``magic`` selects the variant: ``$apr1$`` for Apache,
-    ``$1$`` for glibc-style md5crypt.
-    """
-    pwd = password.encode("utf-8")
-    salt_b = salt.encode("ascii")
-    magic_b = magic.encode("ascii")
-
-    # Alternate digest: MD5(pwd || salt || pwd)
-    db = hashlib.md5(pwd + salt_b + pwd).digest()
-
-    # Start digest: MD5(pwd || magic || salt || repeat(db, len(pwd)) || bits)
-    ctx = hashlib.md5()
-    ctx.update(pwd)
-    ctx.update(magic_b)
-    ctx.update(salt_b)
-    n = len(pwd)
-    ctx.update((db * (n // 16 + 1))[:n])
-    i = n
-    while i:
-        ctx.update(b"\x00" if i & 1 else pwd[:1])
-        i >>= 1
-    dc = ctx.digest()
-
-    # 1000 mixing rounds
-    for r in range(1000):
-        t = hashlib.md5(pwd if r & 1 else dc)
-        if r % 3:
-            t.update(salt_b)
-        if r % 7:
-            t.update(pwd)
-        t.update(dc if r & 1 else pwd)
-        dc = t.digest()
-
-    # h64 encoding of the transposed digest (little-endian per 3-byte group)
-    reordered = bytes(dc[off] for off in _TRANSPOSE)
-    out = []
-    for g in range(0, 15, 3):
-        v1, v2, v3 = reordered[g], reordered[g + 1], reordered[g + 2]
-        out.append(ITOA64[v1 & 0x3F])
-        out.append(ITOA64[((v2 & 0x0F) << 2) | (v1 >> 6)])
-        out.append(ITOA64[((v3 & 0x03) << 4) | (v2 >> 4)])
-        out.append(ITOA64[v3 >> 2])
-    v1 = reordered[15]
-    out.append(ITOA64[v1 & 0x3F])
-    out.append(ITOA64[v1 >> 6])
-    return magic + salt + "$" + "".join(out)
-
-
-def _new_salt() -> str:
-    """A fresh 8-character h64 salt, as ``htpasswd -nm`` would draw."""
-    return "".join(secrets.choice(ITOA64) for _ in range(8))
-
-
-def hash_password(password: str, scheme: str) -> str:
-    """Hash ``password`` in the form ``scheme`` names, with a fresh salt."""
-    if scheme == "apr_md5_crypt":
-        return md5_crypt(password, _new_salt(), "$apr1$")
-    if scheme in ("sha1", "apr_sha1"):
-        digest = hashlib.sha1(password.encode("utf-8")).digest()
-        return "{SHA}" + base64.b64encode(digest).decode("ascii")
-    if scheme == "plain":
-        return password
-    raise ValueError(  # pragma: no cover - the validator rejects these first
-        f"unsupported hash_scheme {scheme!r}; supported: {SUPPORTED_SCHEMES}; "
-        f"see {GAP_ISSUE_URL}"
-    )
-
-
-def verify_password(password: str, stored: str) -> bool:
-    """Does ``password`` verify against the stored hash field of a line?
-
-    The mirror of the Ansible module's verify-then-keep: a matching line is
-    rewritten verbatim (so the file -- and the idempotence check -- survive a
-    random salt), anything else is replaced with a fresh hash.
-    """
-    if stored.startswith(("$apr1$", "$1$")):
-        _, magic, salt, _ = stored.split("$", 3)
-        return md5_crypt(password, salt, f"${magic}$") == stored
-    if stored.startswith("{SHA}"):
-        digest = hashlib.sha1(password.encode("utf-8")).digest()
-        return stored == "{SHA}" + base64.b64encode(digest).decode("ascii")
-    return stored == password
+#: The ``hash_scheme`` values a credential may name (D4): inherited from the
+#: operation, so the Ansible role's ``sha1`` and ``crypt`` spellings work as
+#: aliases for ``apr_sha1`` and ``descrypt``.
+SUPPORTED_SCHEMES = HTPASSWD_SCHEMES
 
 
 def merge_credentials(current: str | None, creds: tuple["HtpasswdCredential", ...]) -> str:
     """The desired file text for ``creds``, given the file's ``current`` text.
 
-    Pure and a fixpoint: applying it to its own output changes nothing,
-    because every managed line then verifies. Credentials are processed in
-    order (D6), so for a repeated name the last one wins exactly as Ansible's
-    sequential per-task file re-reads would; unmanaged lines keep their place
-    and content.
+    Folds the entry edit of :func:`reemote.modules.files.htpasswd_entry` over
+    the credentials for one path. Pure and a fixpoint: applying it to its own
+    output changes nothing, because every managed line then verifies.
+    Credentials are processed in order (D6), so for a repeated name the last
+    one wins exactly as Ansible's sequential per-task file re-reads would;
+    unmanaged lines keep their place and content.
     """
-    lines = current.split("\n") if current else []
-    if lines and lines[-1] == "":
-        lines.pop()
+    text = current
     for cred in creds:
-        index = next(
-            (i for i, line in enumerate(lines) if line.startswith(f"{cred.name}:")),
-            None,
-        )
-        if index is None:
-            lines.append(f"{cred.name}:{hash_password(cred.password, cred.hash_scheme)}")
-            continue
-        stored = lines[index].split(":", 1)[1]
-        if not verify_password(cred.password, stored):
-            lines[index] = (
-                f"{cred.name}:{hash_password(cred.password, cred.hash_scheme)}"
-            )
-    return "".join(f"{line}\n" for line in lines)
+        text = files.htpasswd_entry(text, cred.name, cred.password, cred.hash_scheme)
+    return text
 
 
 def group_credentials(
@@ -269,12 +167,12 @@ class HtpasswdCredential(BaseModel):
     @field_validator("hash_scheme")
     @classmethod
     def _scheme_is_supported(cls, value: str) -> str:
-        """Fail fast on a scheme the pure-Python hasher does not implement."""
-        if value not in SUPPORTED_SCHEMES:
-            raise ValueError(
-                f"unsupported hash_scheme {value!r}; this role implements "
-                f"{SUPPORTED_SCHEMES}; for other schemes see {GAP_ISSUE_URL}"
-            )
+        """Fail fast on a scheme the operation does not implement (D4).
+
+        Delegated to :func:`reemote.modules.files.htpasswd_scheme`, so the
+        Ansible spellings validate here exactly as they do at the write.
+        """
+        files.htpasswd_scheme(value)
         return value
 
 
