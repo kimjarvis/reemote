@@ -3,9 +3,10 @@
 
 # """The GitLab role (migrated from ``geerlingguy.gitlab``).
 #
-# Installs and configures the GitLab CE omnibus package on Ubuntu hosts: the
-# dependency packages, the vendor apt repository (fetched with the upstream
-# ``script.deb.sh`` installer and run elevated), the ``gitlab-ce`` package
+# Installs and configures the GitLab CE omnibus package on Ubuntu and RedHat
+# hosts: the dependency packages, the vendor package repository (fetched with
+# the upstream ``script.deb.sh``/``script.rpm.sh`` installer and run
+# elevated), the ``gitlab-ce`` package
 # (optionally version-pinned), the first-run ``gitlab-ctl reconfigure`` that
 # bootstraps the instance, the optional self-signed SSL certificate under
 # ``/etc/gitlab/ssl``, and the rendered ``/etc/gitlab/gitlab.rb`` (root:root,
@@ -14,18 +15,24 @@
 # ``defaults/main.yml``, bound from the inventory entry's ``gitlab`` role
 # mapping by :func:`~reemote.rolevars.resolve_vars`.
 #
-# Target: hosts in the ``"Ubuntu"`` OS family. The role's RedHat branches
-# (``vars/RedHat.yml`` with its ``-`` separator and ``script.rpm.sh``) are out
-# of scope, and because the vars split only by OS family -- not by release --
-# the single-OS scope collapses the ``include_vars`` dispatch to the frozen
-# Debian constants below: no ``LinuxDistribution`` barrier exists.
+# Target: hosts in the ``"Ubuntu"`` and ``"RedHat"`` OS families -- exactly
+# the two the Ansible role supports (its README installs "on any RedHat/CentOS
+# or Debian/Ubuntu linux system", ``vars/RedHat.yml`` carries the RPM-side
+# constants, and the CI matrix runs ubuntu2004, debian10 and rockylinux8).
+# The ``include_vars`` OS dispatch collapses to the frozen per-family constants
+# below because the vars split only by OS family -- not by release -- and the
+# inventory states the family up front: no ``LinuxDistribution`` barrier
+# exists. Alpine (and every other family) has no upstream branch at all -- no
+# ``vars/Alpine.yml`` for the dispatch to load -- so it stays excluded, guarded
+# out before the first yield.
 #
 # The stream is fact-gated, so its wave count is host-dependent:
 #
-# 0. the dependency install (with the gated cache refresh, D4) -- closed by the
+# 0. the dependency install (``apt.packages`` with the gated cache refresh on
+#    Ubuntu, plain ``dnf.packages`` on RedHat, D4) -- closed by the
 #    ``/usr/bin/gitlab-ctl`` probe that decides whether the repo has to be set
 #    up at all (task 3's ``stat``).
-# 1. when GitLab is absent: the ``script.deb.sh`` download and its
+# 1. when GitLab is absent: the vendor-script download and its
 #    ``act(Shell, "bash …")`` run (tasks 6-7); the version-pinned (or bare)
 #    ``gitlab-ce`` install then joins the wave closed by the
 #    ``/var/opt/gitlab/bootstrapped`` probe (tasks 8-10). When GitLab is
@@ -56,15 +63,21 @@
 # * the host-family guard is the body's opening ``if``, not a ``when=`` on
 #   every request (D1): an off-target host emits no requests, no barriers and
 #   no log lines at all.
-# * the ``include_vars`` OS dispatch collapses to frozen Debian constants
-#   (D2): the ``=`` version separator and the ``script.deb.sh`` URL.
+# * the ``include_vars`` OS dispatch collapses to frozen per-family constants
+#   (D2): the ``script.deb.sh``/``script.rpm.sh`` URLs and the Debian-only
+#   ``gnupg2`` half. Upstream's per-family version separator (``=`` on Debian,
+#   ``-`` on RedHat) is reemote's single ``<pkg>=<version>`` pin spelling on
+#   both families: apt passes it through, ``dnf.packages`` renders the ``-``
+#   NEVRA form itself.
 # * task 2's ``stat`` of ``/etc/gitlab/gitlab.rb`` is dropped (D3): it is
 #   registered as ``gitlab_config_file`` and *never referenced* by any later
 #   task or handler, so the read is dead code in the role itself.
 # * the two dependency tasks (``package: gitlab_dependencies`` and the Debian
-#   ``apt: gnupg2``) become one ``apt.packages`` request with a gated cache
-#   refresh folded in (D4) -- the nfs/docker precedent that keeps the role
-#   self-contained on a fresh host, where the distro index may be stale.
+#   ``apt: gnupg2``) become one per-family request (``apt.packages`` on
+#   Ubuntu, ``dnf.packages`` on RedHat); on the apt half a gated cache
+#   refresh is folded in (D4) -- the nfs/docker precedent that keeps the role
+#   self-contained on a fresh host, where the distro index may be stale. The
+#   role refreshes no metadata on RedHat, so neither does the dnf half.
 # * ``async: 300``/``poll: 5`` on the package install is dropped (D5): a
 #   reemote request runs to completion and reports when it is done, and the
 #   300-second ceiling is a wall Ansible builds routinely exceed here.
@@ -109,12 +122,12 @@ from ..actions import Shell
 from ..core import op
 from ..handlers import changed_hosts
 from ..hosts import CommandError, Host
-from ..modules import apt, files
+from ..modules import apt, dnf, files
 from ..modules.files import FileExists
 from ..rolevars import VarsSet
 from ..stages import Deploy, StageItem, act, checkpoint, fact
 
-# --- role constants (defaults/main.yml + vars/Debian.yml, Ubuntu path) --------
+# --- role constants (defaults/main.yml + vars/Debian.yml + vars/RedHat.yml) ---
 
 #: ``tasks/main.yml``'s install probe (task 3), frozen: the omnibus control
 #: binary whose presence decides whether the repo and package tasks run.
@@ -133,17 +146,31 @@ SSL_DIR = "/etc/gitlab/ssl"
 #: Task 6's ``get_url`` destination, frozen: the spooled vendor script.
 REPO_SCRIPT_SPOOL = "/tmp/gitlab_install_repository.sh"
 
-#: ``vars/Debian.yml``'s ``gitlab_repository_installation_script_url``, with
-#: the edition interpolated (Ubuntu is Debian-family; the RedHat
-#: ``script.rpm.sh`` is out of scope).
-REPO_SCRIPT_URL = (
-    "https://packages.gitlab.com/install/repositories/gitlab/"
-    "{edition}/script.deb.sh"
-)
+#: ``vars/Debian.yml``/``vars/RedHat.yml``'s
+#: ``gitlab_repository_installation_script_url``, with the edition
+#: interpolated: the vendor publishes one installer script per package
+#: format under the same repositories path.
+REPO_SCRIPT_URLS: dict[str, str] = {
+    "Ubuntu": (
+        "https://packages.gitlab.com/install/repositories/gitlab/"
+        "{edition}/script.deb.sh"
+    ),
+    "RedHat": (
+        "https://packages.gitlab.com/install/repositories/gitlab/"
+        "{edition}/script.rpm.sh"
+    ),
+}
 
-#: ``vars/Debian.yml``'s ``gitlab_package_version_separator``: apt spells
-#: pins ``<pkg>=<version>`` (dnf/yum would need ``-``).
+#: The version-pin separator inside :func:`package_pin`. Upstream spells the
+#: pin per family (``vars/Debian.yml`` ``=``, ``vars/RedHat.yml`` ``-``), but
+#: reemote's package operations share ONE user-facing grammar
+#: ``<pkg>=<version>``: ``apt.packages`` passes it through and
+#: ``dnf.packages`` rewrites it to the ``-`` NEVRA form when rendering.
 VERSION_SEPARATOR = "="
+
+#: The OS families this role targets -- the two the Ansible role supports.
+#: Alpine and every other family returns before the body's first ``yield``.
+TARGET_FAMILIES: tuple[str, ...] = ("Ubuntu", "RedHat")
 
 #: Task 10 and the ``restart gitlab`` handler's command, run elevated.
 RECONFIGURE_COMMAND = "gitlab-ctl reconfigure"
@@ -152,12 +179,15 @@ RECONFIGURE_COMMAND = "gitlab-ctl reconfigure"
 #: :attr:`GitlabVars.config_template` is a controller-side path (D11).
 BUNDLED_TEMPLATE = "gitlab.rb.j2"
 
-#: The Debian-family ``apt: gnupg2`` task, merged into the dependency install
-#: (D4). ``script.deb.sh`` needs gpg to dearmor the vendor key.
+#: The Debian-family ``apt: gnupg2`` task (upstream's Debian-only ``when``),
+#: merged into the Ubuntu dependency install (D4): ``script.deb.sh`` needs
+#: gpg to dearmor the vendor key. The RedHat list stays exactly
+#: ``gitlab_dependencies``, as upstream's ``package`` task gets it.
 GNUPG2_PACKAGE = "gnupg2"
 
-#: The dependency install folds in a gated cache refresh so the role is
-#: self-contained on a fresh host (D4, the nfs/docker precedent).
+#: The Ubuntu dependency install folds in a gated cache refresh so the role is
+#: self-contained on a fresh host (D4, the nfs/docker precedent). Upstream
+#: refreshes nothing on RedHat, so the dnf half carries no equivalent.
 APT_CACHE_VALID_TIME = 600
 
 #: The request names that queue ``restart gitlab`` -- task 13's ``notify``.
@@ -329,8 +359,14 @@ class GitlabPlan:
     override -- of one path but not the other -- behaves as upstream does
     (each variable is independent in Ansible too). The rendered config rides
     the plan as a plain ``str``: hashable, identical across waves.
+
+    :attr:`family` carries the ``include_vars`` dispatch: it selects the
+    vendor script URL and the Debian-only ``gnupg2`` append baked into the
+    fields below, and the body reads it again to pick the package operation
+    (``apt.packages`` vs ``dnf.packages``).
     """
 
+    family: str
     dependencies: tuple[str, ...]
     package_pin: tuple[str, ...]
     script_url: str
@@ -367,10 +403,11 @@ class GitlabVars(BaseModel):
     #: ``gitlab_git_data_dir``: the ``git_data_dirs`` path.
     git_data_dir: str = "/var/opt/gitlab/git-data"
     #: ``gitlab_edition``: the omnibus package name; also selects the vendor
-    #: repo URL (``script.deb.sh`` for either edition is under this path).
+    #: repo URL (both installer scripts sit under this path, per edition).
     edition: str = "gitlab-ce"
     #: ``gitlab_version``: empty installs the candidate; non-empty pins
-    #: ``gitlab-ce=<version>`` (D2's ``=`` separator). The bundled template is
+    #: ``gitlab-ce=<version>`` (the D2 pin spelling on both families). The
+    #: bundled template is
     #: upstream's verbatim and upstream predates GitLab 18, so an unpinned
     #: install of a 18.0-or-newer candidate makes ``gitlab-ctl reconfigure``
     #: refuse the rendered ``git_data_dirs`` line (deprecated in 17.8, removed
@@ -564,8 +601,10 @@ class GitlabVars(BaseModel):
 def package_pin(hv: GitlabVars) -> tuple[str, ...]:
     """Tasks 8-9: ``gitlab_package_name | default(gitlab_edition)``.
 
-    The ``set_fact`` joins edition, the Debian ``=`` separator and the
-    version; ``apt.packages`` pins exactly that way.
+    The ``set_fact`` joins edition, the family's separator and the version.
+    Both families spell the pin ``<pkg>=<version>`` here: ``apt.packages``
+    pins exactly that way and ``dnf.packages`` renders the ``-`` NEVRA form
+    upstream uses (D2).
     """
     if hv.version:
         return (f"{hv.edition}{VERSION_SEPARATOR}{hv.version}",)
@@ -697,14 +736,16 @@ def render_gitlab_rb(
     return env.from_string(template_text).render(**context)
 
 
-def gitlab_plan(hv: GitlabVars) -> GitlabPlan:
+def gitlab_plan(hv: GitlabVars, family: str) -> GitlabPlan:
     """Freeze every read the deploy needs: derived paths, the pin, the render.
 
     Control-side work inside the body, before the first wave is built: the
     four domain-interpolated defaults resolve exactly as ``defaults/main.yml``
-    interpolates them, the two apt requests' argument tuples are derived, and
-    the template becomes a plain ``str``. Nothing here contacts a host -- the
-    role's vars split only by OS family, so no ``fact`` barrier feeds it.
+    interpolates them, the two package requests' argument tuples are derived,
+    and the template becomes a plain ``str``. Nothing here contacts a host --
+    the role's vars split only by OS family, so the ``family`` argument (a
+    key of :data:`TARGET_FAMILIES`) replaces the ``include_vars`` dispatch
+    where a ``fact`` barrier would otherwise feed it.
     """
     external_url = hv.external_url or f"https://{hv.domain}/"
     ssl_certificate = hv.ssl_certificate or f"{SSL_DIR}/{hv.domain}.crt"
@@ -713,12 +754,14 @@ def gitlab_plan(hv: GitlabVars) -> GitlabPlan:
         hv.self_signed_cert_subj
         or f"/C=US/ST=Missouri/L=Saint Louis/O=IT/CN={hv.domain}"
     )
+    # Upstream gates the gnupg2 task on the Debian family (D4); the RedHat
+    # dependency list stays exactly ``gitlab_dependencies``.
+    extra = (GNUPG2_PACKAGE,) if family == "Ubuntu" else ()
     return GitlabPlan(
-        dependencies=tuple(
-            dict.fromkeys(hv.dependencies + (GNUPG2_PACKAGE,))
-        ),
+        family=family,
+        dependencies=tuple(dict.fromkeys(hv.dependencies + extra)),
         package_pin=package_pin(hv),
-        script_url=REPO_SCRIPT_URL.format(edition=hv.edition),
+        script_url=REPO_SCRIPT_URLS[family].format(edition=hv.edition),
         external_url=external_url,
         ssl_certificate=ssl_certificate,
         ssl_certificate_key=ssl_certificate_key,
@@ -805,7 +848,7 @@ def handler(notified: frozenset[str], raise_on_failure: bool) -> Deploy:
 
 
 def gitlab(v: VarsSet[GitlabVars]) -> Deploy:
-    """Install and configure GitLab CE on Ubuntu hosts, and run its handler.
+    """Install and configure GitLab CE on Ubuntu and RedHat hosts, run its handler.
 
     Args:
         v: The role's resolved variables, one :class:`GitlabVars` per host
@@ -829,22 +872,31 @@ def gitlab(v: VarsSet[GitlabVars]) -> Deploy:
 
     def deploy(host: Host) -> Generator[StageItem, Any]:
         hv = v.for_host(host)
-        if host.family != "Ubuntu":
+        if host.family not in TARGET_FAMILIES:
             return
 
-        plan = gitlab_plan(hv)
+        plan = gitlab_plan(hv, host.family)
+        # The ``include_vars`` dispatch in miniature: upstream's generic
+        # ``package`` module resolves to apt on Ubuntu and dnf on RedHat, and
+        # only the apt half folds the gated cache refresh (D4).
+        if plan.family == "RedHat":
+            packages_op = dnf.packages
+            deps_kwargs: dict[str, Any] = {}
+        else:
+            packages_op = apt.packages
+            deps_kwargs = {"update": True, "cache_valid_time": APT_CACHE_VALID_TIME}
 
         # The dependencies install shares wave 0 with the install probe: the
         # probe gates only the repo tasks, never the package list (tasks 3-5;
-        # tasks 4 and 5 merged, D4). apt.update's stamp fact gates the refresh,
-        # so a converged host with a fresh cache emits no apt-get command.
+        # tasks 4 and 5 merged, D4). apt.update's stamp fact gates the folded
+        # refresh, so a converged host with a fresh cache emits no apt-get
+        # command.
         yield op(
-            apt.packages,
+            packages_op,
             name="Install GitLab dependencies",
             packages=plan.dependencies,
-            update=True,
-            cache_valid_time=APT_CACHE_VALID_TIME,
             sudo=True,
+            **deps_kwargs,
         )
         installed = yield fact(
             FileExists, GITLAB_CTL_PATH, name="Check if GitLab is already installed"
@@ -880,7 +932,7 @@ def gitlab(v: VarsSet[GitlabVars]) -> Deploy:
             # post-install state (the omnibus postinst bootstraps on its own
             # unless it fails). The async ceiling is dropped (D5).
             yield op(
-                apt.packages,
+                packages_op,
                 name="Install GitLab",
                 packages=plan.package_pin,
                 sudo=True,

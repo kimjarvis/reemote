@@ -83,9 +83,13 @@ binary, the bootstrap marker exists, the certificate is in place, and
 ``/etc/gitlab/gitlab.rb`` is byte-identical at root:root ``0600``, so the
 checkpoint notifies nobody and the handler wave never appears.
 
-Hosts outside the ``"Ubuntu"`` family emit nothing at all -- the role's family
-guard is its body's opening ``if``, so such a host returns before its first
-``yield`` and appears in no wave.
+Hosts outside the ``"Ubuntu"`` and ``"RedHat"`` families emit nothing at all --
+the role's family guard is its body's opening ``if``, so such a host returns
+before its first ``yield`` and appears in no wave. Within the two target
+families the package tasks dispatch per host: ``apt.packages`` (dependencies
+plus ``gnupg2``, with a gated cache refresh) on Ubuntu, a plain
+``dnf.packages`` on RedHat, and the control-side vendor script is
+``script.deb.sh`` or ``script.rpm.sh`` -- every other stage is shared.
 """
 
 import asyncio

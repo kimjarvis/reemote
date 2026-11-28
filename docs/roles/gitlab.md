@@ -5,7 +5,7 @@
 | Role | [`geerlingguy.gitlab`](https://github.com/geerlingguy/ansible-role-gitlab) |
 | Module | [`reemote.roles.gitlab`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/gitlab.py) |
 | Runner | [`examples/roles/gitlab.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/gitlab.py) |
-| Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
+| Target | **Ubuntu, RedHat** — hosts in the `"Ubuntu"` or `"RedHat"` OS family |
 | Variables | the entry's `gitlab` role mapping → `GitlabVars` |
 
 <!---
@@ -15,14 +15,15 @@
 | Offline test | [`tests/roles/test_gitlab.py`](https://github.com/kimjarvis/reemote/blob/main/tests/roles/test_gitlab.py) |
 | Factory | plain (non-`async`) — the runner calls `gitlab(v)`; the render is control-side Python inside the body, not a barrier |
 
-`gitlab` installs and configures the GitLab CE omnibus package on Ubuntu
-hosts: the dependency packages (plus `gnupg2`), the vendor apt repository via
-its own `script.deb.sh` installer (fetched control-side, run elevated), the
-`gitlab-ce` package — optionally version-pinned — the first-run
-`gitlab-ctl reconfigure` that bootstraps the instance, the optional
-self-signed SSL certificate under `/etc/gitlab/ssl`, and the rendered
-`/etc/gitlab/gitlab.rb` (root:root, mode `0600`); a config change queues the
-role's one handler, `restart gitlab: command: 'gitlab-ctl reconfigure'`.
+`gitlab` installs and configures the GitLab CE omnibus package on Ubuntu and
+RedHat hosts: the dependency packages (plus `gnupg2`, Debian-only), the vendor
+repository via its own installer script (`script.deb.sh`/`script.rpm.sh`,
+fetched control-side, run elevated), the `gitlab-ce` package — optionally
+version-pinned — the first-run `gitlab-ctl reconfigure` that bootstraps the
+instance, the optional self-signed SSL certificate under `/etc/gitlab/ssl`, and
+the rendered `/etc/gitlab/gitlab.rb` (root:root, mode `0600`); a config change
+queues the role's one handler, `restart gitlab: command: 'gitlab-ctl
+reconfigure'`.
 
 It is a **library role**, not a script: one factory that returns a resumable
 deploy, so a program composes it with `yield from scoped("gitlab", gitlab(v))(host)`
@@ -36,12 +37,14 @@ the vendor-script, bootstrap and certificate runs live as `act` barriers, so
 the wave count depends on what each host already has:
 
 ```python
-yield op(apt.packages, ...)                     # dependencies (wave 0)
+packages_op = dnf.packages if host.family == "RedHat" else apt.packages
+yield op(packages_op, ...)                    # dependencies (wave 0; apt half
+                                              # merges gnupg2 + cache refresh)
 installed = yield fact(FileExists, GITLAB_CTL_PATH)
-if not installed:                               # tasks 6-9: repo script, package
+if not installed:                             # tasks 6-9: repo script, package
     yield op(files.download, ...)
     yield act(Shell, f"bash {REPO_SCRIPT_SPOOL}", ...)   # raises on a non-zero exit
-    yield op(apt.packages, packages=plan.package_pin, ...)
+    yield op(packages_op, packages=plan.package_pin, ...)
 bootstrapped = yield fact(FileExists, BOOTSTRAPPED_PATH)
 if not bootstrapped:                            # task 10, failed_when: false
     yield act(Shell, RECONFIGURE_COMMAND, ...)  # result deliberately unchecked
@@ -58,14 +61,14 @@ seven barriers:
 
 | Ansible task | reemote stage | Status |
 | --- | --- | --- |
-| `include_vars: "{{ ansible_os_family }}.yml"` | frozen `vars/Debian.yml` constants (`VERSION_SEPARATOR = "="`, the `script.deb.sh` URL); the single-OS collapse needs no gather (D2) | recipe |
+| `include_vars: "{{ ansible_os_family }}.yml"` | frozen per-family module constants (`REPO_SCRIPT_URLS`: the `script.deb.sh`/`script.rpm.sh` URLs; one shared `=` pin spelling); `host.family` from the inventory decides, so no gather is needed (D2) | recipe |
 | `stat: /etc/gitlab/gitlab.rb` register `gitlab_config_file` | **dropped** (D3): registered and never referenced by any later task or handler — dead code upstream | — |
 | `stat: /usr/bin/gitlab-ctl` register `gitlab_installed` | `installed = yield fact(FileExists, GITLAB_CTL_PATH)`, gating tasks 6-10 | barrier |
-| `package: name={{ gitlab_dependencies }}` + `apt: name=gnupg2` (Debian) | one `apt.packages(dependencies + ("gnupg2",), update=True, cache_valid_time=600)` (D4) | covered |
-| `get_url: .../script.deb.sh dest=/tmp/gitlab_install_repository.sh validate_certs={{ gitlab_download_validate_certs }}` | `files.download(url, dest)` — control-side fetch; the TLS flag is inert (D10) | recipe |
+| `package: name={{ gitlab_dependencies }}` + `apt: name=gnupg2` (Debian) | one family-dispatched request: `apt.packages(dependencies + ("gnupg2",), update=True, cache_valid_time=600)` on Ubuntu, plain `dnf.packages(dependencies)` on RedHat (D4) | covered |
+| `get_url: .../script.deb.sh dest=/tmp/gitlab_install_repository.sh validate_certs={{ gitlab_download_validate_certs }}` | `files.download(url, dest)` — control-side fetch of the family's script URL; the TLS flag is inert (D10) | recipe |
 | `command: bash /tmp/gitlab_install_repository.sh` register (unused) | `act(Shell, ...)` named `Install GitLab repository`; the body raises `CommandError` on a non-zero exit, the unused register is dropped | barrier |
 | `set_fact` × 2 (`gitlab_package_version_separator`, `gitlab_package_name`) | folded into `package_pin(hv)` — `gitlab-ce` or `gitlab-ce=<version>` | recipe |
-| `apt: name={{ gitlab_package_name }} update_cache=yes force=yes async=300 poll=5` | `apt.packages(packages=plan.package_pin)` — the async ceiling is dropped (D5) | covered |
+| `apt: name={{ gitlab_package_name }} update_cache=yes force=yes async=300 poll=5` | the same `packages_op` again: `apt.packages`/`dnf.packages` with `packages=plan.package_pin` — the async ceiling is dropped (D5) | covered |
 | `command: gitlab-ctl reconfigure creates=/var/opt/gitlab/bootstrapped failed_when: false` | `bootstrapped = yield fact(FileExists, BOOTSTRAPPED_PATH)` gate + unchecked `act(Shell, ...)` (D7) | barrier |
 | `file: path=/etc/gitlab/ssl state=directory mode=0700` when `gitlab_create_self_signed_cert` | `files.directory(SSL_DIR, mode="0700", user="root", group="root")` under the same bool gate | covered |
 | `command: openssl req ... creates={{ gitlab_ssl_certificate }}` | `yield fact(FileExists, plan.ssl_certificate)` as the `creates=` read (D9) + `act(Shell, openssl_command)` raising on failure | barrier |
@@ -90,7 +93,7 @@ template with eleven `{% if %}` gates, an `{% for %}` loop and the
 enters only through `reemote.roles._render`, *inside* `render_gitlab_rb`, so
 `import reemote.roles` stays clean without the extra.
 
-SSH access to each Ubuntu host with the key named in its `connection`, and
+SSH access to each target host with the key named in its `connection`, and
 passwordless sudo (or a `privilege` section in the inventory): every request
 and action carries `sudo=True`, because reemote has no play-level `become`.
 The script and config writes are spool-and-install (`files.download`,
@@ -152,7 +155,7 @@ ports 80/443 — stop any existing web server first.
 | `nginx_ssl_verify_client` | `str` | `""` — falsy omits the 2-way SSL line | `gitlab_nginx_ssl_verify_client` |
 | `nginx_ssl_client_certificate` | `str` | `""` — falsy omits the line | `gitlab_nginx_ssl_client_certificate` |
 | `restart_handler_failed_when` | `bool` | `False` — upstream's string coerces to `False` through `\| bool`, so the handler never fails by default; `True` raises `CommandError` on a non-zero exit (D8) | `gitlab_restart_handler_failed_when` |
-| `dependencies` | `tuple[str, …]` | `openssh-server, postfix, curl, openssl, tzdata` — `gnupg2` is appended by the merged Debian request (D4), not carried here | `gitlab_dependencies` |
+| `dependencies` | `tuple[str, …]` | `openssh-server, postfix, curl, openssl, tzdata` — `gnupg2` is appended on the Ubuntu half only (D4), not carried here | `gitlab_dependencies` |
 | `time_zone` | `str` | `UTC` | `gitlab_time_zone` |
 | `backup_keep_time` | `str` | `604800` (rendered unquoted) | `gitlab_backup_keep_time` |
 | `download_validate_certs` | `bool` | `True` — **inert** (D10): the fetch is control-side | `gitlab_download_validate_certs` |
@@ -291,26 +294,33 @@ Five rules are load-bearing:
   body branches on the install probe, so a dry preview shows one line and one
   unknown barrier — the honest shape of a fact-gated deploy.
 
-A host whose `family` is not `"Ubuntu"` returns before its first `yield`: no
-requests, no barriers, no report lines — RedHat entries in a shared inventory
-are never contacted and the vendor script is never even fetched for them.
+A host whose `family` is neither `"Ubuntu"` nor `"RedHat"` returns before its
+first `yield`: no requests, no barriers, no report lines — Alpine entries in a
+shared inventory are never contacted and no vendor script is ever fetched for
+them. The two target families share every stage name and every barrier; only
+the package manager and the vendor script URL differ.
 
 ## 7. Transcript
 
-From `tests/roles/test_gitlab.py`, against the simulated fresh Ubuntu host
-(every default) plus a RedHat host the role never touches; the second pass
-bridges `existing_files` with the three paths the real first pass leaves
-behind. The dry preview plans wave 0 and parks at the install probe:
+From `tests/roles/test_gitlab.py`, against the simulated fresh inventory —
+`ubuntu` (apt) and `web1` (RedHat/dnf), both with every default, plus an
+Alpine host the role never touches — so each barrier line appears once per
+target host; the second pass bridges `existing_files` with the three paths the
+real first pass leaves behind. The dry preview plans both dependency installs
+and parks at the install probe:
 
 ```text
 (root)
   wave 0
     ubuntu: Install GitLab dependencies [changed: apt update; 6 package(s) to install]
+    web1: Install GitLab dependencies [changed: 5 package(s) to install]
+    barrier: Check if GitLab is already installed → unknown until run
     barrier: Check if GitLab is already installed → unknown until run
 ```
 
-The fresh apply — all eight waves; every barrier line is a read the old
-two-phase shape would have needed a separate `run()` for:
+The fresh apply — all eight waves, both families in one pass; every barrier
+line is a read the old two-phase shape would have needed a separate `run()`
+for:
 
 ```text
 (root)
@@ -318,53 +328,85 @@ two-phase shape would have needed a separate `run()` for:
     ubuntu: Install GitLab dependencies [changed: apt update; 6 package(s) to install]
         $ sudo apt-get update
         $ sudo DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install openssh-server postfix curl openssl tzdata gnupg2
+    web1: Install GitLab dependencies [changed: 5 package(s) to install]
+        $ sudo dnf install -y openssh-server postfix curl openssl tzdata
+    barrier: Check if GitLab is already installed → False
     barrier: Check if GitLab is already installed → False
   wave 1
     ubuntu: Download GitLab repository installation script [changed: content /tmp/gitlab_install_repository.sh is absent, will install]
         $ scp <files install> -> /tmp/reemote-install-a5aed7398b9bf3d8/content
         $ sudo sh -c 'mkdir -p /tmp && cp /tmp/reemote-install-a5aed7398b9bf3d8/content /tmp/gitlab_install_repository.sh && chmod 644 /tmp/gitlab_install_repository.sh && rm -rf /tmp/reemote-install-a5aed7398b9bf3d8'
+    web1: Download GitLab repository installation script [changed: content /tmp/gitlab_install_repository.sh is absent, will install]
+        $ scp <files install> -> /tmp/reemote-install-a5aed7398b9bf3d8/content
+        $ sudo sh -c 'mkdir -p /tmp && cp /tmp/reemote-install-a5aed7398b9bf3d8/content /tmp/gitlab_install_repository.sh && chmod 644 /tmp/gitlab_install_repository.sh && rm -rf /tmp/reemote-install-a5aed7398b9bf3d8'
+    barrier: Install GitLab repository → {'exit_status': 0, 'stdout': '', 'stderr': ''}
     barrier: Install GitLab repository → {'exit_status': 0, 'stdout': '', 'stderr': ''}
   wave 2
     ubuntu: Install GitLab           [changed: 1 package(s) to install]
         $ sudo DEBIAN_FRONTEND=noninteractive apt-get -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" install gitlab-ce
+    web1: Install GitLab           [changed: 1 package(s) to install]
+        $ sudo dnf install -y gitlab-ce
+    barrier: Check if GitLab is already configured → False
     barrier: Check if GitLab is already configured → False
   wave 3
+    barrier: Reconfigure GitLab (first run) → {'exit_status': 0, 'stdout': '', 'stderr': ''}
     barrier: Reconfigure GitLab (first run) → {'exit_status': 0, 'stdout': '', 'stderr': ''}
   wave 4
     ubuntu: Create GitLab SSL configuration folder [changed: /etc/gitlab/ssl missing, will create]
         $ sudo mkdir -p /etc/gitlab/ssl
         $ sudo chmod 700 /etc/gitlab/ssl
         $ sudo chown root:root /etc/gitlab/ssl
+    web1: Create GitLab SSL configuration folder [changed: /etc/gitlab/ssl missing, will create]
+        $ sudo mkdir -p /etc/gitlab/ssl
+        $ sudo chmod 700 /etc/gitlab/ssl
+        $ sudo chown root:root /etc/gitlab/ssl
+    barrier: Check if the self-signed certificate exists → False
     barrier: Check if the self-signed certificate exists → False
   wave 5
+    barrier: Create self-signed certificate → {'exit_status': 0, 'stdout': '', 'stderr': ''}
     barrier: Create self-signed certificate → {'exit_status': 0, 'stdout': '', 'stderr': ''}
   wave 6
     ubuntu: Copy GitLab configuration file [changed: content /etc/gitlab/gitlab.rb is absent, will install]
         $ scp <files install> -> /tmp/reemote-install-980c8e07004682bd/content
         $ sudo sh -c 'mkdir -p /etc/gitlab && cp /tmp/reemote-install-980c8e07004682bd/content /etc/gitlab/gitlab.rb && chown root:root /etc/gitlab/gitlab.rb && chmod 600 /etc/gitlab/gitlab.rb && rm -rf /tmp/reemote-install-980c8e07004682bd'
+    web1: Copy GitLab configuration file [changed: content /etc/gitlab/gitlab.rb is absent, will install]
+        $ scp <files install> -> /tmp/reemote-install-980c8e07004682bd/content
+        $ sudo sh -c 'mkdir -p /etc/gitlab && cp /tmp/reemote-install-980c8e07004682bd/content /etc/gitlab/gitlab.rb && chown root:root /etc/gitlab/gitlab.rb && chmod 600 /etc/gitlab/gitlab.rb && rm -rf /tmp/reemote-install-980c8e07004682bd'
     ubuntu: Set GitLab configuration file mode and owner [no change: file /etc/gitlab/gitlab.rb already exists]
-    barrier: configure done → 1 host notified
+    web1: Set GitLab configuration file mode and owner [no change: file /etc/gitlab/gitlab.rb already exists]
+    barrier: configure done → 2 hosts notified
+    barrier: configure done → 2 hosts notified
   wave 7
+    barrier: restart gitlab → {'exit_status': 0, 'stdout': '', 'stderr': ''}
     barrier: restart gitlab → {'exit_status': 0, 'stdout': '', 'stderr': ''}
 ```
 
-The converged rerun — every probe answers `True`, the repo/openssl stages are
-gone, and **the handler wave disappears** (`gitlab-ctl reconfigure` ran
-exactly twice across the fresh pass and zero times here):
+The converged rerun — every probe answers `True` on both hosts, the
+repo/openssl stages are gone, and **the handler wave disappears**
+(`gitlab-ctl reconfigure` ran exactly twice across each host's fresh pass and
+zero times here):
 
 ```text
 (root)
   wave 0
     ubuntu: Install GitLab dependencies [no change: apt update skipped, cache is fresh; all packages present]
+    web1: Install GitLab dependencies [no change: all packages present]
+    barrier: Check if GitLab is already installed → True
     barrier: Check if GitLab is already installed → True
   wave 1
     barrier: Check if GitLab is already configured → True
+    barrier: Check if GitLab is already configured → True
   wave 2
     ubuntu: Create GitLab SSL configuration folder [no change: directory /etc/gitlab/ssl already exists]
+    web1: Create GitLab SSL configuration folder [no change: directory /etc/gitlab/ssl already exists]
+    barrier: Check if the self-signed certificate exists → True
     barrier: Check if the self-signed certificate exists → True
   wave 3
     ubuntu: Copy GitLab configuration file [no change: content already up to date (/etc/gitlab/gitlab.rb)]
+    web1: Copy GitLab configuration file [no change: content already up to date (/etc/gitlab/gitlab.rb)]
     ubuntu: Set GitLab configuration file mode and owner [no change: file /etc/gitlab/gitlab.rb already exists]
+    web1: Set GitLab configuration file mode and owner [no change: file /etc/gitlab/gitlab.rb already exists]
+    barrier: configure done → 0 hosts notified
     barrier: configure done → 0 hosts notified
 ```
 
@@ -380,7 +422,8 @@ pass emits no command at all.
 
 Both passes were also run for real against the demo host (Ubuntu 24.04, nginx
 stopped for the run), and the wave shapes above are what the live trees
-showed — with real command output where the transcript above elides it:
+showed — with real command output where the transcript above elides it; the
+RedHat half is proven by the offline dnf-path tests:
 
 * **fresh, pinned pass — eight waves**, request waves `{0, 1, 2, 4, 6}`: the
 dependency install, the vendor `script.deb.sh` downloaded, spooled and run
@@ -425,9 +468,9 @@ active+enabled on `:80`.
 | # | Deviation | Why |
 | --- | --- | --- |
 | D1 | The host-family guard is the body's opening `if`, not a `when:` on every task | an off-target host emits no requests, no barriers and no log lines at all — no `[skipped]` noise |
-| D2 | `include_vars` OS dispatch collapses to frozen Debian constants | the single-OS (Ubuntu) scope: the `=` version separator and the `script.deb.sh` URL; no `LinuxDistribution` barrier exists because the vars split by family, not release |
+| D2 | `include_vars` OS dispatch collapses to a frozen per-family table | `REPO_SCRIPT_URLS` carries the `script.deb.sh`/`script.rpm.sh` URLs and the inventory's `family` picks the row, so no `LinuxDistribution` barrier exists; upstream's per-family separator (`=` on Debian, `-` on RedHat) becomes reemote's single `<pkg>=<version>` pin spelling, which `dnf.packages` renders into its own `-` NEVRA |
 | D3 | Task 2's `stat` of `/etc/gitlab/gitlab.rb` is dropped | registered as `gitlab_config_file` and *never referenced* by any later task or handler — dead code in the role itself |
-| D4 | The two dependency tasks become one `apt.packages` with a gated cache refresh folded in | the role has no update-cache gate of its own; the folded `update=True, cache_valid_time=600` (the nfs/docker precedent) keeps the role self-contained on a fresh host, and the stamp fact means a converged host runs no `apt-get update` |
+| D4 | The two dependency tasks become one family-dispatched request, the gated cache refresh folded into the apt half | Ubuntu installs the dependencies plus `gnupg2` through `apt.packages(..., update=True, cache_valid_time=600)` (the nfs/docker precedent; the stamp fact means a converged host runs no `apt-get update`); RedHat runs a plain `dnf.packages(dependencies)` — no `gnupg2`, no metadata refresh, because upstream's RedHat branch does neither |
 | D5 | `async: 300`/`poll: 5` on the package install is dropped | a reemote request runs to completion and reports when done; the 300-second ceiling is a wall Ansible builds routinely exceed for this multi-GB package |
 | D6 | The template task becomes **two** notifying requests | `files.install`'s idempotence is content-only, so a root:root `0600` drift on unchanged content would never converge; the paired `files.file` re-applies the metadata and, because Ansible's template module reports a change on owner/group/mode drift, its name joins `NOTIFYING` (the apache/nfs companion precedent) |
 | D7 | Task 10's `failed_when: false` is an unchecked `act` result | the first reconfigure legitimately fails on some installs and the handler's later run is the fix; a barrier result is data, so nothing raises |
@@ -439,9 +482,10 @@ active+enabled on `:80`.
 
 ## 9. Scoped out
 
-* **The RedHat branch** (`vars/RedHat.yml`: the `-` version separator,
-  `script.rpm.sh`, and the `yum`-side dependency names): a Phase 0 single-OS
-  decision — the target is Ubuntu.
+* **Alpine**: upstream has no Alpine branch to migrate — `include_vars` has no
+  `vars/Alpine.yml` to load, no task or handler mentions `apk`, and GitLab
+  omnibus ships no Alpine packages — so the family guard's exclusion is
+  upstream parity, not a scope cut.
 * **The role's galaxy CI scaffolding** (molecule, `.travis.yml`, the
   deprecated-namespace meta): never part of the default task path.
 * **`gitlab_package_name`** (upstream documents it in the README but the role

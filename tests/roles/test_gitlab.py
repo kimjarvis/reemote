@@ -6,11 +6,16 @@
 The role is library code now, so it is imported (``from reemote.roles import
 ...``) and replayed against ``SimulatedHost`` through the real wave driver:
 ``run_waves(inventory, gitlab(v), host_factory=...)``. The control-side
-``script.deb.sh`` fetch is stubbed at ``files._fetch_url_bytes`` (autouse
-fixture), so nothing touches the network, and the three shells the role acts
-through -- the vendor script, ``gitlab-ctl reconfigure`` and the ``openssl
-req`` one-liner -- are canned ``shell_results`` records keyed by their exact
-``sudo`` rendering (#16).
+vendor-script (``script.deb.sh``/``script.rpm.sh``) fetch is stubbed at
+``files._fetch_url_bytes`` (autouse fixture), so nothing touches the network,
+and the three shells the role acts through -- the vendor script, ``gitlab-ctl
+reconfigure`` and the ``openssl req`` one-liner -- are canned ``shell_results``
+records keyed by their exact ``sudo`` rendering (#16).
+
+The inventory is the two target families plus the guard's proof: ``ubuntu``
+(the apt path, ``gnupg2`` merged, the folded cache refresh), ``web1`` (the
+RedHat/dnf path: plain ``dnf.packages`` installs, ``script.rpm.sh``, no
+``gnupg2``) and ``db1`` (Alpine, which the role must never touch).
 
 The load-bearing assertion is the migration's shape claim: the stream is
 **fact-gated, so its wave count is host-dependent**. A fresh host emits the
@@ -48,8 +53,9 @@ from reemote.roles.gitlab import (
     NOTIFYING,
     RECONFIGURE_COMMAND,
     REPO_SCRIPT_SPOOL,
-    REPO_SCRIPT_URL,
+    REPO_SCRIPT_URLS,
     SSL_DIR,
+    TARGET_FAMILIES,
     GitlabExtraOption,
     GitlabPlan,
     extra_settings_context,
@@ -68,7 +74,7 @@ REPO_SHELL = f"sudo bash {REPO_SCRIPT_SPOOL}"
 RECONFIGURE_SHELL = f"sudo {RECONFIGURE_COMMAND}"
 
 #: The vendor script body: valid UTF-8, so ``files.download`` takes the text
-#: install path exactly as it does for the real ``script.deb.sh``.
+#: install path exactly as it does for the real ``script.deb.sh``/``.rpm.sh``.
 FAKE_SCRIPT = b"#!/bin/bash\n# canned gitlab repository installer\nexit 0\n"
 
 #: The handler's barrier name, kept from ``handlers/main.yml``.
@@ -105,14 +111,19 @@ def canned_fetch(monkeypatch):
     return fetched
 
 
-def make_inventory(**overrides) -> list[dict]:
-    """A two-host inventory: one Ubuntu target, one CentOS host that must be skipped.
+def make_inventory(
+    redhat_overrides: dict | None = None, **overrides
+) -> list[dict]:
+    """A three-host inventory: both target families and one off-target host.
 
-    The role variables ride in the entry's ``roles`` mapping under ``"gitlab"``,
-    bound by ``resolve_vars``. With no overrides the upstream
-    ``defaults/main.yml`` values apply: ``domain: gitlab`` derives the external
-    URL, both certificate paths and the subject, ``version`` is empty (the
-    candidate installs), and the self-signed certificate is created.
+    ``ubuntu`` runs the apt path, ``web1`` the RedHat/dnf path, and ``db1``
+    (Alpine) proves the family guard. The role variables ride in each target
+    entry's ``roles`` mapping under ``"gitlab"``, bound by ``resolve_vars``:
+    ``overrides`` apply to the Ubuntu host, ``redhat_overrides`` to the
+    RedHat one. With no overrides the upstream ``defaults/main.yml`` values
+    apply on both: ``domain: gitlab`` derives the external URL, both
+    certificate paths and the subject, ``version`` is empty (the candidate
+    installs), and the self-signed certificate is created.
     """
     entry = {
         "host": "ubuntu",
@@ -137,17 +148,29 @@ def make_inventory(**overrides) -> list[dict]:
             "family": "RedHat",
             "connection": {"address": "192.0.2.11", "username": "admin"},
             "group": "centos",
+            "tags": ["redhat_host", "dnf_package_manager"],
+            "roles": {"gitlab": dict(redhat_overrides or {})},
+        },
+        {
+            "host": "db1",
+            "family": "Alpine",
+            "connection": {"address": "192.0.2.12", "username": "admin"},
+            "group": "alpine",
         },
     ]
 
 
 def seed(host: SimulatedHost) -> None:
-    """Pre-state: a stock minimal Ubuntu machine with no GitLab anywhere.
+    """Pre-state: a stock minimal machine with no GitLab anywhere.
 
-    The apt cache has never been refreshed (so the folded 600-second update
-    runs), no config file or SSL directory exists, and all three action shells
-    are canned as successes -- keyed by their exact ``sudo`` rendering (#16).
+    Applied to both target families: the apt-side stores start empty (they
+    answer nothing on the dnf host, whose ``packages`` store is its own), no
+    config file or SSL directory exists, and all three action shells are
+    canned as successes -- keyed by their exact ``sudo`` rendering (#16).
+    The shell texts are family-independent: the spool path, the reconfigure
+    command and (on the shared default domain) the openssl one-liner.
     """
+    host.packages = {}
     host.apt_packages = {}
     host.apt_sources = []
     host.apt_update_stamp = None
@@ -159,7 +182,7 @@ def seed(host: SimulatedHost) -> None:
     host.enabled_services = set()
     for shell in ACTION_SHELLS:
         host.shell_results[shell] = {"exit_status": 0, "stdout": "", "stderr": ""}
-    seed_openssl(host, gitlab_plan(GitlabVars()))
+    seed_openssl(host, gitlab_plan(GitlabVars(), "Ubuntu"))
 
 
 def seed_openssl(host: SimulatedHost, plan: GitlabPlan, *, ok: bool = True) -> None:
@@ -183,11 +206,11 @@ def bridge(host: SimulatedHost, plan: GitlabPlan) -> None:
 
 
 def make_hosts(inventory: list[dict]) -> dict[str, SimulatedHost]:
-    """Materialize the inventory into persistent simulated hosts, seeded targets."""
+    """Materialize the inventory into persistent simulated hosts, seeding targets."""
     hosts: dict[str, SimulatedHost] = {}
     for entry in inventory:
         host = SimulatedHost.from_inventory(entry)
-        if entry.get("family") == "Ubuntu":
+        if entry.get("family") in TARGET_FAMILIES:
             seed(host)
         hosts[host.name] = host
     return hosts
@@ -283,7 +306,8 @@ async def test_fresh_host_runs_the_whole_chain(canned_fetch):
     ]
     # Waves 3 and 5 carry only their act -- no request ever joins them.
     assert _request_waves(report) == {0, 1, 2, 4, 6}
-    assert "configure done → 1 host notified" in report.tree()
+    # Both target families run the fresh chain, so both config writes notify.
+    assert "configure done → 2 hosts notified" in report.tree()
     assert f"barrier: {HANDLER_NAME} →" in report.tree()
 
 
@@ -299,7 +323,8 @@ async def test_converged_host_collapses_to_facts_and_a_checkpoint(canned_fetch):
     hosts = make_hosts(inventory)
     first = await run_role(inventory, hosts)
     host = hosts["ubuntu"]
-    bridge(host, gitlab_plan(GitlabVars()))
+    bridge(host, gitlab_plan(GitlabVars(), "Ubuntu"))
+    bridge(hosts["web1"], gitlab_plan(GitlabVars(), "RedHat"))
     assert changed_entries(first), "the first pass must actually deploy something"
 
     second = await run_role(inventory, hosts)
@@ -317,7 +342,7 @@ async def test_converged_host_collapses_to_facts_and_a_checkpoint(canned_fetch):
     assert host.ran_shells == [
         REPO_SHELL,
         RECONFIGURE_SHELL,
-        f"sudo {gitlab_plan(GitlabVars()).openssl_command}",
+        f"sudo {gitlab_plan(GitlabVars(), "Ubuntu").openssl_command}",
         RECONFIGURE_SHELL,
     ]
 
@@ -332,12 +357,14 @@ async def test_preinstalled_host_skips_repo_and_package_tasks(canned_fetch):
     inventory = make_inventory()
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
-    plan = gitlab_plan(GitlabVars())
+    plan = gitlab_plan(GitlabVars(), "Ubuntu")
     host.existing_files.update({GITLAB_CTL_PATH, BOOTSTRAPPED_PATH})
 
     report = await run_role(inventory, hosts)
 
-    assert canned_fetch == []  # installed already: the block never runs
+    # The Ubuntu host is installed already, so only the RedHat target fetches
+    # its vendor script -- the fact gate is per host, not per inventory.
+    assert canned_fetch == [REPO_SCRIPT_URLS["RedHat"].format(edition="gitlab-ce")]
     assert REPO_SHELL not in host.ran_shells
     assert "Install GitLab" not in ubuntu_names(report)
     assert _barrier_shape(report) == [
@@ -395,7 +422,7 @@ async def test_first_pass_installs_repo_package_and_config(canned_fetch):
     inventory = make_inventory()
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
-    plan = gitlab_plan(GitlabVars())
+    plan = gitlab_plan(GitlabVars(), "Ubuntu")
     report = await run_role(inventory, hosts)
 
     # Dependencies merged with gnupg2, deduplicated; cache refreshed.
@@ -407,7 +434,10 @@ async def test_first_pass_installs_repo_package_and_config(canned_fetch):
     assert host.apt_packages["gitlab-ce"] == [""]
 
     # The vendor script: fetched control-side, spooled, installed verbatim.
-    assert canned_fetch == [REPO_SCRIPT_URL.format(edition="gitlab-ce")]
+    # Both targets fetch their own family's script.
+    assert sorted(canned_fetch) == sorted(
+        url.format(edition="gitlab-ce") for url in REPO_SCRIPT_URLS.values()
+    )
     assert host.remote_files[REPO_SCRIPT_SPOOL] == FAKE_SCRIPT
 
     # The SSL directory, the omnibus way: 0700 root:root.
@@ -455,6 +485,43 @@ async def test_version_pin_installs_the_pinned_package(canned_fetch):
     assert host.apt_packages["gitlab-ce"] == ["17.5.1-ce.0"]
 
 
+async def test_redhat_host_runs_the_dnf_path(canned_fetch):
+    """The RedHat half of the family dispatch: dnf stores, rpm script, no gnupg2.
+
+    ``web1`` runs the same eight-barrier chain as ``ubuntu``, but both package
+    requests go through ``dnf.packages`` (no folded apt cache refresh -- the
+    upstream role refreshes nothing on RedHat), the vendor script is
+    ``script.rpm.sh`` and the Debian-only ``gnupg2`` never enters the
+    dependency list. The pin grammar is the shared ``=`` spelling: the dnf
+    store records the ``.el8`` version exactly as given.
+    """
+    inventory = make_inventory(redhat_overrides={"version": "17.11.7-ce.0.el8"})
+    hosts = make_hosts(inventory)
+    host = hosts["web1"]
+    plan = gitlab_plan(GitlabVars(version="17.11.7-ce.0.el8"), "RedHat")
+    report = await run_role(inventory, hosts)
+
+    assert REPO_SCRIPT_URLS["RedHat"].format(edition="gitlab-ce") in canned_fetch
+    assert host.packages["openssh-server"] == [""]
+    assert GNUPG2_PACKAGE not in host.packages
+    assert host.packages["gitlab-ce"] == ["17.11.7-ce.0.el8"]
+    # No apt movement on the dnf host: the cache refresh stays on the Ubuntu half.
+    assert host.apt_packages == {}
+    assert host.apt_update_stamp is None
+    # The family-independent stages are identical: same spool, shells, config.
+    assert host.remote_files[REPO_SCRIPT_SPOOL] == FAKE_SCRIPT
+    assert host.ran_shells == [
+        REPO_SHELL,
+        RECONFIGURE_SHELL,
+        f"sudo {plan.openssl_command}",
+        RECONFIGURE_SHELL,
+    ]
+    log = {entry.name: entry for entry in report.merged().log if entry.host == "web1"}
+    assert log["Copy GitLab configuration file"].changed
+    assert host.remote_files[CONFIG_PATH] == plan.config_content.encode()
+    assert _barrier_shape(report, "web1") == _barrier_shape(report, "ubuntu")
+
+
 async def test_self_signed_certificate_skipped_when_disabled(canned_fetch):
     """The ``gitlab_create_self_signed_cert`` gate: no directory, no probe, no act.
 
@@ -482,19 +549,28 @@ async def test_self_signed_certificate_skipped_when_disabled(canned_fetch):
     assert "nginx['ssl_certificate'] = \"/etc/gitlab/ssl/gitlab.crt\"" in config
 
 
-async def test_non_ubuntu_host_is_never_touched(canned_fetch):
+async def test_non_target_host_is_never_touched(canned_fetch):
+    """Alpine has no upstream branch, so the family guard never contacts it.
+
+    The RedHat entry is now a target (it shares the fresh chain with the
+    Ubuntu host); the Alpine entry is the guard's proof: no wave, no log line,
+    no barrier, no store movement.
+    """
     inventory = make_inventory()
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
-    skipped = hosts["web1"]
+    skipped = hosts["db1"]
 
     # The family guard returns before the first yield, so the off-target host is
     # in no wave, emits no log line, touches no barrier and its stores never move.
-    assert not any(entry.host == "web1" for entry in report.merged().log)
-    assert not any(r.host == "web1" for r in report.records)
+    assert not any(entry.host == "db1" for entry in report.merged().log)
+    assert not any(r.host == "db1" for r in report.records)
     assert skipped.remote_files == {}
+    assert skipped.packages == {}
     assert skipped.apt_packages == {}
     assert skipped.ran_shells == []
+    # The RedHat target, by contrast, runs the same eight-barrier chain.
+    assert _barrier_shape(report, "web1") == _barrier_shape(report, "ubuntu")
 
 
 # --- the notification paths -----------------------------------------------------
@@ -505,9 +581,10 @@ async def test_content_drift_rewrites_and_notifies(canned_fetch):
     inventory = make_inventory()
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
-    plan = gitlab_plan(GitlabVars())
+    plan = gitlab_plan(GitlabVars(), "Ubuntu")
     await run_role(inventory, hosts)
     bridge(host, plan)
+    bridge(hosts["web1"], gitlab_plan(GitlabVars(), "RedHat"))
 
     host.remote_files[CONFIG_PATH] = b"external_url \"https://hand.edited/\"\n"
 
@@ -536,7 +613,7 @@ async def test_metadata_drift_converges_and_notifies(canned_fetch):
     inventory = make_inventory()
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
-    plan = gitlab_plan(GitlabVars())
+    plan = gitlab_plan(GitlabVars(), "Ubuntu")
     data = plan.config_content.encode()
     # Pre-state: the exact intended content, drifted ownership and mode.
     host.remote_files[CONFIG_PATH] = data
@@ -619,7 +696,7 @@ async def test_openssl_failure_raises(canned_fetch):
     """Task 12's default ``failed_when: true`` -- as the body's own raise."""
     inventory = make_inventory()
     hosts = make_hosts(inventory)
-    plan = gitlab_plan(GitlabVars())
+    plan = gitlab_plan(GitlabVars(), "Ubuntu")
     hosts["ubuntu"].shell_results[f"sudo {plan.openssl_command}"] = {
         "exit_status": 1,
         "stdout": "",
@@ -650,7 +727,7 @@ async def test_handler_failure_raises_only_with_the_flag(canned_fetch):
 
     # The whole fresh chain ran before the raise: script, first-run act (same
     # seam key, unchecked -- D7), openssl, and the fatal handler reconfigure.
-    plan = gitlab_plan(GitlabVars())
+    plan = gitlab_plan(GitlabVars(), "Ubuntu")
     assert host.ran_shells == [
         REPO_SHELL,
         RECONFIGURE_SHELL,
@@ -713,7 +790,7 @@ def test_extra_settings_context_drops_unset_type():
 
 def test_gitlab_plan_derives_the_interpolated_defaults():
     """The four ``defaults/main.yml`` interpolations live in :func:`gitlab_plan`."""
-    plan = gitlab_plan(GitlabVars(domain="gitlab.example.com"))
+    plan = gitlab_plan(GitlabVars(domain="gitlab.example.com"), "Ubuntu")
     assert plan.external_url == "https://gitlab.example.com/"
     assert plan.ssl_certificate == "/etc/gitlab/ssl/gitlab.example.com.crt"
     assert plan.ssl_certificate_key == "/etc/gitlab/ssl/gitlab.example.com.key"
@@ -731,12 +808,28 @@ def test_gitlab_plan_derives_the_interpolated_defaults():
         GNUPG2_PACKAGE,
     )
     assert plan.dependencies == tuple(dict.fromkeys(plan.dependencies))
+    # The RedHat plan differs only in the family-derived pieces: the rpm
+    # script URL, and no Debian-only gnupg2.
+    rh = gitlab_plan(GitlabVars(domain="gitlab.example.com"), "RedHat")
+    assert rh.family == "RedHat"
+    assert rh.script_url == (
+        "https://packages.gitlab.com/install/repositories/gitlab/"
+        "gitlab-ce/script.rpm.sh"
+    )
+    assert rh.dependencies == (
+        "openssh-server",
+        "postfix",
+        "curl",
+        "openssl",
+        "tzdata",
+    )
+    assert rh.package_pin == plan.package_pin
 
 
 def test_gitlab_plan_explicit_overrides_beat_the_derivation():
     """Upstream's variables are independent: one path set, the other derived."""
     plan = gitlab_plan(
-        GitlabVars(domain="gitlab", ssl_certificate="/etc/ssl/custom.crt")
+        GitlabVars(domain="gitlab", ssl_certificate="/etc/ssl/custom.crt"), "Ubuntu"
     )
     assert plan.ssl_certificate == "/etc/ssl/custom.crt"
     assert plan.ssl_certificate_key == "/etc/gitlab/ssl/gitlab.key"
@@ -750,7 +843,7 @@ def test_render_defaults_omit_every_gated_block():
     the context, so their blocks disappear; every ``| lower`` renders ``false``.
     """
     hv = GitlabVars()
-    plan = gitlab_plan(hv)
+    plan = gitlab_plan(hv, "Ubuntu")
     config = render_gitlab_rb(
         hv, plan.external_url, plan.ssl_certificate, plan.ssl_certificate_key
     )
@@ -795,7 +888,7 @@ def test_render_overrides_emit_every_block():
             },
         ),
     )
-    plan = gitlab_plan(hv)
+    plan = gitlab_plan(hv, "Ubuntu")
     config = render_gitlab_rb(
         hv, plan.external_url, plan.ssl_certificate, plan.ssl_certificate_key
     )
@@ -823,7 +916,7 @@ def test_custom_config_template_is_read_controller_side(tmp_path):
     template = tmp_path / "custom.rb.j2"
     template.write_text('external_url "{{ gitlab_external_url }}"\n', encoding="utf-8")
     hv = GitlabVars(domain="corp", config_template=str(template))
-    plan = gitlab_plan(hv)
+    plan = gitlab_plan(hv, "Ubuntu")
     assert plan.config_content == 'external_url "https://corp/"\n'
 
 
@@ -882,7 +975,9 @@ async def test_download_validate_certs_is_carried_but_inert(canned_fetch):
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
-    assert canned_fetch == [REPO_SCRIPT_URL.format(edition="gitlab-ce")]
+    assert sorted(canned_fetch) == sorted(
+        url.format(edition="gitlab-ce") for url in REPO_SCRIPT_URLS.values()
+    )
     assert _barrier_shape(report)[:2] == [
         (0, ("fact", "Check if GitLab is already installed")),
         (1, ("act", "Install GitLab repository")),

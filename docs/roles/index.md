@@ -92,7 +92,7 @@ and outputs.
 | [kibana](kibana.md) | Kibana — the dependencies, the Elasticsearch signing key and Elastic apt repository, the `kibana` package, the service, the rendered `kibana.yml`, one restart handler |
 | [elasticsearch](elasticsearch.md) | Elasticsearch — the dependencies, the Elastic signing key and apt repository, the `elasticsearch` package, the rendered config and version-appropriate heap file, the service and port wait, one restart handler |
 | [node_exporter](node_exporter.md) | node_exporter — the release tarball unpacked and the binary moved into place, the service group and account, the rendered systemd unit, the running/enabled unit, the restart handler and the metrics-endpoint check |
-| [gitlab](gitlab.md) | GitLab CE — the dependencies and the vendor `script.deb.sh` repository, the optional version pin, the fact-gated bootstrap reconfigure, the optional self-signed certificate, the rendered `/etc/gitlab/gitlab.rb` and one command handler |
+| [gitlab](gitlab.md) | GitLab CE — the dependencies and the vendor repository run through its own `script.deb.sh`/`script.rpm.sh` (apt or dnf by family), the optional version pin, the fact-gated bootstrap reconfigure, the optional self-signed certificate, the rendered `/etc/gitlab/gitlab.rb` and one command handler |
 
 ### Base system
 
@@ -171,7 +171,7 @@ and outputs.
 | [daemonize](daemonize.md) | [`geerlingguy.daemonize`](https://github.com/geerlingguy/ansible-role-daemonize) | Ubuntu | 2 fresh / 1 converged | none | no | 1 |
 | [varnish](varnish.md) | [`geerlingguy.varnish`](https://github.com/geerlingguy/ansible-role-varnish) | Ubuntu | 3 changed / 2 converged | none | **yes** | 1 |
 | [htpasswd](htpasswd.md) | [`geerlingguy.htpasswd`](https://github.com/geerlingguy/ansible-role-htpasswd) | Ubuntu | `1 + P` (`P` credential paths); 1 install-only | none | no | 1 |
-| [gitlab](gitlab.md) | [`geerlingguy.gitlab`](https://github.com/geerlingguy/ansible-role-gitlab) | Ubuntu | 8 fresh / 4 converged | none | **yes** | 1 |
+| [gitlab](gitlab.md) | [`geerlingguy.gitlab`](https://github.com/geerlingguy/ansible-role-gitlab) | Ubuntu, RedHat | 8 fresh / 4 converged (both families) | none | **yes** | 1 |
 
 ## Reading the columns
 
@@ -434,10 +434,11 @@ The template role, and the one whose wave count is host-dependent.
   control-side-hashing role: `$apr1$` is pure standard-library `hashlib`
   (pinned against openssl vectors), so every fresh salt still converges — a
   rerun rewrites no line, and no request line ever renders the file's content.
-- **[gitlab](gitlab.md)** — the dependency install plus `gnupg2`, the vendor apt
-  repository run through its own `script.deb.sh`, the optionally pinned
-  `gitlab-ce` package, the tolerated bootstrap reconfigure, the optional
-  self-signed certificate behind a `creates=` read, the rendered
+- **[gitlab](gitlab.md)** — the dependency install (plus `gnupg2` and a gated
+  cache refresh on the apt half, a plain `dnf.packages` on RedHat), the vendor
+  repository run through its own `script.deb.sh`/`script.rpm.sh`, the
+  optionally pinned `gitlab-ce` package, the tolerated bootstrap reconfigure,
+  the optional self-signed certificate behind a `creates=` read, the rendered
   `/etc/gitlab/gitlab.rb` at root:root `0600`, and the `restart gitlab` command
   handler. The fact-gated role: three `fact(FileExists)` probes and three `act`
   barriers reproduce upstream's two `stat` registers and its `creates=` gate
