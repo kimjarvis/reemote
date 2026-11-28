@@ -39,8 +39,9 @@ target your machines.
 Installing and running
 ----------------------
 
-The role needs no extra: the ``$apr1$`` and ``{SHA}`` hashing is plain
-standard-library Python, done control-side, so no password ever crosses to the
+The role needs no extra: the hashing (``$apr1$``, ``{SHA}``, bcrypt and DES
+all supported) ships as plain standard-library Python in the ``files`` module
+(``files.htpasswd``), done control-side, so no password ever crosses to the
 host as a command argument and nothing needs installing on the controller.
 Run it with::
 

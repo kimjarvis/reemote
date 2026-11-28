@@ -14,9 +14,10 @@
 # entry's ``htpasswd`` role mapping by
 # :func:`~reemote.rolevars.resolve_vars`.
 #
-# The stream carries two or three waves: the ``apt.packages`` request, then
-# one ``fact(FileContents)`` read per distinct credential path -- each closing
-# its wave -- and the ``files.install``/``files.file`` pair for that path.
+# For ``P`` distinct credential paths the stream carries ``1 + P`` waves: the
+# ``apt.packages`` request, then one ``fact(FileContents)`` read per path --
+# each closing its wave -- and the ``files.install``/``files.file`` pair for
+# that path.
 # Because the driver applies each request before pulling the next, the
 # read-back sees the file as the previous path's write left it, and the
 # verify-then-keep merge makes the pair converge on a rerun.
@@ -30,8 +31,9 @@
 # * D1: the target is the Ubuntu family; the ``include_vars`` OS dispatch
 #   collapses to the frozen constants here and an off-target host returns at
 #   the family guard before its first ``yield``.
-# * D2: ``python3-passlib`` is dropped from the default packages -- the role
-#   hashed via passlib on the controller; this one hashes in the standard
+# * D2: ``python3-passlib`` is dropped from the default packages -- the
+#   Ansible module hashed on the target host, which is why passlib sits in
+#   its ``required_packages``; this role hashes control-side in the standard
 #   library. ``required_packages`` still overrides.
 # * D3: the symbolic default mode ``u+rw,g+r`` becomes the octal ``"0640"``;
 #   the spool-and-install family takes octal digits only.
