@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships twenty-six configuration roles as **library code**. Each one is the
+reemote ships twenty-seven configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -19,8 +19,9 @@ async def main(inventory):
 ```
 
 The factory is an ordinary function, so `nfs(vars_set)` is *called*, not awaited —
-[`datadog`](datadog.md) is the corpus's one `async def` factory, and its call-site
-is `await datadog(v)`. What a factory returns is one generator per host that
+[`datadog`](datadog.md) and [`zabbix_agent`](zabbix_agent.md) are the corpus's two
+`async def` factories, and their call-sites are `await datadog(v)` and
+`await zabbix_agent(v)`. What a factory returns is one generator per host that
 yields operation requests **and** barriers: a `fact` read, an `act` command, a
 `checkpoint` that closes the current wave and reads its report, a `control` fetch.
 That is what lets the reads an Ansible play took *between* its steps — a version
@@ -30,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The twenty-six roles group by what they configure. The [catalogue](#the-catalogue)
+The twenty-seven roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -77,6 +78,7 @@ and outputs.
 | [repo_epel](repo_epel.md) | EPEL — installs the repository package and flips `enabled=` in the `[epel]` section alone |
 | [docker](docker.md) | Docker CE — the vendor repository with its URL-signed keyring, the edition packages, `daemon.json`, the service, the `docker_users` memberships |
 | [datadog](datadog.md) | Datadog agent — the signing keys and repository, the package, `/etc/datadog-agent`, `conf.d` checks, two restart handlers |
+| [zabbix_agent](zabbix_agent.md) | Zabbix agent — the vendor keyring and repository lines with their stale-source purge, the agent packages, the rendered `zabbix_agentd.conf`, the service, one restart handler |
 
 ### Base system
 
@@ -135,6 +137,7 @@ and outputs.
 | [systemd](systemd.md) | [`0x0I/systemd`](https://github.com/0x0I/ansible-role-systemd) | Ubuntu | 2 (3 with a per-user unit) | none | **yes** | 1 |
 | [glusterfs](glusterfs.md) | [`geerlingguy.glusterfs`](https://github.com/geerlingguy/ansible-role-glusterfs) | Ubuntu | 2 fresh / 2 converged | none | no | 1 |
 | [firewall](firewall.md) | [`geerlingguy.firewall`](https://github.com/geerlingguy/ansible-role-firewall) | Ubuntu | 4 first run / 2 converged | none | **yes** | 1 |
+| [zabbix_agent](zabbix_agent.md) | [`dj-wasabi/ansible-zabbix-agent`](https://github.com/ansible-community/ansible-zabbix-agent) | Ubuntu | 5 fresh / 4 converged | none | **yes** | 1 |
 
 ## Reading the columns
 
@@ -149,9 +152,9 @@ and outputs.
   `PhpOutputs` — the PHP version and extension paths it used to carry as a copied
   constant. Every other role returns `None`, and does so on its family-guard's
   early return too.
-- **`reemote[templates]`** is needed by the nine roles that render configuration
+- **`reemote[templates]`** is needed by the ten roles that render configuration
   through Jinja2 or PyYAML — `apache`, `datadog`, `firewall`, `memcached`,
-  `nginx`, `ntp`, `postgresql`, `redis` and `systemd`, the list
+  `nginx`, `ntp`, `postgresql`, `redis`, `systemd` and `zabbix_agent`, the list
   [`reemote.roles._render`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/_render.py)
   exists to carry. The others render in plain Python — `json.dumps`, an f-string, a
   `str.join` — and need nothing beyond the library.
@@ -267,6 +270,12 @@ and outputs.
   operations, and its `creates=` gate is a `fact` barrier feeding an `act` whose
   `Result` is data — the body checks the exit status and raises its own
   `CommandError`.
+- **[zabbix_agent](zabbix_agent.md)** — the vendor keyring and repository lines
+  with their stale-source purge, the agent packages and optional apt pin, the
+  SELinux gate, the rendered `zabbix_agentd.conf`, the TLS-PSK file, the service,
+  one restart handler. The second `async def` factory: the signing key is one
+  inventory-wide control-side fetch, and the frozen `sign_keys` table raises
+  loudly on a release it does not know.
 
 ## Running one
 

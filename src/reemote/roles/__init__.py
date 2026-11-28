@@ -24,7 +24,8 @@ module is aliased (``from reemote.modules
 import postgresql as pg``). ``tests/roles/test_exports.py`` pins both facts.
 
 The template-rendering roles (``apache``, ``datadog``, ``firewall``,
-``memcached``, ``nginx``, ``ntp``, ``postgresql``, ``redis``, ``systemd``) import
+``memcached``, ``nginx``, ``ntp``, ``postgresql``, ``redis``, ``systemd``,
+``zabbix_agent``) import
 jinja2 and PyYAML only
 through :mod:`reemote.roles._render`, the single import site for them, which needs
 the ``reemote[templates]`` extra (§17.4). Nothing in this package pulls that module
@@ -67,6 +68,7 @@ from .repo_epel import EpelVars, repo_epel
 from .security import SecurityVars, security
 from .systemd import SystemdVars, UnitSpec, systemd
 from .users import DeletedUserSpec, GroupSpec, UserSpec, UsersVars, users
+from .zabbix_agent import ZabbixAgentVars, zabbix_agent
 
 __all__: list[str] = [
     "ApacheOutputs",
@@ -107,6 +109,7 @@ __all__: list[str] = [
     "UnitSpec",
     "UserSpec",
     "UsersVars",
+    "ZabbixAgentVars",
     "apache",
     "certbot",
     "composer",
@@ -134,4 +137,5 @@ __all__: list[str] = [
     "security",
     "systemd",
     "users",
+    "zabbix_agent",
 ]

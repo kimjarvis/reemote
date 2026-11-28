@@ -193,6 +193,7 @@ nav:
           - systemd: roles/systemd.md
           - glusterfs: roles/glusterfs.md
           - firewall: roles/firewall.md
+          - zabbix_agent: roles/zabbix_agent.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md
