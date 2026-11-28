@@ -3,17 +3,18 @@
 
 # """The Certbot role (migrated from ``geerlingguy.certbot``).
 #
-# Installs `Certbot <https://certbot.eff.org/>`_ on Ubuntu hosts and, when
-# configured, requests certificates (standalone or webroot method) and adds the
-# automatic-renewal cron entry. :func:`certbot` is the whole task list and
-# :class:`CertbotVars` is ``defaults/main.yml`` plus the ``vars/`` dispatch,
-# bound from the inventory entry's ``certbot`` role mapping by
-# :func:`~reemote.rolevars.resolve_vars`.
+# Installs `Certbot <https://certbot.eff.org/>`_ on Ubuntu and RHEL-family
+# hosts and, when configured, requests certificates (standalone or webroot
+# method) and adds the automatic-renewal cron entry. :func:`certbot` is the
+# whole task list and :class:`CertbotVars` is ``defaults/main.yml`` plus the
+# ``vars/`` dispatch, bound from the inventory entry's ``certbot`` role
+# mapping by :func:`~reemote.rolevars.resolve_vars`.
 #
-# Target: hosts in the ``"Ubuntu"`` OS family. A host outside the target family
-# returns before its first ``yield`` and emits no requests, no barriers and no
-# log lines at all -- which is also how the role's ``setup-RedHat.yml`` branch
-# (dnf-plugins-core, the ``crb`` repo) is dropped (deviation D3).
+# Target: hosts in the ``"Ubuntu"`` or ``"RedHat"`` OS family -- the two
+# families the role's task graph branches on (the apt/dnf package install and
+# ``setup-RedHat.yml``). A host outside both families (e.g. Alpine) returns
+# before its first ``yield`` and emits no requests, no barriers and no log
+# lines at all.
 #
 # The stream is one deploy body carrying ``fact`` gates and ``act`` barriers --
 # no checkpoint and no handler, because the role ships no ``handlers/main.yml``
@@ -21,8 +22,11 @@
 # count is ``2 + 2C`` (four with one cert, on a fresh host and on a converged
 # one alike); a host that only installs and schedules collapses to two waves.
 # The shape: one ``fact(LinuxDistribution)`` for the ``include_vars`` release
-# dispatch; the package-install request closed by the first cert's
-# ``fact(FileExists)`` gate; then per cert the hook-directory/hook-file
+# dispatch; on a RedHat host the ``setup-RedHat.yml`` pair comes first -- the
+# ``dnf-plugins-core`` request closed by the ``act(Shell, config-manager …
+# crb)`` barrier (D8, skipped on Fedora, which collapses the setup back into
+# the install wave); then the package-install request closed by the first
+# cert's ``fact(FileExists)`` gate; then per cert the hook-directory/hook-file
 # (standalone) or webroot-directory requests closed by the create action when
 # the cert is absent, or by the ``act(Shell, certificates ...)`` domain probe
 # (the role's ``changed_when: false`` read) with one further action wave when
@@ -37,15 +41,16 @@
 #   actions); the certificate ``stat`` stays unprivileged -- reemote's
 #   ``FileExists`` is a ``test -e``, and ``/etc/letsencrypt`` is world-readable.
 # * D2: the ``include_vars`` ``with_first_found`` dispatch becomes the
-#   ``fact(LinuxDistribution)`` barrier plus the frozen
-#   :data:`PACKAGE_BY_RELEASE` table (only ``Ubuntu-16.04.yml`` ships
-#   upstream); a gathered distribution that is not Ubuntu raises (the java
-#   precedent), because a barrier result is data and the raise is the role's.
+#   ``fact(LinuxDistribution)`` barrier plus per-family resolution (only
+#   ``vars/Ubuntu-16.04.yml`` ships upstream, so the release table is
+#   Ubuntu-only; every RedHat distribution reads ``vars/default.yml``'s
+#   ``certbot``): a gathered distribution outside the host's declared family
+#   raises (the java/repo_epel precedent), because a barrier result is data
+#   and the raise is the role's.
 # * D3: the snap and source install branches -- and with them
 #   ``certbot_repo``/``certbot_version``/``certbot_keep_updated``/
-#   ``certbot_dir`` and the RedHat setup -- are **rejected** at variable
-#   resolution or skipped by the family guard; only ``install_method: package``
-#   is migrated (the Phase 0 scope).
+#   ``certbot_dir`` -- are **rejected** at variable resolution; only
+#   ``install_method: package`` is migrated (the Phase 0 scope).
 # * D4: the two hook templates render as plain f-strings with the
 #   ``service_mgr`` branch frozen to ``systemctl`` (every Ubuntu the role
 #   supports runs systemd), and the ``{{ ansible_managed }}`` header becomes a
@@ -64,6 +69,15 @@
 # * D7: ``deploy_hook`` presence is "non-empty": an explicitly empty
 #   ``deploy_hook: ""`` skips the flag where the role's
 #   ``'deploy_hook' in cert_item`` would still emit ``--deploy-hook ''``.
+# * D8: ``setup-RedHat.yml`` maps task-for-task: the ``yum`` task becomes a
+#   ``dnf.packages`` request, and the ``shell: dnf config-manager
+#   --set-enabled crb`` task -- ``changed_when: false``, so the faithful
+#   mapping is an ``act`` barrier (a read that never logs a change) rather
+#   than a request, with the play's default failure semantics kept (a
+#   non-zero exit raises). The Fedora gate reads the gathered distribution
+#   ``name`` (Ansible's ``ansible_distribution``). Like upstream the step
+#   only enables ``crb`` (Rocky/Alma 9+, issue #107): RHEL 8's ``powertools``
+#   and the EPEL repository itself are not this role's job upstream either.
 # """
 
 from collections.abc import Generator
@@ -74,16 +88,25 @@ from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from ..actions import Shell
 from ..core import op
 from ..hosts import CommandError, Host
-from ..modules import apt, crontab, files
+from ..modules import apt, crontab, dnf, files
 from ..modules.files import FileExists
 from ..modules.server import LinuxDistribution
 from ..rolevars import VarsSet
 from ..stages import Deploy, StageItem, act, fact
 
-# --- role constants (defaults/main.yml + vars/*.yml, Ubuntu path only) --------
+# --- role constants (defaults/main.yml + vars/*.yml, both target families) ----
 
-#: ``vars/default.yml``'s ``certbot_package`` -- every Ubuntu release but 16.04.
+#: ``vars/default.yml``'s ``certbot_package`` -- every Ubuntu release but 16.04,
+#: and every RedHat distribution (no release-split vars file ships upstream).
 DEFAULT_PACKAGE = "certbot"
+
+#: ``setup-RedHat.yml`` task 1 (``yum: name=dnf-plugins-core``): provides
+#: ``dnf config-manager``, which task 2 shells.
+DNF_PLUGINS_PACKAGE = "dnf-plugins-core"
+
+#: ``setup-RedHat.yml`` task 2 verbatim (``shell:``, ``changed_when: false``);
+#: the ``when: ansible_distribution != 'Fedora'`` gate lives at the call site.
+CRB_ENABLE_COMMAND = "dnf config-manager --set-enabled crb"
 
 #: The ``include_vars`` dispatch table, frozen: only ``vars/Ubuntu-16.04.yml``
 #: differs upstream (deviation D2). Keys are ``VERSION_ID``-style releases.
@@ -290,12 +313,15 @@ def ubuntu_release(info: dict[str, Any]) -> str:
 
 
 def resolve_package(hv: CertbotVars, info: dict[str, Any]) -> str:
-    """The role's ``certbot_package`` (and its ``certbot_script`` set_fact).
+    """The role's ``certbot_package`` (and its ``certbot_script`` set_fact),
+    Ubuntu branch.
 
     An explicit :attr:`CertbotVars.package` wins; otherwise the frozen
     release table answers the ``include_vars`` dispatch (deviation D2). The
     package name *is* the script name on the package install path -- the
-    role's ``set_fact: certbot_script={{ certbot_package }}``.
+    role's ``set_fact: certbot_script={{ certbot_package }}``. RedHat hosts
+    take the same two steps without the release table (there is no
+    ``vars/RedHat*.yml`` upstream), which is :data:`DEFAULT_PACKAGE`.
     """
     if hv.package:
         return hv.package
@@ -518,6 +544,12 @@ def create_cert(script: str, hv: CertbotVars, cert: Cert) -> Deploy:
 def certbot(v: VarsSet[CertbotVars]) -> Deploy:
     """Install Certbot, issue configured certs, and schedule the renewal cron.
 
+    Covers both families the upstream role branches on: Ubuntu hosts get the
+    release-dispatched apt package, RedHat hosts first run ``setup-RedHat.yml``
+    (the ``dnf-plugins-core`` install and, on Rocky/AlmaLinux, the
+    ``crb`` enable) and then the dnf package install; everything after the
+    install -- certs, hooks, renewal cron -- is family-agnostic.
+
     Args:
         v: The role's resolved variables, one :class:`CertbotVars` per host
             (``resolve_vars(CertbotVars, "certbot", inventory)``).
@@ -531,31 +563,69 @@ def certbot(v: VarsSet[CertbotVars]) -> Deploy:
     Raises:
         ValueError: A role variable is invalid (raised by pydantic while the
             variables are resolved, before any host is contacted), the gathered
-            distribution is not Ubuntu or carries no readable release (right
-            after the ``LinuxDistribution`` barrier, so nothing is applied
-            yet), or ``auto_renew_user`` names a third user's crontab.
-        CommandError: A domain probe or a certificate-creation action exited
-            non-zero. Raised in the body from the barrier's own ``Result`` --
-            an ``act`` barrier never raises on a failing exit status, so the
-            check belongs to the role.
+            distribution does not match the host's declared Ubuntu/RedHat
+            family or carries no readable Ubuntu release (right after the
+            ``LinuxDistribution`` barrier, so nothing is applied yet), or
+            ``auto_renew_user`` names a third user's crontab.
+        CommandError: The ``dnf config-manager`` enable step, a domain probe
+            or a certificate-creation action exited non-zero. Raised in the
+            body from the barrier's own ``Result`` -- an ``act`` barrier never
+            raises on a failing exit status, so the check belongs to the role.
     """
 
     def deploy(host: Host) -> Generator[StageItem, Any]:
         hv = v.for_host(host)
-        if host.family != "Ubuntu":
+        if host.family not in ("Ubuntu", "RedHat"):
             return
 
         # Wave 0: the include_vars dispatch source (D2). This is also the only
         # proof the declared family matches the machine; both raise paths run
         # before any request is built, so nothing is half-applied.
         info = yield fact(LinuxDistribution)
-        script = resolve_package(hv, info)
+        if host.family == "Ubuntu":
+            script = resolve_package(hv, info)
+            installer = apt.packages
+        else:
+            if info.get("family") != "RedHat":
+                raise ValueError(
+                    f"{host.name}: declared RedHat family but the distribution "
+                    f"is {info.get('name')!r} (family {info.get('family')!r}) "
+                    "-- check the inventory family"
+                )
+            script = hv.package or DEFAULT_PACKAGE
+            # setup-RedHat.yml (D8), ahead of the install like upstream: the
+            # dnf-plugins-core request lands in this wave and the config-manager
+            # act barrier closes it, so the binary exists when the shell runs.
+            yield op(
+                dnf.packages,
+                name="Ensure dnf-plugins are installed on Rocky/AlmaLinux.",
+                packages=(DNF_PLUGINS_PACKAGE,),
+                sudo=True,
+            )
+            if info.get("name") != "Fedora":
+                # changed_when: false -- a re-runnable read, so an act barrier
+                # on every pass, but the shell task still fails the play.
+                result = yield act(
+                    Shell,
+                    command=CRB_ENABLE_COMMAND,
+                    name="Enable the CRB repository.",
+                    sudo=True,
+                )
+                if result["exit_status"] != 0:
+                    raise CommandError(
+                        host.name,
+                        CRB_ENABLE_COMMAND,
+                        result["exit_status"],
+                        result["stderr"],
+                    )
+            installer = dnf.packages
 
         # The install request and the per-cert creates accumulate until the
         # next barrier closes their wave; the package name is the script name
-        # (the role's set_fact).
+        # (the role's set_fact), and the role's generic ``package`` task
+        # becomes the family's own manager.
         yield op(
-            apt.packages,
+            installer,
             name="Install Certbot.",
             packages=(script,),
             sudo=True,

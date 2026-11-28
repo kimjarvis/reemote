@@ -7,8 +7,13 @@ The role is library code now, so it is imported (``from reemote.roles import
 ...``) and replayed against ``SimulatedHost`` through the real wave driver:
 ``run_waves(inventory, certbot(v), host_factory=...)``. The factory is a plain
 (non-``async``) function; the ``include_vars`` release dispatch is a per-host
-``fact(LinuxDistribution)`` barrier and the domain probe / certificate create
-are ``act(Shell)`` barriers inside the body.
+``fact(LinuxDistribution)`` barrier and the ``crb`` enable / domain probe /
+certificate create are ``act(Shell)`` barriers inside the body.
+
+Both target families run: the Ubuntu host rides the apt path, the Rocky host
+rides ``setup-RedHat.yml`` first (the ``dnf-plugins-core`` request closed by
+the ``config-manager`` act barrier, deviation D8), and the Alpine host is the
+off-target guard proof.
 
 The load-bearing assertion is the migration's idempotence claim: run the role,
 then run it *again* against the same persistent hosts, and the second pass must
@@ -32,8 +37,10 @@ import pytest
 from reemote import CommandError, run_waves
 from reemote.roles import Cert, CertbotVars, certbot
 from reemote.roles.certbot import (
+    CRB_ENABLE_COMMAND,
     CRON_NAME,
     DEFAULT_PACKAGE,
+    DNF_PLUGINS_PACKAGE,
     LIVE_DIR,
     PACKAGE_BY_RELEASE,
     POST_HOOK_PATH,
@@ -62,6 +69,9 @@ CERTS = [{"domains": list(DOMAINS)}]
 # carries the role's default standalone flags plus the nginx hook pair.
 PROBE_SHELL = f"sudo {domains_command(SCRIPT, CERT_NAME)}"
 CREATE_SHELL = f"sudo {create_command(SCRIPT, CertbotVars(), Cert(domains=DOMAINS), CERT_NAME)}"
+# The setup-RedHat.yml shell, sudo-prefixed like every act barrier (D8); the
+# dnf-packages task behind it is a request, not a shell seam entry.
+CRB_SHELL = f"sudo {CRB_ENABLE_COMMAND}"
 CREATE_NOHOOKS = (
     "sudo certbot certonly --standalone --noninteractive --agree-tos "
     "--email email@example.com --cert-name example.com "
@@ -132,34 +142,69 @@ def seed(host: SimulatedHost) -> None:
     host.ran_shells = []
 
 
-def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
-    """A two-host inventory: one Ubuntu target, one RedHat host that must be skipped.
+def seed_rocky(host: SimulatedHost) -> None:
+    """Pre-state: a Rocky Linux 9 machine, no dnf packages, no certs, no cron.
 
-    The role variables ride in the entry's ``roles`` mapping under
-    ``"certbot"``, bound by ``resolve_vars`` with bare field names.
+    The distribution seam answers the barrier with the RedHat family and a
+    non-Fedora ``name``, so the ``crb`` act barrier is reached; all three
+    shells (crb, probe, create) are seeded. The same script name --
+    ``vars/default.yml`` answers every RedHat distribution.
     """
-    entry: dict[str, Any] = {
-        "host": "ubuntu",
-        "family": "Ubuntu",
-        "connection": {
-            "address": "192.0.2.10",
-            "username": "supervisor",
-            "key_path": "~/.ssh/id_ed25519",
-        },
-        "group": "ubuntu",
-        "tags": ["ubuntu_host", "apt_package_manager"],
-        "roles": {"certbot": {}},
+    host.linux_distribution = {
+        "name": "Rocky",
+        "family": "RedHat",
+        "major": 9,
+        "minor": 4,
+        "release_meta": {"VERSION_ID": "9.4"},
     }
-    entry["roles"]["certbot"].update(overrides)
-    return [
-        entry,
+    host.shell_results = {
+        CRB_SHELL: dict(OK),
+        PROBE_SHELL: dict(PROBE_MATCH),
+        CREATE_SHELL: dict(OK),
+    }
+    host.ran_shells = []
+
+
+def make_inventory(
+    *, drop: tuple[str, ...] = (), **overrides: Any
+) -> list[dict[str, Any]]:
+    """A three-host inventory: Ubuntu and Rocky targets, one Alpine skip.
+
+    The role variables ride in each target entry's ``roles`` mapping under
+    ``"certbot"``, bound by ``resolve_vars`` with bare field names; the same
+    overrides apply to both targets so the family paths run side by side.
+    ``drop`` removes entries (a single-family test passes ``drop=(...)``).
+    """
+    roles = {"certbot": dict(overrides)}
+    entries: list[dict[str, Any]] = [
         {
-            "host": "web1",
+            "host": "ubuntu",
+            "family": "Ubuntu",
+            "connection": {
+                "address": "192.0.2.10",
+                "username": "supervisor",
+                "key_path": "~/.ssh/id_ed25519",
+            },
+            "group": "ubuntu",
+            "tags": ["ubuntu_host", "apt_package_manager"],
+            "roles": dict(roles),
+        },
+        {
+            "host": "rocky",
             "family": "RedHat",
             "connection": {"address": "192.0.2.11", "username": "admin"},
             "group": "centos",
+            "tags": ["rocky_host", "dnf_package_manager"],
+            "roles": dict(roles),
+        },
+        {
+            "host": "db1",
+            "family": "Alpine",
+            "connection": {"address": "192.0.2.12", "username": "root"},
+            "group": "alpine",
         },
     ]
+    return [entry for entry in entries if entry["host"] not in drop]
 
 
 def make_hosts(inventory: list[dict[str, Any]]) -> dict[str, CertbotSimulatedHost]:
@@ -169,6 +214,8 @@ def make_hosts(inventory: list[dict[str, Any]]) -> dict[str, CertbotSimulatedHos
         host = CertbotSimulatedHost.from_inventory(entry)
         if entry.get("family") == "Ubuntu":
             seed(host)
+        elif entry.get("family") == "RedHat":
+            seed_rocky(host)
         hosts[host.name] = host
     return hosts
 
@@ -208,11 +255,12 @@ def entry_names(report: Any) -> set[str]:
 
 
 async def test_first_pass_installs_creates_cert_and_cron():
-    """The full stream: apt install, hook dirs/files, create action, renew cron."""
+    """The full stream on both families: setup-RedHat, install, hooks, create, cron."""
     inventory = make_inventory(create_if_missing=True, certs=CERTS)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
     host = hosts["ubuntu"]
+    rocky = hosts["rocky"]
 
     # The package installed (the release table answered "certbot" for 22.04).
     assert DEFAULT_PACKAGE in host.apt_packages
@@ -240,6 +288,14 @@ async def test_first_pass_installs_creates_cert_and_cron():
     assert "Install Certbot." in entry_names(report)
     assert changed_entries(report)
 
+    # The RedHat path: setup-RedHat.yml ahead of the install (D8) -- the
+    # config-manager shell ran first, closing the dnf-plugins-core wave, and
+    # both dnf packages landed.
+    assert rocky.ran_shells[0] == CRB_SHELL
+    assert DNF_PLUGINS_PACKAGE in rocky.packages
+    assert DEFAULT_PACKAGE in rocky.packages
+    assert f"{SCRIPT} renew --quiet" in rocky.crontab_text
+
 
 async def test_second_pass_changes_nothing():
     """The idempotence claim: probe reads the (matching) domains, nothing changes."""
@@ -248,6 +304,7 @@ async def test_second_pass_changes_nothing():
     first = await run_role(inventory, hosts)
     assert changed_entries(first), "the first pass must actually deploy something"
     shells_after_first = list(hosts["ubuntu"].ran_shells)
+    rocky_shells_after_first = list(hosts["rocky"].ran_shells)
 
     second = await run_role(inventory, hosts)
     host = hosts["ubuntu"]
@@ -255,6 +312,10 @@ async def test_second_pass_changes_nothing():
     # The cert exists now, so the probe runs (a changed_when: false read) and
     # its domains match: no second create action.
     assert host.ran_shells == shells_after_first + [PROBE_SHELL]
+    # On RedHat the crb shell re-runs every pass -- upstream's shell task has
+    # no creates gate and changed_when: false marks it a read, so it changes
+    # nothing while the dnf requests report no delta either.
+    assert hosts["rocky"].ran_shells == rocky_shells_after_first + [CRB_SHELL, PROBE_SHELL]
 
 
 # --- the domain-drift branch ---------------------------------------------------
@@ -296,9 +357,10 @@ async def test_webroot_method_creates_directory_and_flags():
         create_if_missing=True, create_method="webroot", certs=CERTS
     )
     hosts = make_hosts(inventory)
-    host = hosts["ubuntu"]
     webroot_shell = f"sudo {create_command(SCRIPT, WEBROOT_VARS, WEBROOT_CERT, CERT_NAME)}"
-    host.shell_results[webroot_shell] = dict(OK)
+    for host in hosts.values():
+        host.shell_results[webroot_shell] = dict(OK)
+    host = hosts["ubuntu"]
 
     await run_role(inventory, hosts)
 
@@ -318,8 +380,9 @@ async def test_empty_hook_services_skips_hooks_and_flags():
         create_if_missing=True, create_standalone_stop_services=[], certs=CERTS
     )
     hosts = make_hosts(inventory)
+    for host in hosts.values():
+        host.shell_results[CREATE_NOHOOKS] = dict(OK)
     host = hosts["ubuntu"]
-    host.shell_results[CREATE_NOHOOKS] = dict(OK)
 
     await run_role(inventory, hosts)
 
@@ -383,21 +446,82 @@ async def test_third_renew_user_raises():
         await run_role(inventory, hosts)
 
 
+# --- the RedHat setup path (setup-RedHat.yml, D8) --------------------------------
+
+
+async def test_fedora_skips_the_crb_enable():
+    """The upstream ``when: ansible_distribution != 'Fedora'`` gate, on name."""
+    inventory = make_inventory(drop=("ubuntu", "db1"))
+    hosts = make_hosts(inventory)
+    rocky = hosts["rocky"]
+    rocky.linux_distribution = {
+        "name": "Fedora",
+        "family": "RedHat",
+        "major": 42,
+        "minor": None,
+        "release_meta": {"VERSION_ID": "42"},
+    }
+
+    await run_role(inventory, hosts)
+
+    # The unseeded crb shell would raise if the gate were missing; both dnf
+    # packages still land, and no create ran (create_if_missing is off).
+    assert CRB_SHELL not in rocky.ran_shells
+    assert DNF_PLUGINS_PACKAGE in rocky.packages
+    assert DEFAULT_PACKAGE in rocky.packages
+
+
+async def test_declared_family_mismatch_raises():
+    """A RedHat-declared host whose machine is Debian-family raises (D2)."""
+    inventory = make_inventory(drop=("ubuntu", "db1"))
+    hosts = make_hosts(inventory)
+    hosts["rocky"].linux_distribution = {
+        "name": "Debian",
+        "family": "Debian",
+        "major": 12,
+        "minor": 0,
+        "release_meta": {"VERSION_ID": "12"},
+    }
+
+    with pytest.raises(ValueError, match="declared RedHat family"):
+        await run_role(inventory, hosts)
+    # The raise is after the fact barrier and before any request.
+    assert hosts["rocky"].packages == {}
+
+
+async def test_crb_failure_raises_command_error():
+    """The shell task keeps the play's failure semantics: a non-zero exit raises."""
+    inventory = make_inventory(drop=("ubuntu", "db1"))
+    hosts = make_hosts(inventory)
+    hosts["rocky"].shell_results[CRB_SHELL] = {
+        "exit_status": 1,
+        "stdout": "",
+        "stderr": "Error: No such repo: crb",
+    }
+
+    with pytest.raises(CommandError, match="config-manager"):
+        await run_role(inventory, hosts)
+    # The failed barrier still closed the dnf-plugins-core wave; the certbot
+    # install and everything after it never happened.
+    assert hosts["rocky"].packages.get(DEFAULT_PACKAGE) is None
+
+
 # --- family guard and dry preview -------------------------------------------------
 
 
-async def test_non_ubuntu_host_is_never_touched():
+async def test_off_target_host_is_never_touched():
     inventory = make_inventory(create_if_missing=True, certs=CERTS)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
-    skipped = hosts["web1"]
+    skipped = hosts["db1"]
     assert skipped.apt_packages == {}
+    assert skipped.packages == {}
     assert skipped.crontab_text == ""
     assert skipped.ran_shells == []
     # The family guard returns before the first yield, so the off-target host
     # emits no log entry at all.
-    assert not any(entry.host == "web1" for entry in report.merged().log)
+    assert not any(entry.host == "db1" for entry in report.merged().log)
 
 
 async def test_dry_preview_mutates_nothing():
@@ -405,12 +529,18 @@ async def test_dry_preview_mutates_nothing():
     inventory = make_inventory(create_if_missing=True, certs=CERTS)
     hosts = make_hosts(inventory)
     host = hosts["ubuntu"]
+    rocky = hosts["rocky"]
 
     await run_role(inventory, hosts, dry=True)
     assert host.apt_packages == {}
     assert host.remote_files == {}
     assert host.ran_shells == []
     assert host.crontab_text == ""
+    # The RedHat host parks at the same first barrier: no setup request, no
+    # config-manager shell.
+    assert rocky.packages == {}
+    assert rocky.ran_shells == []
+    assert rocky.crontab_text == ""
 
 
 # --- the pure helpers, unit-tested directly ----------------------------------------

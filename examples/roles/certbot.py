@@ -24,10 +24,10 @@ no framework:
    own ``false`` (install and renewal cron only).
 3. Build the deploy -- ``certbot(vars_set)`` is the role's whole task list, one
    per-host generator -- and drive it with ``run_waves``, the barrier-aware
-   driver a role needs: the ``include_vars`` release dispatch, the certificate
-   ``stat`` gate and the domain-probe/cert-issuing actions are barriers
-   *inside* the body, not separate ``run()`` calls. ``run_waves`` owns the host
-   connections and closes them itself.
+   driver a role needs: the ``include_vars`` release dispatch, the RedHat
+   ``crb`` enable, the certificate ``stat`` gate and the domain-probe /
+   cert-issuing actions are barriers *inside* the body, not separate ``run()``
+   calls. ``run_waves`` owns the host connections and closes them itself.
 
 Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
 and never touches the network -- this example uses the *default* factory
@@ -57,25 +57,29 @@ certs first). The target needs network egress to the ACME endpoint; ``certbot
 certonly --standalone`` binds port 80, so a web server on the host must be
 stopnable by the pre/post hooks (that is what the configured
 ``create_standalone_stop_services`` list is for -- switch ``create_method`` to
-``webroot`` to leave it serving). SSH access to each Ubuntu host with
+``webroot`` to leave it serving; on RHEL-family hosts set it to ``httpd`` if
+that is what serves). SSH access to each Ubuntu or RedHat host with
 passwordless sudo (or a ``privilege`` section in the inventory): every
 elevated request carries ``sudo=True``, because reemote has no play-level
-``become``.
+``become``. On RedHat hosts the role first runs the upstream
+``setup-RedHat.yml`` pair (install ``dnf-plugins-core``, enable the ``crb``
+repo on Rocky/AlmaLinux); the ``certbot`` RPM itself comes from EPEL, so
+compose with the ``repo_epel`` role or enable the repo beforehand.
 
 ``main`` drives the deploy twice, exactly like an operation example: a
 ``dry=True`` preview first, then the real apply. The dry pass is one wave deep
--- and because the role's very first item is the ``LinuxDistribution`` fact
-that answers the ``include_vars`` release dispatch, it parks there (``barrier:
-LinuxDistribution -> unknown until run``), reading nothing and applying
-nothing. A converged rerun is the honest preview: run the whole program a
-second time and it reports no change, because the package is installed, the
-hooks match, every configured certificate exists with the domains it was
-issued with (the probe re-runs but is a read), and the cron entry is in the
-table.
+-- and because the role's very first item (on both families) is the
+``LinuxDistribution`` fact that answers the ``include_vars`` release dispatch,
+it parks there (``barrier: LinuxDistribution -> unknown until run``), reading
+nothing and applying nothing. A converged rerun is the honest preview: run the
+whole program a second time and it reports no change, because the package is
+installed, the hooks match, every configured certificate exists with the
+domains it was issued with (the probe re-runs but is a read), and the cron
+entry is in the table.
 
-Hosts outside the ``"Ubuntu"`` family emit nothing at all -- the role's family
-guard is its body's opening ``if``, so such a host returns before its first
-``yield`` and appears in no wave.
+Hosts outside the ``"Ubuntu"`` and ``"RedHat"`` families emit nothing at all --
+the role's family guard is its body's opening ``if``, so such a host returns
+before its first ``yield`` and appears in no wave.
 """
 
 import asyncio
@@ -151,19 +155,20 @@ async def main() -> None:
     except (ValueError, TypeError) as exc:
         # A rejected role variable (pydantic's ValidationError and a RoleVarsError
         # for an unknown key in the certbot mapping are both a ValueError), or
-        # the role body's own hard error: a gathered distribution that is not
-        # Ubuntu, an unreadable release, or an auto_renew_user naming a third
-        # user's crontab. The first kind is raised before any request runs, so
-        # nothing is half-applied.
+        # the role body's own hard error: a gathered distribution that does not
+        # match the host's declared Ubuntu/RedHat family, an unreadable Ubuntu
+        # release, or an auto_renew_user naming a third user's crontab. The
+        # first kind is raised before any request runs, so nothing is
+        # half-applied.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     except (CommandError, HostConnectionError, PrivilegeError) as exc:
         # The library already reports every host-level failure as a typed error
         # whose message names the host and the failing command -- including a
-        # domain probe or a certonly action that exited non-zero, which the
-        # role raises as a CommandError from the barrier's own Result. Print
-        # that message -- no traceback -- and exit non-zero so the failure
-        # stays script-visible.
+        # ``dnf config-manager`` enable step, a domain probe or a certonly
+        # action that exited non-zero, which the role raises as a CommandError
+        # from the barrier's own Result. Print that message -- no traceback --
+        # and exit non-zero so the failure stays script-visible.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
 

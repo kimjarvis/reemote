@@ -109,7 +109,7 @@ and outputs.
 | [security](security.md) | SSH and host hardening — the `sshd_config` directives and access lists, the sudoers loops, Fail2Ban and unattended-upgrades |
 | [clamav](clamav.md) | ClamAV — the antivirus packages, the install-gated `freshclam` run, the `clamd.conf` edits, both units and one restart handler |
 | [firewall](firewall.md) | iptables firewall — the once-per-machine flush gate, the rendered `/etc/firewall.bash` script and its unit, service state, one restart handler |
-| [certbot](certbot.md) | Certbot — the release-dispatched package, the configured certificates (standalone or webroot) and the renewal cron entry |
+| [certbot](certbot.md) | Certbot — the family's package install (apt by release, or dnf behind the RedHat `crb` setup), the configured certificates (standalone or webroot) and the renewal cron entry |
 | [htpasswd](htpasswd.md) | htpasswd — the Apache utilities and `name:hash` entries in root-owned password files, merged by a verify-then-keep read with control-side `$apr1$`/`{SHA}` hashing |
 
 ### Accounts
@@ -147,7 +147,7 @@ and outputs.
 | [pip](pip.md) | [`geerlingguy.pip`](https://github.com/geerlingguy/ansible-role-pip) | Ubuntu | 2 | none | no | 1 |
 | [git](git.md) | [`geerlingguy.git`](https://github.com/geerlingguy/ansible-role-git) | Ubuntu | 1 | none | no | 1 |
 | [security](security.md) | [`geerlingguy.security`](https://github.com/geerlingguy/ansible-role-security) | Ubuntu | 2 changed / 1 converged | none | no | 1 |
-| [certbot](certbot.md) | [`geerlingguy.certbot`](https://github.com/geerlingguy/ansible-role-certbot) | Ubuntu | `2 + 2C` (`C` certs); 2 install-only | none | no | 1 |
+| [certbot](certbot.md) | [`geerlingguy.certbot`](https://github.com/geerlingguy/ansible-role-certbot) | Ubuntu, RedHat | `2 + 2C` (`C` certs; Fedora too), `3 + 2C` Rocky/Alma; 2–3 install-only | none | no | 1 |
 | [redis](redis.md) | [`geerlingguy.redis`](https://github.com/geerlingguy/ansible-role-redis) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
 | [users](users.md) | [`singleplatform-eng/ansible-users`](https://github.com/singleplatform-eng/ansible-users) | Ubuntu | exactly 1 (`2` under the `on_create` gate) | none | no | 1 |
 | [hosts](hosts.md) | [`ajsalminen/ansible-role-hosts`](https://github.com/ajsalminen/ansible-role-hosts) | Ubuntu | 2 (1 with a content override) | none | no | 1 |
@@ -269,10 +269,13 @@ The template role, and the one whose wave count is host-dependent.
   `reload systemd`, `restart ssh` and `reload fail2ban`. The one-checkpoint, three
   channel case: a single `changed_hosts` report read three times, and ten edits of
   one file composing inside a single wave.
-- **[certbot](certbot.md)** — the release-dispatched package, the configured
-  certificates (standalone with its `systemctl` pre/post hooks, or webroot) and
-  the renewal cron entry. The most barrier-dense role without a checkpoint: a
-  `stat` gate and probe/create action gates per cert, all in one stream.
+- **[certbot](certbot.md)** — the family's package install (the release-
+  dispatched apt package, or dnf behind the `setup-RedHat.yml` pair — the
+  `dnf-plugins-core` request closed by the `crb` enable act barrier), the
+  configured certificates (standalone with its `systemctl` pre/post hooks, or
+  webroot) and the renewal cron entry. The most barrier-dense role without a
+  checkpoint: a `stat` gate and probe/create action gates per cert, all in one
+  stream.
 - **[redis](redis.md)** — the setgid `/etc/redis` directory, the rendered
   `/etc/redis/redis.conf`, the package, the service, one restart handler. The
   Debian-ordering case: the config requests precede the package install inside
