@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships thirty-seven configuration roles as **library code**. Each one is the
+reemote ships thirty-eight configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The thirty-seven roles group by what they configure. The [catalogue](#the-catalogue)
+The thirty-eight roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -74,6 +74,7 @@ and outputs.
 | [git](git.md) | Git — the apt-cache refresh and the `git_packages` install, as one request |
 | [kubectl](kubectl.md) | kubectl — the checksum-pinned release binary, installed version-suffixed with the bare name symlinked beside it |
 | [mailhog](mailhog.md) | MailHog — the two release binaries downloaded into `/opt/mailhog` and the started, enabled `mailhog.service` unit |
+| [supervisor](supervisor.md) | Supervisor — the pip-installed `supervisor` package, the `0755` log/config directories, the rendered `supervisord.conf`, the present/absent program `conf.d` files, the rendered systemd unit, and one restart handler |
 
 ### Vendor repositories and platforms
 
@@ -158,6 +159,7 @@ and outputs.
 | [apache_php_fpm](apache_php_fpm.md) | [`geerlingguy.apache-php-fpm`](https://github.com/geerlingguy/ansible-role-apache-php-fpm) | Ubuntu | 2 fresh / 1 converged | none | no | 1 |
 | [clamav](clamav.md) | [`geerlingguy.clamav`](https://github.com/geerlingguy/ansible-role-clamav) | Ubuntu | 4 fresh / 2 converged | none | no | 1 |
 | [mailhog](mailhog.md) | [`geerlingguy.mailhog`](https://github.com/geerlingguy/ansible-role-mailhog) | Ubuntu | exactly 2 | none | no | 1 |
+| [supervisor](supervisor.md) | [`geerlingguy.supervisor`](https://github.com/geerlingguy/ansible-role-supervisor) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
 
 ## Reading the columns
 
@@ -173,10 +175,11 @@ and outputs.
   `PhpOutputs` — the PHP version and extension paths it used to carry as a copied
   constant. Every other role returns `None`, and does so on its family-guard's
   early return too.
-- **`reemote[templates]`** is needed by the thirteen roles that render configuration
+- **`reemote[templates]`** is needed by the fourteen roles that render configuration
   through Jinja2 or PyYAML — `apache`, `datadog`, `elasticsearch`, `firewall`,
   `kibana`,
-  `memcached`, `minio`, `nginx`, `ntp`, `postgresql`, `redis`, `systemd` and
+  `memcached`, `minio`, `nginx`, `ntp`, `postgresql`, `redis`, `supervisor`,
+  `systemd` and
   `zabbix_agent`, the list
   [`reemote.roles._render`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/_render.py)
   exists to carry. The others render in plain Python — `json.dumps`, an f-string, a
@@ -365,6 +368,16 @@ and outputs.
   between the role's two published Linux archives, five requests follow in the
   second wave, and a converged rerun re-fetches both URLs to compare content
   while issuing no reload at all.
+
+- **[supervisor](supervisor.md)** — the pip-installed `supervisor` package
+  (optionally pinned), the `0755` log and config directories, the rendered
+  `supervisord.conf` with its `{SHA}`-hashed password, the program `conf.d`
+  files in both directions, the rendered systemd unit, and one restart
+  handler. The two-service-tasks-as-one case: `state: started` and
+  `enabled: true`, each behind its own `when:`, collapse into a single
+  `systemd.service` request whose false gates are the `None` sentinels — and
+  the handler keeps the upstream `when: supervisor_started` as a body-level
+  check, so a `started: false` host configures but never restarts.
 
 ## Running one
 

@@ -204,6 +204,7 @@ nav:
           - apache_php_fpm: roles/apache_php_fpm.md
           - clamav: roles/clamav.md
           - mailhog: roles/mailhog.md
+          - supervisor: roles/supervisor.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md

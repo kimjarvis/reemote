@@ -25,7 +25,7 @@ import postgresql as pg``). ``tests/roles/test_exports.py`` pins both facts.
 
 The template-rendering roles (``apache``, ``datadog``, ``elasticsearch``,
 ``firewall``, ``kibana``, ``memcached``, ``minio``, ``nginx``, ``ntp``,
-``postgresql``, ``redis``, ``systemd``, ``zabbix_agent``) import
+``postgresql``, ``redis``, ``supervisor``, ``systemd``, ``zabbix_agent``) import
 jinja2 and PyYAML only through :mod:`reemote.roles._render`, the single import
 site for them, which needs the ``reemote[templates]`` extra (§17.4). Nothing in
 this package pulls that module in at import time, so ``import reemote.roles``
@@ -75,6 +75,7 @@ from .redis import RedisVars, redis
 from .repo_epel import EpelVars, repo_epel
 from .repo_remi import RemiVars, repo_remi
 from .security import SecurityVars, security
+from .supervisor import Program, SupervisorVars, supervisor
 from .swap import SwapVars, swap
 from .systemd import SystemdVars, UnitSpec, systemd
 from .users import DeletedUserSpec, GroupSpec, UserSpec, UsersVars, users
@@ -124,9 +125,11 @@ __all__: list[str] = [
     "PipPackage",
     "PipVars",
     "PostgresqlVars",
+    "Program",
     "RedisVars",
     "RemiVars",
     "SecurityVars",
+    "SupervisorVars",
     "SwapVars",
     "SystemdVars",
     "UnitSpec",
@@ -167,6 +170,7 @@ __all__: list[str] = [
     "repo_epel",
     "repo_remi",
     "security",
+    "supervisor",
     "swap",
     "systemd",
     "users",
