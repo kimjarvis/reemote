@@ -196,6 +196,7 @@ nav:
           - zabbix_agent: roles/zabbix_agent.md
           - swap: roles/swap.md
           - minio: roles/minio.md
+          - repo_remi: roles/repo_remi.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md

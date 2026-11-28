@@ -66,6 +66,7 @@ from .pip import PipPackage, PipVars, pip
 from .postgresql import PostgresqlVars, postgresql, postgresql_data
 from .redis import RedisVars, redis
 from .repo_epel import EpelVars, repo_epel
+from .repo_remi import RemiVars, repo_remi
 from .security import SecurityVars, security
 from .swap import SwapVars, swap
 from .systemd import SystemdVars, UnitSpec, systemd
@@ -108,6 +109,7 @@ __all__: list[str] = [
     "PipVars",
     "PostgresqlVars",
     "RedisVars",
+    "RemiVars",
     "SecurityVars",
     "SwapVars",
     "SystemdVars",
@@ -140,6 +142,7 @@ __all__: list[str] = [
     "postgresql_data",
     "redis",
     "repo_epel",
+    "repo_remi",
     "security",
     "swap",
     "systemd",

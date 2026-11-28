@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships twenty-nine configuration roles as **library code**. Each one is the
+reemote ships thirty-one configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The twenty-nine roles group by what they configure. The [catalogue](#the-catalogue)
+The thirty-one roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -77,6 +77,7 @@ and outputs.
 | Role | Purpose |
 | --- | --- |
 | [repo_epel](repo_epel.md) | EPEL — installs the repository package and flips `enabled=` in the `[epel]` section alone |
+| [repo_remi](repo_remi.md) | Remi — imports the vendor key and installs the release RPM; the repository ships disabled for per-transaction `--enablerepo=remi` use |
 | [docker](docker.md) | Docker CE — the vendor repository with its URL-signed keyring, the edition packages, `daemon.json`, the service, the `docker_users` memberships |
 | [datadog](datadog.md) | Datadog agent — the signing keys and repository, the package, `/etc/datadog-agent`, `conf.d` checks, two restart handlers |
 | [zabbix_agent](zabbix_agent.md) | Zabbix agent — the vendor keyring and repository lines with their stale-source purge, the agent packages, the rendered `zabbix_agentd.conf`, the service, one restart handler |
@@ -114,6 +115,7 @@ and outputs.
 | Role | Migrates | Target | Waves | Outputs | `reemote[templates]` | `run_waves` passes |
 | --- | --- | --- | --- | --- | --- | --- |
 | [repo_epel](repo_epel.md) | [`geerlingguy.repo-epel`](https://github.com/geerlingguy/ansible-role-repo-epel) | RedHat | 3–4 | none | no | 1 |
+| [repo_remi](repo_remi.md) | [`geerlingguy.repo-remi`](https://github.com/geerlingguy/ansible-role-repo-remi) | RedHat | 3–4 | none | no | 1 |
 | [apache](apache.md) | [`geerlingguy.apache`](https://github.com/geerlingguy/ansible-role-apache) | Ubuntu | 3 + one per SSL vhost | `ApacheOutputs(version, service)` | **yes** | 1 |
 | [php](php.md) | [`geerlingguy.php`](https://github.com/geerlingguy/ansible-role-php) | Ubuntu | 12 fresh / 11 converged | `PhpOutputs(version, extension_conf_paths, webserver_notified)` | no | 1 |
 | [php_xdebug](php_xdebug.md) | [`geerlingguy.php-xdebug`](https://github.com/geerlingguy/ansible-role-php-xdebug) | Ubuntu (php's guard) | 15 fresh / 13 converged | none | no | 1 |
@@ -294,6 +296,10 @@ and outputs.
   policies/users and `mc mirror` units. The `act`-heavy role: every imperative
   `mc` shell is a command barrier whose result is data, so the wave count grows
   with the provisioning lists.
+- **[repo_remi](repo_remi.md)** — installs Remi's RPM repository: the pinned-id
+  GPG key import, then the staged release RPM install. The EPEL twin minus the
+  configure stage: two `fact` barriers and a `control` fetch, no checkpoint, and
+  a converged host emits no request at all.
 
 ## Running one
 
@@ -317,9 +323,10 @@ The inventory entry's `family` decides what happens. Each role's body opens with
 the OS guard — `if host.family != "Ubuntu": return …` — so a host on another
 family emits no requests, no barriers and no report lines at all rather than
 failing on the first `apt` call. The `family` field is a declaration the role
-trusts. Seven roles read `fact(LinuxDistribution)` for their own reasons —
-`certbot`, `docker`, `java`, `ntp`, `php`, `postgresql`, `repo_epel` — and
-`certbot`, `java`, `ntp`, `postgresql` and `repo_epel` treat that read as the check
+trusts. Eight roles read `fact(LinuxDistribution)` for their own reasons —
+`certbot`, `docker`, `java`, `ntp`, `php`, `postgresql`, `repo_epel`, `repo_remi` —
+and `certbot`, `java`, `ntp`, `postgresql`, `repo_epel` and `repo_remi` treat that
+read as the check
 that the machine matches the declaration, raising before any request is built
 when it does not.
 
