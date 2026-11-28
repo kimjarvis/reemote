@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships thirty-five configuration roles as **library code**. Each one is the
+reemote ships thirty-six configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The thirty-five roles group by what they configure. The [catalogue](#the-catalogue)
+The thirty-six roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -40,6 +40,7 @@ and outputs.
 | Role | Purpose |
 | --- | --- |
 | [apache](apache.md) | Apache httpd — ports, module and conf symlinks, rendered vhosts and enable links, service state, one restart handler |
+| [apache_php_fpm](apache_php_fpm.md) | Apache PHP-FPM — the `proxy.load`/`proxy_fcgi.load` enable symlinks and the gated `restart apache` handler |
 | [nginx](nginx.md) | nginx — the optional official PPA, vhosts, a `nginx -t`-validated `nginx.conf`, service state, two handler channels |
 | [php](php.md) | PHP — packages, `php.ini` in every conf path, FPM pools, the `restart webserver` → `restart php-fpm` handler chain |
 | [php_versions](php_versions.md) | PHP versions — the Sury repository, the purge of every other version, and the version-keyed paths the `php` role installs from |
@@ -153,6 +154,7 @@ and outputs.
 | [repo_remi](repo_remi.md) | [`geerlingguy.repo-remi`](https://github.com/geerlingguy/ansible-role-repo-remi) | RedHat | 3–4 | none | no | 1 |
 | [elasticsearch](elasticsearch.md) | [`geerlingguy.elasticsearch`](https://github.com/geerlingguy/ansible-role-elasticsearch) | Ubuntu | 2 changed / 2 converged (the wait always reports) | none | **yes** | 1 |
 | [node_exporter](node_exporter.md) | [`geerlingguy.node_exporter`](https://github.com/geerlingguy/ansible-role-node_exporter) | Ubuntu | 3 fresh (4 resolving `latest`) / 3 converged | none | no | 1 |
+| [apache_php_fpm](apache_php_fpm.md) | [`geerlingguy.apache-php-fpm`](https://github.com/geerlingguy/ansible-role-apache-php-fpm) | Ubuntu | 2 fresh / 1 converged | none | no | 1 |
 | [clamav](clamav.md) | [`geerlingguy.clamav`](https://github.com/geerlingguy/ansible-role-clamav) | Ubuntu | 4 fresh / 2 converged | none | no | 1 |
 
 ## Reading the columns
@@ -341,6 +343,12 @@ and outputs.
   the `checkpoint` reads the notification, and a `fact` verifies the running
   exporter — so the wave count moves with the host and the converged pass
   carries no download request rather than an unchanged one.
+- **[apache_php_fpm](apache_php_fpm.md)** — the two `mods-available` →
+  `mods-enabled` proxy symlinks and the checkpoint-gated `restart apache`
+  handler. The corpus's smallest role — upstream `tasks/main.yml` is one
+  two-item `file` loop and nothing else — and the most wave-dependent one: a
+  converged host's tree collapses to a single wave, because the handler yields
+  no request and its wave is never appended.
 - **[clamav](clamav.md)** — the `clamav` package trio, the install-gated
   `freshclam` run, the two `clamd.conf` edits with their mode companion, the
   optional `freshclam.conf` edits, both unit states, one restart handler. The

@@ -201,6 +201,7 @@ nav:
           - kibana: roles/kibana.md
           - elasticsearch: roles/elasticsearch.md
           - node_exporter: roles/node_exporter.md
+          - apache_php_fpm: roles/apache_php_fpm.md
           - clamav: roles/clamav.md
 #  - Examples:
 #      - Overview: examples.md

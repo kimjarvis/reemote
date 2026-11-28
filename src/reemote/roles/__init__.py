@@ -43,6 +43,7 @@ stays in lockstep with the role modules on disk.
 """
 
 from .apache import ApacheOutputs, ApacheVars, apache
+from .apache_php_fpm import ApachePhpFpmVars, apache_php_fpm
 from .certbot import Cert, CertbotVars, certbot
 from .clamav import ClamavVars, ConfigChange, clamav
 from .composer import ComposerVars, composer
@@ -80,6 +81,7 @@ from .zabbix_agent import ZabbixAgentVars, zabbix_agent
 
 __all__: list[str] = [
     "ApacheOutputs",
+    "ApachePhpFpmVars",
     "ApacheVars",
     "Cert",
     "CertbotVars",
@@ -130,6 +132,7 @@ __all__: list[str] = [
     "UsersVars",
     "ZabbixAgentVars",
     "apache",
+    "apache_php_fpm",
     "certbot",
     "clamav",
     "composer",
