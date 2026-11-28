@@ -58,6 +58,7 @@ from .hosts import HostsEntry, HostsVars, hosts
 from .java import JavaVars, java
 from .kibana import KibanaVars, kibana
 from .kubectl import KubectlChecksum, KubectlVars, kubectl
+from .mailhog import MailhogVars, mailhog
 from .memcached import MemcachedVars, memcached
 from .minio import MinioOutputs, MinioVars, minio
 from .nfs import NfsVars, nfs
@@ -105,6 +106,7 @@ __all__: list[str] = [
     "KibanaVars",
     "KubectlChecksum",
     "KubectlVars",
+    "MailhogVars",
     "MemcachedVars",
     "MinioOutputs",
     "MinioVars",
@@ -147,6 +149,7 @@ __all__: list[str] = [
     "java",
     "kibana",
     "kubectl",
+    "mailhog",
     "memcached",
     "minio",
     "nfs",

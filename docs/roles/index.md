@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships thirty-six configuration roles as **library code**. Each one is the
+reemote ships thirty-seven configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The thirty-six roles group by what they configure. The [catalogue](#the-catalogue)
+The thirty-seven roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -73,6 +73,7 @@ and outputs.
 | [drush](drush.md) | Drush — the launcher phar and its executable bit |
 | [git](git.md) | Git — the apt-cache refresh and the `git_packages` install, as one request |
 | [kubectl](kubectl.md) | kubectl — the checksum-pinned release binary, installed version-suffixed with the bare name symlinked beside it |
+| [mailhog](mailhog.md) | MailHog — the two release binaries downloaded into `/opt/mailhog` and the started, enabled `mailhog.service` unit |
 
 ### Vendor repositories and platforms
 
@@ -156,6 +157,7 @@ and outputs.
 | [node_exporter](node_exporter.md) | [`geerlingguy.node_exporter`](https://github.com/geerlingguy/ansible-role-node_exporter) | Ubuntu | 3 fresh (4 resolving `latest`) / 3 converged | none | no | 1 |
 | [apache_php_fpm](apache_php_fpm.md) | [`geerlingguy.apache-php-fpm`](https://github.com/geerlingguy/ansible-role-apache-php-fpm) | Ubuntu | 2 fresh / 1 converged | none | no | 1 |
 | [clamav](clamav.md) | [`geerlingguy.clamav`](https://github.com/geerlingguy/ansible-role-clamav) | Ubuntu | 4 fresh / 2 converged | none | no | 1 |
+| [mailhog](mailhog.md) | [`geerlingguy.mailhog`](https://github.com/geerlingguy/ansible-role-mailhog) | Ubuntu | exactly 2 | none | no | 1 |
 
 ## Reading the columns
 
@@ -356,6 +358,13 @@ and outputs.
   `notify` trio is one `act` barrier whose `Result` the body interprets — and
   whose successful run queues the restart itself, because a barrier is not a
   request.
+- **[mailhog](mailhog.md)** — the MailHog and mhsendmail release binaries
+  downloaded into `/opt/mailhog`, the f-string-rendered `mailhog.service`
+  unit, started and enabled with the state-gated `daemon-reload`. The sibling
+  of `kubectl` without the checksum table: one `fact(server.Arch)` gate picks
+  between the role's two published Linux archives, five requests follow in the
+  second wave, and a converged rerun re-fetches both URLs to compare content
+  while issuing no reload at all.
 
 ## Running one
 
