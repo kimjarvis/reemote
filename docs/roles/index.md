@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships forty configuration roles as **library code**. Each one is the
+reemote ships forty-one configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The forty roles group by what they configure. The [catalogue](#the-catalogue)
+The forty-one roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -107,6 +107,7 @@ and outputs.
 | [clamav](clamav.md) | ClamAV — the antivirus packages, the install-gated `freshclam` run, the `clamd.conf` edits, both units and one restart handler |
 | [firewall](firewall.md) | iptables firewall — the once-per-machine flush gate, the rendered `/etc/firewall.bash` script and its unit, service state, one restart handler |
 | [certbot](certbot.md) | Certbot — the release-dispatched package, the configured certificates (standalone or webroot) and the renewal cron entry |
+| [htpasswd](htpasswd.md) | htpasswd — the `apache2-utils` install and each managed file's merged `name:hash` lines, converged through a `FileContents` barrier |
 
 ### Accounts
 
@@ -163,6 +164,7 @@ and outputs.
 | [clamav](clamav.md) | [`geerlingguy.clamav`](https://github.com/geerlingguy/ansible-role-clamav) | Ubuntu | 4 fresh / 2 converged | none | no | 1 |
 | [mailhog](mailhog.md) | [`geerlingguy.mailhog`](https://github.com/geerlingguy/ansible-role-mailhog) | Ubuntu | exactly 2 | none | no | 1 |
 | [supervisor](supervisor.md) | [`geerlingguy.supervisor`](https://github.com/geerlingguy/ansible-role-supervisor) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
+| [htpasswd](htpasswd.md) | [geerlingguy.htpasswd](https://github.com/geerlingguy/ansible-role-htpasswd) | Ubuntu | `1 + P` (`P` credential paths); 1 install-only | none | no | 1 |
 | [daemonize](daemonize.md) | [`geerlingguy.daemonize`](https://github.com/geerlingguy/ansible-role-daemonize) | Ubuntu | 2 fresh / 1 converged | none | no | 1 |
 
 ## Reading the columns
@@ -387,6 +389,13 @@ and outputs.
   `systemd.service` request whose false gates are the `None` sentinels — and
   the handler keeps the upstream `when: supervisor_started` as a body-level
   check, so a `started: false` host configures but never restarts.
+
+* **htpasswd** — migrates `geerlingguy.htpasswd`: it installs the
+  Apache utilities, reads each managed file back through a `FileContents`
+  barrier, merges the configured credentials control-side — a line whose
+  stored hash already verifies the desired password is reproduced verbatim,
+  so random salts converge — and writes the result through spool-and-install
+  with a `files.file` metadata companion.
 - **[daemonize](daemonize.md)** — the `build-essential` toolchain the role's README
   names as a prerequisite, the release tarball extracted into the workspace behind
   Ansible's `creates:` gate, and — only on a host where the binary is not already

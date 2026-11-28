@@ -56,6 +56,7 @@ from .firewall import FirewallVars, ForwardedPort, firewall
 from .git import GitVars, git
 from .glusterfs import GlusterfsVars, glusterfs
 from .hosts import HostsEntry, HostsVars, hosts
+from .htpasswd import HtpasswdCredential, HtpasswdVars, htpasswd
 from .java import JavaVars, java
 from .kibana import KibanaVars, kibana
 from .kubectl import KubectlChecksum, KubectlVars, kubectl
@@ -107,6 +108,8 @@ __all__: list[str] = [
     "GroupSpec",
     "HostsEntry",
     "HostsVars",
+    "HtpasswdCredential",
+    "HtpasswdVars",
     "JavaVars",
     "KibanaVars",
     "KubectlChecksum",
@@ -155,6 +158,7 @@ __all__: list[str] = [
     "git",
     "glusterfs",
     "hosts",
+    "htpasswd",
     "java",
     "kibana",
     "kubectl",
