@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships twenty-eight configuration roles as **library code**. Each one is the
+reemote ships twenty-nine configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The twenty-eight roles group by what they configure. The [catalogue](#the-catalogue)
+The twenty-nine roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -58,6 +58,7 @@ and outputs.
 | [redis](redis.md) | Redis — the setgid `/etc/redis` directory, the rendered `redis.conf`, the package, the service, one restart handler |
 | [nfs](nfs.md) | NFS — the packages, the export directories, `/etc/exports`, the gated service and an `exportfs -ra` command handler |
 | [glusterfs](glusterfs.md) | GlusterFS — the optional Gluster PPA with its reinstall split, the server/client packages and the `glusterd` unit started and enabled |
+| [minio](minio.md) | MinIO — the service user and directories, the unpacked `minio`/`mc` bundle, the rendered env and unit, the restart → port-wait handler chain, opt-in buckets, users and mirror units |
 
 ### Language runtimes and tooling
 
@@ -140,6 +141,7 @@ and outputs.
 | [firewall](firewall.md) | [`geerlingguy.firewall`](https://github.com/geerlingguy/ansible-role-firewall) | Ubuntu | 4 first run / 2 converged | none | **yes** | 1 |
 | [zabbix_agent](zabbix_agent.md) | [`dj-wasabi/ansible-zabbix-agent`](https://github.com/ansible-community/ansible-zabbix-agent) | Ubuntu | 5 fresh / 4 converged | none | **yes** | 1 |
 | [swap](swap.md) | [`geerlingguy.swap`](https://github.com/geerlingguy/ansible-role-swap) | Ubuntu | 5 fresh / 2 converged | none | no | 1 |
+| [minio](minio.md) | [`wezhai/minio`](https://github.com/wezhai/minio) | Ubuntu | 8 changed / 8 converged on the full set (1 + handler + one per `mc` act + sync tail) | `MinioOutputs(service, install_dir, endpoint)` | **yes** | 1 |
 
 ## Reading the columns
 
@@ -149,14 +151,15 @@ and outputs.
   requires, whether a handler fired at all. "Converged" is the count on a rerun
   against a host that already matches — the interesting number, because a role
   whose wave count *grows* on the second pass has a request that never settles.
-- **Outputs** names the dataclass the deploy returns to a composing role. Two
-  roles publish one: `apache` and `php`. `php_xdebug` exists to consume
+- **Outputs** names the dataclass the deploy returns to a composing role. Three
+  roles publish one: `apache`, `php` and `minio`. `php_xdebug` exists to consume
   `PhpOutputs` — the PHP version and extension paths it used to carry as a copied
   constant. Every other role returns `None`, and does so on its family-guard's
   early return too.
-- **`reemote[templates]`** is needed by the ten roles that render configuration
+- **`reemote[templates]`** is needed by the eleven roles that render configuration
   through Jinja2 or PyYAML — `apache`, `datadog`, `firewall`, `memcached`,
-  `nginx`, `ntp`, `postgresql`, `redis`, `systemd` and `zabbix_agent`, the list
+  `minio`, `nginx`, `ntp`, `postgresql`, `redis`, `systemd` and
+  `zabbix_agent`, the list
   [`reemote.roles._render`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/_render.py)
   exists to carry. The others render in plain Python — `json.dumps`, an f-string, a
   `str.join` — and need nothing beyond the library.
@@ -285,6 +288,12 @@ and outputs.
   decides both include branches, and the four commands are `act` barriers the
   body fail-checks itself — on a converged host the whole command chain is not
   merely idempotent, it is absent.
+- **[minio](minio.md)** — the service group/user, the five directories, the
+  unpacked `minio`/`mc` bundle, the rendered `/etc/default/minio` and unit, the
+  restart → console-port-wait handler chain, and the opt-in `mc` buckets,
+  policies/users and `mc mirror` units. The `act`-heavy role: every imperative
+  `mc` shell is a command barrier whose result is data, so the wave count grows
+  with the provisioning lists.
 
 ## Running one
 

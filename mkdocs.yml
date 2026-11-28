@@ -195,6 +195,7 @@ nav:
           - firewall: roles/firewall.md
           - zabbix_agent: roles/zabbix_agent.md
           - swap: roles/swap.md
+          - minio: roles/minio.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md

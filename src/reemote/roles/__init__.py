@@ -24,12 +24,12 @@ module is aliased (``from reemote.modules
 import postgresql as pg``). ``tests/roles/test_exports.py`` pins both facts.
 
 The template-rendering roles (``apache``, ``datadog``, ``firewall``,
-``memcached``, ``nginx``, ``ntp``, ``postgresql``, ``redis``, ``systemd``,
-``zabbix_agent``) import
-jinja2 and PyYAML only
-through :mod:`reemote.roles._render`, the single import site for them, which needs
-the ``reemote[templates]`` extra (§17.4). Nothing in this package pulls that module
-in at import time, so ``import reemote.roles`` stays clean without the extra.
+``memcached``, ``minio``, ``nginx``, ``ntp``, ``postgresql``, ``redis``,
+``systemd``, ``zabbix_agent``) import
+jinja2 and PyYAML only through :mod:`reemote.roles._render`, the single import
+site for them, which needs the ``reemote[templates]`` extra (§17.4). Nothing in
+this package pulls that module in at import time, so ``import reemote.roles``
+stays clean without the extra.
 ``php`` renders its four templates as plain f-strings, so it never needs the
 extra even though it templates files -- and ``php_xdebug`` inherits that, since
 its one template is pure substitution too. ``nfs`` builds ``/etc/exports`` with
@@ -55,6 +55,7 @@ from .hosts import HostsEntry, HostsVars, hosts
 from .java import JavaVars, java
 from .kubectl import KubectlChecksum, KubectlVars, kubectl
 from .memcached import MemcachedVars, memcached
+from .minio import MinioOutputs, MinioVars, minio
 from .nfs import NfsVars, nfs
 from .nginx import NginxVars, nginx
 from .nodejs import NodejsVars, NpmGlobalPackage, nodejs
@@ -93,6 +94,8 @@ __all__: list[str] = [
     "KubectlChecksum",
     "KubectlVars",
     "MemcachedVars",
+    "MinioOutputs",
+    "MinioVars",
     "NfsVars",
     "NginxVars",
     "NodejsVars",
@@ -125,6 +128,7 @@ __all__: list[str] = [
     "java",
     "kubectl",
     "memcached",
+    "minio",
     "nfs",
     "nginx",
     "nodejs",
