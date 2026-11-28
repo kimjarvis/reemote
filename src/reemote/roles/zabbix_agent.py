@@ -101,8 +101,9 @@
 #   drops: ``docker``, ``tlspsk_auto``, ``firewall_enable``,
 #   ``firewalld_enable``, ``api_create_hostgroup``/``api_create_hosts`` and a
 #   non-empty ``userparameters`` each raise :class:`ValueError` naming the
-#   replacement path. The API tasks additionally have no library operation at
-#   all -- issue #72. The scripts-tree copy behind
+#   replacement path. The API tasks' operations now ship in ``reemote.zabbix``
+#   (issue #72), but the role's own API-branch wiring stays scoped out. The
+#   scripts-tree copy behind
 #   ``userparameters`` was refused as boundary issue #67. The API-only
 #   variables (``zabbix_url``, ``zabbix_api_user``, ``zabbix_host_groups``,
 #   ``zabbix_macros`` ...) are not fields at all: ``resolve_vars``' typo rule
@@ -730,7 +731,8 @@ class ZabbixAgentVars(BaseModel):
     firewall_enable: bool = False
     firewalld_enable: bool = False
     #: ``zabbix_api_create_hostgroup`` / ``zabbix_api_create_hosts``: the
-    #: Zabbix API branch has no operations at all -- issue #72 (D11).
+    #: operations ship in ``reemote.zabbix`` (issue #72), but the role's own
+    #: API-branch wiring is scoped out (D11).
     api_create_hostgroup: bool = False
     api_create_hosts: bool = False
 
@@ -973,7 +975,7 @@ def validate(v: ZabbixAgentVars, host: Host) -> None:
         (v.firewalld_enable, "the firewalld branch and its reload handler"),
         (
             v.api_create_hostgroup or v.api_create_hosts,
-            "the Zabbix API branch -- issue #72 tracks the missing operations",
+            "the Zabbix API branch (the operations ship in reemote.zabbix -- issue #72)",
         ),
     )
     for asked, what in scoped:
