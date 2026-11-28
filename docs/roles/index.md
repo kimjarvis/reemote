@@ -107,7 +107,7 @@ and outputs.
 | Role | Purpose |
 | --- | --- |
 | [security](security.md) | SSH and host hardening — the `sshd_config` directives and access lists, the sudoers loops, Fail2Ban and unattended-upgrades |
-| [clamav](clamav.md) | ClamAV — the antivirus packages, the install-gated `freshclam` run, the `clamd.conf` edits, both units and one restart handler |
+| [clamav](clamav.md) | ClamAV — the family's packages (apt trio or dnf quartet), the install-gated `freshclam` run, the daemon-config edits, both units, RedHat's `clamd-freshclam.service` unit with its gated reload, and one restart handler |
 | [firewall](firewall.md) | iptables firewall — the once-per-machine flush gate, the rendered `/etc/firewall.bash` script and its unit, service state, one restart handler |
 | [certbot](certbot.md) | Certbot — the family's package install (apt by release, or dnf behind the RedHat `crb` setup), the configured certificates (standalone or webroot) and the renewal cron entry |
 | [htpasswd](htpasswd.md) | htpasswd — the Apache utilities and `name:hash` entries in root-owned password files, merged by a verify-then-keep read with control-side `$apr1$`/`{SHA}` hashing |
@@ -165,7 +165,7 @@ and outputs.
 | [node_exporter](node_exporter.md) | [`geerlingguy.node_exporter`](https://github.com/geerlingguy/ansible-role-node_exporter) | Ubuntu | 3 fresh (4 resolving `latest`) / 3 converged | none | no | 1 |
 | [ruby](ruby.md) | [`geerlingguy.ruby`](https://github.com/geerlingguy/ansible-role-ruby) | Ubuntu | 2 | none | no | 1 |
 | [apache_php_fpm](apache_php_fpm.md) | [`geerlingguy.apache-php-fpm`](https://github.com/geerlingguy/ansible-role-apache-php-fpm) | Ubuntu | 2 fresh / 1 converged | none | no | 1 |
-| [clamav](clamav.md) | [`geerlingguy.clamav`](https://github.com/geerlingguy/ansible-role-clamav) | Ubuntu | 4 fresh / 2 converged | none | no | 1 |
+| [clamav](clamav.md) | [`geerlingguy.clamav`](https://github.com/geerlingguy/ansible-role-clamav) | Ubuntu, RedHat | 4 fresh / 2 converged; RedHat 5 fresh / 3 converged (4 when the packages are already installed) | none | no | 1 |
 | [mailhog](mailhog.md) | [`geerlingguy.mailhog`](https://github.com/geerlingguy/ansible-role-mailhog) | Ubuntu | exactly 2 | none | no | 1 |
 | [supervisor](supervisor.md) | [`geerlingguy.supervisor`](https://github.com/geerlingguy/ansible-role-supervisor) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
 | [daemonize](daemonize.md) | [`geerlingguy.daemonize`](https://github.com/geerlingguy/ansible-role-daemonize) | Ubuntu | 2 fresh / 1 converged | none | no | 1 |
@@ -384,13 +384,15 @@ The template role, and the one whose wave count is host-dependent.
   two-item `file` loop and nothing else — and the most wave-dependent one: a
   converged host's tree collapses to a single wave, because the handler yields
   no request and its wave is never appended.
-- **[clamav](clamav.md)** — the `clamav` package trio, the install-gated
-  `freshclam` run, the two `clamd.conf` edits with their mode companion, the
-  optional `freshclam.conf` edits, both unit states, one restart handler. The
-  command-task-plus-notify case: the play's `register` + `failed_when` +
-  `notify` trio is one `act` barrier whose `Result` the body interprets — and
-  whose successful run queues the restart itself, because a barrier is not a
-  request.
+- **[clamav](clamav.md)** — the family's package set (the apt trio or the dnf
+  quartet), the install-gated `freshclam` run, the two daemon-config edits with
+  their mode companion (`/etc/clamav/clamd.conf`, or `/etc/clamd.d/scan.conf` on
+  RedHat), the optional `freshclam.conf` edits, both unit states, one restart
+  handler — and on RedHat the `clamd-freshclam.service` file with its
+  change-gated `daemon-reload`/stop. The command-task-plus-notify case: the
+  play's `register` + `failed_when` + `notify` trio is one `act` barrier whose
+  `Result` the body interprets — and whose successful run queues the restart
+  itself, because a barrier is not a request.
 - **[mailhog](mailhog.md)** — the MailHog and mhsendmail release binaries
   downloaded into `/opt/mailhog`, the f-string-rendered `mailhog.service` unit,
   started and enabled with the state-gated `daemon-reload`. The sibling of

@@ -20,10 +20,12 @@ no framework:
    rest of the :class:`~reemote.roles.clamav.ClamavVars` fields) is bound under
    the bare field names and a bad value raises before any host is contacted.
    The shipped ``inventory.json`` carries no ``clamav`` role mapping, so the
-   model defaults decide the site: the Debian package trio, the two
-   ``clamav-*`` units started and enabled, and the role's own two default
-   ``clamd.conf`` rules (drop ``Example``, set
-   ``LocalSocket /var/run/clamav/clamd.ctl``).
+   model defaults decide the site -- per family, from the role's frozen
+   ``vars/<Family>.yml`` tables: the Debian package trio and the two
+   ``clamav-*`` units on Ubuntu, the dnf quartet, the ``clamd@scan`` instance
+   and the ``clamd-freshclam`` unit on RedHat. Both get the role's own two
+   default ``clamd.conf`` rules (drop ``Example``, set the family's own
+   ``LocalSocket`` line).
 3. Build the deploy -- ``clamav(vars_set)`` is the role's whole task list, one
    per-host generator -- and drive it with ``run_waves``, the barrier-aware
    driver a role needs: the freshclam gate and the handler notification are
@@ -56,13 +58,15 @@ Run it with::
 installed -> unknown until run``), gathering nothing and applying nothing. A
 converged rerun is the honest preview: run the whole program a second time and
 it reports no change anywhere, because the packages are installed, the
-``Example`` line is gone from ``clamd.conf``, the socket directive is set, and
-both units are running and enabled.
+``Example`` line is gone from the family's daemon config, the socket directive
+is set, both units are running and enabled -- and on RedHat the
+``clamd-freshclam.service`` file is in place, so its reload is never built.
 
-Hosts outside the ``"Ubuntu"`` family emit nothing at all -- the role's family
-guard is its body's opening ``if``, so such a host returns before its first
-``yield`` and appears in no wave. The RedHat entries of the shipped inventory
-are therefore skipped.
+Hosts outside the ``"Ubuntu"``/``"RedHat"`` families emit nothing at all -- the
+role's family guard is its body's opening ``if``, so such a host returns
+before its first ``yield`` and appears in no wave. The ``alpine`` entry of the
+shipped inventory is therefore skipped: upstream ships no ``vars/Alpine.yml``,
+so there is nothing to migrate for it.
 
 Sharing the demo host
 ---------------------
@@ -75,6 +79,12 @@ download is a couple of hundred megabytes into ``/var/lib/clamav``. To stop
 and disable both units again after a real run::
 
     ssh <user>@<ubuntu-host> 'sudo systemctl disable --now clamav-daemon clamav-freshclam'
+
+The RedHat hosts get the same treatment under their own names -- plus the unit
+file this role installs, which a purge of the packages would leave behind::
+
+    ssh <user>@<redhat-host> 'sudo systemctl disable --now clamd@scan clamd-freshclam'
+    ssh <user>@<redhat-host> 'sudo rm /lib/systemd/system/clamd-freshclam.service && sudo systemctl daemon-reload'
 """
 
 import asyncio
@@ -119,9 +129,9 @@ async def main() -> None:
         print(report.tree())
 
         # Real run: every wave, planned and applied in lockstep across hosts
-        # over SSH -- the install wave, the freshclam act it gates, the
-        # configure-and-service wave, then the handler wave if anything
-        # notified.
+        # over SSH -- the install wave, the freshclam act it gates, the unit
+        # file (RedHat) and its gated reload, the configure-and-service wave,
+        # then the handler wave if anything notified.
         report, _hosts = await run_waves(inventory, deploy)
         print("\n== Wave tree (apply phase) ==")
         print(report.tree())
