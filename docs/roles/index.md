@@ -370,13 +370,12 @@ and outputs.
   whose successful run queues the restart itself, because a barrier is not a
   request.
 - **[mailhog](mailhog.md)** — the MailHog and mhsendmail release binaries
-  downloaded into `/opt/mailhog`, the f-string-rendered `mailhog.service`
-  unit, started and enabled with the state-gated `daemon-reload`. The sibling
-  of `kubectl` without the checksum table: one `fact(server.Arch)` gate picks
+  downloaded into `/opt/mailhog`, the f-string-rendered `mailhog.service` unit,
+  started and enabled with the state-gated `daemon-reload`. The sibling of
+  `kubectl` without the checksum table: one `fact(server.Arch)` gate picks
   between the role's two published Linux archives, five requests follow in the
   second wave, and a converged rerun re-fetches both URLs to compare content
   while issuing no reload at all.
-
 - **[supervisor](supervisor.md)** — the pip-installed `supervisor` package
   (optionally pinned), the `0755` log and config directories, the rendered
   `supervisord.conf` with its `{SHA}`-hashed password, the program `conf.d`
