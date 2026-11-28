@@ -78,7 +78,7 @@ and outputs.
 | Role | Purpose |
 | --- | --- |
 | [repo_epel](repo_epel.md) | EPEL — installs the repository package and flips `enabled=` in the `[epel]` section alone |
-| [repo_remi](repo_remi.md) | Remi — imports the vendor key and installs the release RPM; the repository ships disabled for per-transaction `--enablerepo=remi` use |
+| [repo_remi](repo_remi.md) | Remi — imports the vendor key and installs the release RPM; `[remi]` ships disabled for per-transaction `--enablerepo=remi` use, while the RPM itself leaves `[remi-modular]` and `[remi-safe]` enabled |
 | [docker](docker.md) | Docker CE — the vendor repository with its URL-signed keyring, the edition packages, `daemon.json`, the service, the `docker_users` memberships |
 | [datadog](datadog.md) | Datadog agent — the signing keys and repository, the package, `/etc/datadog-agent`, `conf.d` checks, two restart handlers |
 | [zabbix_agent](zabbix_agent.md) | Zabbix agent — the vendor keyring and repository lines with their stale-source purge, the agent packages, the rendered `zabbix_agentd.conf`, the service, one restart handler |
