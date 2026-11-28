@@ -59,13 +59,14 @@ yield from service_handler(notified, (SERVICE_NAME,), action="restarted")(host)
 | `handlers/main.yml: restart zabbix-agent` + the tasks' `notify` | `checkpoint("configure done")` → `changed_hosts` → `service_handler` | deviation (D7) |
 | the Linux.yml IP `set_fact` chain (`listeninterface`, `listenip`) | `listenip` verbatim; `listeninterface` raises | deviation (D10) |
 | `userparameters` copy + scripts-tree lookup | raises — no library operation (issue [#67](https://github.com/kimjarvis/reemote/issues/67)) | GAP (D11) |
-| the Docker, TLS-PSK-auto, iptables, firewalld and Zabbix API branches | raise when their knob is set; the API has no operations at all (issue [#72](https://github.com/kimjarvis/reemote/issues/72)) | GAP (D11) |
+| the Docker, TLS-PSK-auto, iptables, firewalld and Zabbix API branches | raise when their knob is set; the API operations now ship in `reemote.zabbix` (issue [#72](https://github.com/kimjarvis/reemote/issues/72)), only the role's own branch wiring is scoped out | GAP (D11) |
 
 One **new** gap came out of this migration and was filed rather than worked
 around: the Zabbix API branch (`zabbix_api_create_hosts`/`hostgroup`, the whole
-`zabbix_host` module surface) has no reemote operations — issue
-[#72](https://github.com/kimjarvis/reemote/issues/72). It is default-off, so it
-never blocked the Ubuntu default path.
+`zabbix_host` module surface) had no reemote operations — issue
+[#72](https://github.com/kimjarvis/reemote/issues/72), since resolved by the
+`reemote.zabbix` namespace; the role's own API-branch wiring stays scoped out
+(D11). The branch is default-off, so it never blocked the Ubuntu default path.
 
 ## 2. Install
 
@@ -168,8 +169,8 @@ other four were only read by branches that are out of scope.
 
 The API-only variables (`zabbix_url`, `zabbix_api_user`, `zabbix_host_groups`,
 `zabbix_macros`, …) are **not** fields at all: the typo rule rejects them at
-`resolve_vars` time, before any host is contacted, because nothing downstream
-could honour them (#72).
+`resolve_vars` time, before any host is contacted — the operations exist in
+`reemote.zabbix` (#72), but nothing inside this role consumes them yet (D11).
 
 ## 5. Run it
 
@@ -339,7 +340,8 @@ The RedHat host appears in no tree: no barrier record, no request line.
 * **Non-Ubuntu families.** The role's RedHat/SUSE/Debian-other/Windows/macOS
   task files are not migrated; `vars/Debian.yml` becomes frozen constants.
 * **The Zabbix API branch.** `zabbix_api_create_hosts`/`hostgroup` and every
-  `zabbix_url`-family variable — no operations exist (#72).
+  `zabbix_url`-family variable — the operations ship in `reemote.zabbix`
+  (resolved #72), but the role's own wiring of them is scoped out (D11).
 * **Docker containers, TLS-PSK auto-generation, iptables/firewalld opening
   port 10050, and `userparameters`** (whose scripts-tree lookup has no library
   pair, #67). Each knob raises when set (D11).
