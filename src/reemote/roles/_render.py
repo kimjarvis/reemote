@@ -3,9 +3,10 @@
 
 """The single jinja2 / PyYAML import site for the template-rendering roles (§17.4).
 
-Eleven roles render a control-side template while building their deploys: ten
-use Jinja2 (``apache``, ``firewall``, ``memcached``, ``minio``, ``nginx``,
-``ntp``, ``postgresql``, ``redis``, ``systemd``, ``zabbix_agent``) and ``datadog`` dumps YAML with PyYAML. As scripts they
+Twelve roles render a control-side template while building their deploys: eleven
+use Jinja2 (``apache``, ``elasticsearch``, ``firewall``, ``memcached``,
+``minio``, ``nginx``, ``ntp``, ``postgresql``, ``redis``, ``systemd``,
+``zabbix_agent``) and ``datadog`` dumps YAML with PyYAML. As scripts they
 each did a lazy
 ``try: import jinja2`` with an ``except ImportError`` branch printing
 ``uv run --with jinja2 python ...``. That advice is a script's privilege, not a

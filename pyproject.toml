@@ -42,7 +42,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Eleven roles render a control-side template (jinja2) or dump YAML (pyyaml) while
+# Twelve roles render a control-side template (jinja2) or dump YAML (pyyaml) while
 # building their deploys (§17.4). The base library imports neither -- they enter
 # only through reemote/roles/_render.py -- so template roles are opt-in via
 # ``reemote[templates]``.

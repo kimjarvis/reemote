@@ -23,7 +23,8 @@ top-level names stay the module namespaces; inside ``roles/postgresql.py`` the
 module is aliased (``from reemote.modules
 import postgresql as pg``). ``tests/roles/test_exports.py`` pins both facts.
 
-The template-rendering roles (``apache``, ``datadog``, ``firewall``,
+The template-rendering roles (``apache``, ``datadog``, ``elasticsearch``,
+``firewall``,
 ``memcached``, ``minio``, ``nginx``, ``ntp``, ``postgresql``, ``redis``,
 ``systemd``, ``zabbix_agent``) import
 jinja2 and PyYAML only through :mod:`reemote.roles._render`, the single import
@@ -48,6 +49,7 @@ from .composer import ComposerVars, composer
 from .datadog import DatadogVars, datadog
 from .docker import DockerVars, docker
 from .drush import DrushVars, drush
+from .elasticsearch import ElasticsearchVars, elasticsearch
 from .firewall import FirewallVars, ForwardedPort, firewall
 from .git import GitVars, git
 from .glusterfs import GlusterfsVars, glusterfs
@@ -84,6 +86,7 @@ __all__: list[str] = [
     "DeletedUserSpec",
     "DockerVars",
     "DrushVars",
+    "ElasticsearchVars",
     "EpelVars",
     "FirewallVars",
     "ForwardedPort",
@@ -126,6 +129,7 @@ __all__: list[str] = [
     "datadog",
     "docker",
     "drush",
+    "elasticsearch",
     "firewall",
     "git",
     "glusterfs",
