@@ -167,50 +167,50 @@ nav:
   # Examples -> Roles pages and their examples/roles/* monoliths are retired.
       - Roles:
           - Overview: roles/index.md
-          - repo_epel: roles/repo_epel.md
           - apache: roles/apache.md
+          - apache_php_fpm: roles/apache_php_fpm.md
+          - certbot: roles/certbot.md
+          - clamav: roles/clamav.md
+          - composer: roles/composer.md
+          - daemonize: roles/daemonize.md
+          - datadog: roles/datadog.md
+          - docker: roles/docker.md
+          - drush: roles/drush.md
+          - elasticsearch: roles/elasticsearch.md
+          - firewall: roles/firewall.md
+          - git: roles/git.md
+          - gitlab: roles/gitlab.md
+          - glusterfs: roles/glusterfs.md
+          - helm: roles/helm.md
+          - hosts: roles/hosts.md
+          - htpasswd: roles/htpasswd.md
+          - java: roles/java.md
+          - kibana: roles/kibana.md
+          - kubectl: roles/kubectl.md
+          - mailhog: roles/mailhog.md
+          - memcached: roles/memcached.md
+          - minio: roles/minio.md
+          - nfs: roles/nfs.md
+          - nginx: roles/nginx.md
+          - node_exporter: roles/node_exporter.md
+          - nodejs: roles/nodejs.md
+          - ntp: roles/ntp.md
           - php: roles/php.md
           - php_versions: roles/php_versions.md
           - php_xdebug: roles/php_xdebug.md
-          - nginx: roles/nginx.md
-          - postgresql: roles/postgresql.md
-          - datadog: roles/datadog.md
-          - composer: roles/composer.md
-          - drush: roles/drush.md
-          - ntp: roles/ntp.md
-          - docker: roles/docker.md
-          - java: roles/java.md
-          - memcached: roles/memcached.md
-          - nfs: roles/nfs.md
-          - nodejs: roles/nodejs.md
           - pip: roles/pip.md
-          - git: roles/git.md
-          - security: roles/security.md
-          - certbot: roles/certbot.md
+          - postgresql: roles/postgresql.md
           - redis: roles/redis.md
-          - users: roles/users.md
-          - hosts: roles/hosts.md
-          - kubectl: roles/kubectl.md
-          - helm: roles/helm.md
-          - systemd: roles/systemd.md
-          - glusterfs: roles/glusterfs.md
-          - firewall: roles/firewall.md
-          - zabbix_agent: roles/zabbix_agent.md
-          - swap: roles/swap.md
-          - minio: roles/minio.md
+          - repo_epel: roles/repo_epel.md
           - repo_remi: roles/repo_remi.md
-          - kibana: roles/kibana.md
-          - elasticsearch: roles/elasticsearch.md
-          - node_exporter: roles/node_exporter.md
-          - apache_php_fpm: roles/apache_php_fpm.md
           - ruby: roles/ruby.md
-          - clamav: roles/clamav.md
-          - mailhog: roles/mailhog.md
+          - security: roles/security.md
           - supervisor: roles/supervisor.md
-          - daemonize: roles/daemonize.md
+          - swap: roles/swap.md
+          - systemd: roles/systemd.md
+          - users: roles/users.md
           - varnish: roles/varnish.md
-          - htpasswd: roles/htpasswd.md
-          - gitlab: roles/gitlab.md
+          - zabbix_agent: roles/zabbix_agent.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md
