@@ -47,6 +47,7 @@ from .apache_php_fpm import ApachePhpFpmVars, apache_php_fpm
 from .certbot import Cert, CertbotVars, certbot
 from .clamav import ClamavVars, ConfigChange, clamav
 from .composer import ComposerVars, composer
+from .daemonize import DaemonizeVars, daemonize
 from .datadog import DatadogVars, datadog
 from .docker import DockerVars, docker
 from .drush import DrushVars, drush
@@ -91,6 +92,7 @@ __all__: list[str] = [
     "ClamavVars",
     "ComposerVars",
     "ConfigChange",
+    "DaemonizeVars",
     "DatadogVars",
     "DeletedUserSpec",
     "DockerVars",
@@ -144,6 +146,7 @@ __all__: list[str] = [
     "certbot",
     "clamav",
     "composer",
+    "daemonize",
     "datadog",
     "docker",
     "drush",

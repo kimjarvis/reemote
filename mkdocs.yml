@@ -206,6 +206,7 @@ nav:
           - clamav: roles/clamav.md
           - mailhog: roles/mailhog.md
           - supervisor: roles/supervisor.md
+          - daemonize: roles/daemonize.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md

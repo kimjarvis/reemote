@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships thirty-nine configuration roles as **library code**. Each one is the
+reemote ships forty configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The thirty-nine roles group by what they configure. The [catalogue](#the-catalogue)
+The forty roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -76,6 +76,7 @@ and outputs.
 | [kubectl](kubectl.md) | kubectl — the checksum-pinned release binary, installed version-suffixed with the bare name symlinked beside it |
 | [mailhog](mailhog.md) | MailHog — the two release binaries downloaded into `/opt/mailhog` and the started, enabled `mailhog.service` unit |
 | [supervisor](supervisor.md) | Supervisor — the pip-installed `supervisor` package, the `0755` log/config directories, the rendered `supervisord.conf`, the present/absent program `conf.d` files, the rendered systemd unit, and one restart handler |
+| [daemonize](daemonize.md) | daemonize — the `build-essential` toolchain, the release tarball extracted behind a `creates:` gate, and the `configure`/`make`/`make install` build gated on a `PATH` probe |
 
 ### Vendor repositories and platforms
 
@@ -162,6 +163,7 @@ and outputs.
 | [clamav](clamav.md) | [`geerlingguy.clamav`](https://github.com/geerlingguy/ansible-role-clamav) | Ubuntu | 4 fresh / 2 converged | none | no | 1 |
 | [mailhog](mailhog.md) | [`geerlingguy.mailhog`](https://github.com/geerlingguy/ansible-role-mailhog) | Ubuntu | exactly 2 | none | no | 1 |
 | [supervisor](supervisor.md) | [`geerlingguy.supervisor`](https://github.com/geerlingguy/ansible-role-supervisor) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
+| [daemonize](daemonize.md) | [`geerlingguy.daemonize`](https://github.com/geerlingguy/ansible-role-daemonize) | Ubuntu | 2 fresh / 1 converged | none | no | 1 |
 
 ## Reading the columns
 
@@ -385,6 +387,13 @@ and outputs.
   `systemd.service` request whose false gates are the `None` sentinels — and
   the handler keeps the upstream `when: supervisor_started` as a body-level
   check, so a `started: false` host configures but never restarts.
+- **[daemonize](daemonize.md)** — the `build-essential` toolchain the role's README
+  names as a prerequisite, the release tarball extracted into the workspace behind
+  Ansible's `creates:` gate, and — only on a host where the binary is not already
+  on `PATH` — the `configure`/`make`/`make install` build as root. The single-fact,
+  no-checkpoint build case: one `fact(server.Which)` read is the role's
+  `register` + `when: rc != 0`, so a host that already built the binary never
+  emits the build wave — and there are no handlers for a checkpoint to feed.
 
 ## Running one
 
