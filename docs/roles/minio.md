@@ -65,12 +65,19 @@ Ansible ran them.
 | `template: sync.service.j2` per mapping + `systemd: started daemon_reload` | render → `files.install` → `systemd.service(running=True, daemon_reload=True)` | covered |
 | `tags: never` on buckets/users/sync/uninstall | empty-list gates; uninstall scoped out | deviation (D2) |
 
-No library gap blocked this migration, so none was filed: `files.unarchive`
-already carries the tarball route (its `creates` gate the `mk | true`-style
-idempotence the role lacks), the `act` barrier runs every `mc` command as a
-command whose exit status is data, and `service_handler` carries `daemon_reload`
-through to the restart — all three landed for earlier roles. What is new here
-is only *shape*: the chained handler (restart notifies the wait) and the
+One library gap surfaced here and was filed as
+[issue #73](https://github.com/kimjarvis/reemote/issues/73): `files.unarchive`
+read its `src` through the `File` fact and raised when the archive was absent
+*in the preview as well*, so D5's spool-then-extract pair — exactly Ansible's
+controller-asset `unarchive` — could not be previewed by `dry=True` at all. It
+is fixed in the library, and the dry tree in `tests/roles/test_minio.py` pins
+the resulting line, `src /tmp/minio.tar.gz absent at plan time; extraction
+planned once it is staged`. Everything else the role needed had already landed
+for earlier roles: `files.unarchive` already carries the tarball route (its
+`creates` gate the `mk | true`-style idempotence the role lacks), the `act`
+barrier runs every `mc` command as a command whose exit status is data, and
+`service_handler` carries `daemon_reload` through to the restart. What is new
+here is only *shape*: the chained handler (restart notifies the wait) and the
 `run_once` placement both read as in-stream choices, not as gaps.
 
 ## 2. Install
@@ -202,6 +209,10 @@ REEMOTE_MINIO_PACKAGE=/path/to/minio.tar.gz uv run python examples/roles/minio.p
 The `dry=True` pass is a one-wave preview: it plans the install and configure
 requests, parks on the `install done` checkpoint (`barrier: install done →
 unknown until run`) and stops, gathering facts over SSH but applying nothing.
+The `Unpack minio.tar.gz` line of that preview is issue #73's plan line — the
+spool before it is never applied in a preview, so the operation names the
+extraction it would do instead of raising on the absent tarball.
+
 **Run the program twice.** On a converged host every request reports no change
 — the binaries are unpacked (`creates` gate), the rendered files are
 byte-identical, the unit is running — so the handler wave disappears entirely.

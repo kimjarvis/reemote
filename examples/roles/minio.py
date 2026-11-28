@@ -78,9 +78,13 @@ Run it with::
 ``dry=True`` preview first, then the real apply. The dry pass is one wave deep
 -- ``run_waves`` plans the install and configure requests, parks on the
 ``install done`` checkpoint (``barrier: install done -> unknown until run``)
-and stops, gathering facts over SSH but applying nothing. A converged rerun is
-the honest preview: run the whole program a second time and every request
-reports no change -- the binaries are unpacked, the rendered files are
+and stops, gathering facts over SSH but applying nothing. The ``Unpack
+minio.tar.gz`` line of that preview reads ``src /tmp/minio.tar.gz absent at
+plan time; extraction planned once it is staged`` -- the archive is spooled by
+the request before it, which a preview never applies, so the operation plans
+the extraction instead of raising on the absent file (issue #73). A converged
+rerun is the honest preview: run the whole program a second time and every
+request reports no change -- the binaries are unpacked, the rendered files are
 byte-identical, the unit is running -- so the restart handler does not fire.
 The ``mc`` shells still re-run: their results are data, not state (D9).
 

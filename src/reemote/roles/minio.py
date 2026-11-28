@@ -51,6 +51,9 @@
 #   spools it with :func:`~reemote.modules.files.install` before the unarchive
 #   (the spool at ``/tmp/minio.tar.gz`` persists; replacing the version means
 #   removing ``<install_dir>/minio`` so the ``creates`` gate re-extracts).
+#   That spool-then-extract pair only previews because of issue #73: an
+#   operation planning a source this deploy stages reports a plan line instead
+#   of raising on the host that does not have it yet.
 # * **D6** ``become_user: minio`` on the ``mc`` shells has no per-request
 #   analogue: every command embeds ``sudo -u minio -H`` inside one elevated
 #   ``act(Shell, sudo=True)`` (the composer/nodejs precedent).
