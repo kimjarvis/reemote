@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships thirty-two configuration roles as **library code**. Each one is the
+reemote ships thirty-three configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The thirty-two roles group by what they configure. The [catalogue](#the-catalogue)
+The thirty-three roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -82,6 +82,7 @@ and outputs.
 | [docker](docker.md) | Docker CE — the vendor repository with its URL-signed keyring, the edition packages, `daemon.json`, the service, the `docker_users` memberships |
 | [datadog](datadog.md) | Datadog agent — the signing keys and repository, the package, `/etc/datadog-agent`, `conf.d` checks, two restart handlers |
 | [zabbix_agent](zabbix_agent.md) | Zabbix agent — the vendor keyring and repository lines with their stale-source purge, the agent packages, the rendered `zabbix_agentd.conf`, the service, one restart handler |
+| [kibana](kibana.md) | Kibana — the dependencies, the Elasticsearch signing key and Elastic apt repository, the `kibana` package, the service, the rendered `kibana.yml`, one restart handler |
 | [elasticsearch](elasticsearch.md) | Elasticsearch — the dependencies, the Elastic signing key and apt repository, the `elasticsearch` package, the rendered config and version-appropriate heap file, the service and port wait, one restart handler |
 
 ### Base system
@@ -147,6 +148,7 @@ and outputs.
 | [zabbix_agent](zabbix_agent.md) | [`dj-wasabi/ansible-zabbix-agent`](https://github.com/ansible-community/ansible-zabbix-agent) | Ubuntu | 5 fresh / 4 converged | none | **yes** | 1 |
 | [swap](swap.md) | [`geerlingguy.swap`](https://github.com/geerlingguy/ansible-role-swap) | Ubuntu | 5 fresh / 2 converged | none | no | 1 |
 | [minio](minio.md) | [`wezhai/minio`](https://github.com/wezhai/minio) | Ubuntu | 8 changed / 8 converged on the full set (1 + handler + one per `mc` act + sync tail) | `MinioOutputs(service, install_dir, endpoint)` | **yes** | 1 |
+| [kibana](kibana.md) | [`geerlingguy.kibana`](https://github.com/geerlingguy/ansible-role-kibana) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
 | [elasticsearch](elasticsearch.md) | [`geerlingguy.elasticsearch`](https://github.com/geerlingguy/ansible-role-elasticsearch) | Ubuntu | 2 changed / 2 converged (the wait always reports) | none | **yes** | 1 |
 
 ## Reading the columns
@@ -163,8 +165,9 @@ and outputs.
   `PhpOutputs` — the PHP version and extension paths it used to carry as a copied
   constant. Every other role returns `None`, and does so on its family-guard's
   early return too.
-- **`reemote[templates]`** is needed by the twelve roles that render configuration
+- **`reemote[templates]`** is needed by the thirteen roles that render configuration
   through Jinja2 or PyYAML — `apache`, `datadog`, `elasticsearch`, `firewall`,
+  `kibana`,
   `memcached`, `minio`, `nginx`, `ntp`, `postgresql`, `redis`, `systemd` and
   `zabbix_agent`, the list
   [`reemote.roles._render`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/_render.py)
@@ -307,6 +310,12 @@ and outputs.
   policies/users and `mc mirror` units. The `act`-heavy role: every imperative
   `mc` shell is a command barrier whose result is data, so the wave count grows
   with the provisioning lists.
+- **[kibana](kibana.md)** — the `apt-transport-https`/`gnupg2` dependencies, the
+  Elasticsearch key downloaded into `trusted.gpg.d`, the Elastic apt repository
+  with its change-gated refresh, the package, the started/enabled service, the
+  rendered `/etc/kibana/kibana.yml` and its metadata companion, one restart
+  handler. The vendor-repo checkpoint-only role: the key and repository are
+  operations with their own fact gates, so no barrier feeds them.
 - **[repo_remi](repo_remi.md)** — installs Remi's RPM repository: the pinned-id
   GPG key import, then the staged release RPM install. The EPEL twin minus the
   configure stage: two `fact` barriers and a `control` fetch, no checkpoint, and

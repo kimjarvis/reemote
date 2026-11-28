@@ -24,9 +24,8 @@ module is aliased (``from reemote.modules
 import postgresql as pg``). ``tests/roles/test_exports.py`` pins both facts.
 
 The template-rendering roles (``apache``, ``datadog``, ``elasticsearch``,
-``firewall``,
-``memcached``, ``minio``, ``nginx``, ``ntp``, ``postgresql``, ``redis``,
-``systemd``, ``zabbix_agent``) import
+``firewall``, ``kibana``, ``memcached``, ``minio``, ``nginx``, ``ntp``,
+``postgresql``, ``redis``, ``systemd``, ``zabbix_agent``) import
 jinja2 and PyYAML only through :mod:`reemote.roles._render`, the single import
 site for them, which needs the ``reemote[templates]`` extra (§17.4). Nothing in
 this package pulls that module in at import time, so ``import reemote.roles``
@@ -55,6 +54,7 @@ from .git import GitVars, git
 from .glusterfs import GlusterfsVars, glusterfs
 from .hosts import HostsEntry, HostsVars, hosts
 from .java import JavaVars, java
+from .kibana import KibanaVars, kibana
 from .kubectl import KubectlChecksum, KubectlVars, kubectl
 from .memcached import MemcachedVars, memcached
 from .minio import MinioOutputs, MinioVars, minio
@@ -96,6 +96,7 @@ __all__: list[str] = [
     "HostsEntry",
     "HostsVars",
     "JavaVars",
+    "KibanaVars",
     "KubectlChecksum",
     "KubectlVars",
     "MemcachedVars",
@@ -135,6 +136,7 @@ __all__: list[str] = [
     "glusterfs",
     "hosts",
     "java",
+    "kibana",
     "kubectl",
     "memcached",
     "minio",
