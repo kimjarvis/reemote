@@ -263,6 +263,18 @@ displays as absent**:
 
 The RedHat host appears in no tree: no barrier record, no request line.
 
+> **Live-run note (2026-11-28).** The first live pass exercised the role's
+> abort path exactly as ported: apt's postinst starts `clamav-freshclam`, and
+> that daemon holds the lock on `/var/log/clamav/freshclam.log`, so the gated
+> foreground `sudo freshclam` exits 2 with `Problem with internal logger …
+> Resource temporarily unavailable` — and the body turns the `Result` into the
+> typed `CommandError` (D3). The upstream Ansible play fails the same way on a
+> fresh install; this race is what the task's lock-message comment
+> anticipated. Stopping the unit first, `sudo freshclam` runs clean (rc 0,
+> databases up to date), and rerunning the program after the abort skips the
+> gate entirely — the install changed nobody — and converges to the rerun
+> tree above.
+
 ## 8. Deliberate deviations from the Ansible role
 
 | # | Deviation | Why |
