@@ -61,6 +61,7 @@ from .nginx import NginxVars, nginx
 from .nodejs import NodejsVars, NpmGlobalPackage, nodejs
 from .ntp import NtpVars, ntp
 from .php import PhpOutputs, PhpVars, php
+from .php_versions import PhpVersionsOutputs, PhpVersionsVars, php_versions
 from .php_xdebug import PhpXdebugVars, php_xdebug
 from .pip import PipPackage, PipVars, pip
 from .postgresql import PostgresqlVars, postgresql, postgresql_data
@@ -104,6 +105,8 @@ __all__: list[str] = [
     "NtpVars",
     "PhpOutputs",
     "PhpVars",
+    "PhpVersionsOutputs",
+    "PhpVersionsVars",
     "PhpXdebugVars",
     "PipPackage",
     "PipVars",
@@ -136,6 +139,7 @@ __all__: list[str] = [
     "nodejs",
     "ntp",
     "php",
+    "php_versions",
     "php_xdebug",
     "pip",
     "postgresql",

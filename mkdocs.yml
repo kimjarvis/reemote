@@ -170,6 +170,7 @@ nav:
           - repo_epel: roles/repo_epel.md
           - apache: roles/apache.md
           - php: roles/php.md
+          - php_versions: roles/php_versions.md
           - php_xdebug: roles/php_xdebug.md
           - nginx: roles/nginx.md
           - postgresql: roles/postgresql.md

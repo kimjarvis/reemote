@@ -42,6 +42,7 @@ and outputs.
 | [apache](apache.md) | Apache httpd — ports, module and conf symlinks, rendered vhosts and enable links, service state, one restart handler |
 | [nginx](nginx.md) | nginx — the optional official PPA, vhosts, a `nginx -t`-validated `nginx.conf`, service state, two handler channels |
 | [php](php.md) | PHP — packages, `php.ini` in every conf path, FPM pools, the `restart webserver` → `restart php-fpm` handler chain |
+| [php_versions](php_versions.md) | PHP versions — the Sury repository, the purge of every other version, and the version-keyed paths the `php` role installs from |
 | [php_xdebug](php_xdebug.md) | Xdebug — built from source and loaded into PHP, composing the `php` role inside its own body |
 
 ### Databases
@@ -118,6 +119,7 @@ and outputs.
 | [repo_remi](repo_remi.md) | [`geerlingguy.repo-remi`](https://github.com/geerlingguy/ansible-role-repo-remi) | RedHat | 3–4 | none | no | 1 |
 | [apache](apache.md) | [`geerlingguy.apache`](https://github.com/geerlingguy/ansible-role-apache) | Ubuntu | 3 + one per SSL vhost | `ApacheOutputs(version, service)` | **yes** | 1 |
 | [php](php.md) | [`geerlingguy.php`](https://github.com/geerlingguy/ansible-role-php) | Ubuntu | 12 fresh / 11 converged | `PhpOutputs(version, extension_conf_paths, webserver_notified)` | no | 1 |
+| [php_versions](php_versions.md) | [`geerlingguy.php-versions`](https://github.com/geerlingguy/ansible-role-php-versions) | Ubuntu | 3 fresh / 2 converged | `PhpVersionsOutputs(version, packages, conf_paths, …)` | no | 1 |
 | [php_xdebug](php_xdebug.md) | [`geerlingguy.php-xdebug`](https://github.com/geerlingguy/ansible-role-php-xdebug) | Ubuntu (php's guard) | 15 fresh / 13 converged | none | no | 1 |
 | [nginx](nginx.md) | [`geerlingguy.nginx`](https://github.com/geerlingguy/ansible-role-nginx) | Ubuntu | 4 fresh / 3 converged | none | **yes** | 1 |
 | [postgresql](postgresql.md) | [`geerlingguy.postgresql`](https://github.com/geerlingguy/ansible-role-postgresql) | RedHat | pass A 7 (6 converged), pass B 2 | none | **yes** | **2** |
@@ -153,8 +155,9 @@ and outputs.
   requires, whether a handler fired at all. "Converged" is the count on a rerun
   against a host that already matches — the interesting number, because a role
   whose wave count *grows* on the second pass has a request that never settles.
-- **Outputs** names the dataclass the deploy returns to a composing role. Three
-  roles publish one: `apache`, `php` and `minio`. `php_xdebug` exists to consume
+- **Outputs** names the dataclass the deploy returns to a composing role. Four
+  roles publish one: `apache`, `php`, `php_versions` and `minio`. `php_xdebug`
+  exists to consume
   `PhpOutputs` — the PHP version and extension paths it used to carry as a copied
   constant. Every other role returns `None`, and does so on its family-guard's
   early return too.
@@ -182,6 +185,12 @@ and outputs.
   path, the stray-config sweep, FPM pools, the `restart webserver` → `restart
   php-fpm` chain. Three checkpoints, unioned: the role that carries Ansible's
   handler semantics.
+- **[php_versions](php_versions.md)** — the Sury PHP repository, whose *binary*
+  signing key the role downloads into a repo-named keyring and then references by
+  path, the purge of every other version's `-common` package, and
+  the purge of the shared `php-common` behind a one-checkpoint `register` +
+  `when` gate. The outputs-publisher: its thirteen `set_fact` aliases are the
+  `PhpVersionsOutputs` a composing deploy feeds to the `php` role.
 - **[php_xdebug](php_xdebug.md)** — builds Xdebug from source and loads it into
   PHP. The composition proof: `yield from php(v)(host)` inside its own body, so
   the dependency is part of the stream rather than a program run first.
@@ -323,8 +332,9 @@ The inventory entry's `family` decides what happens. Each role's body opens with
 the OS guard — `if host.family != "Ubuntu": return …` — so a host on another
 family emits no requests, no barriers and no report lines at all rather than
 failing on the first `apt` call. The `family` field is a declaration the role
-trusts. Eight roles read `fact(LinuxDistribution)` for their own reasons —
-`certbot`, `docker`, `java`, `ntp`, `php`, `postgresql`, `repo_epel`, `repo_remi` —
+trusts. Nine roles read `fact(LinuxDistribution)` for their own reasons —
+`certbot`, `docker`, `java`, `ntp`, `php`, `php_versions`, `postgresql`,
+`repo_epel`, `repo_remi` —
 and `certbot`, `java`, `ntp`, `postgresql`, `repo_epel` and `repo_remi` treat that
 read as the check
 that the machine matches the declaration, raising before any request is built
