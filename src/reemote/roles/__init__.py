@@ -60,6 +60,7 @@ from .memcached import MemcachedVars, memcached
 from .minio import MinioOutputs, MinioVars, minio
 from .nfs import NfsVars, nfs
 from .nginx import NginxVars, nginx
+from .node_exporter import NodeExporterVars, node_exporter
 from .nodejs import NodejsVars, NpmGlobalPackage, nodejs
 from .ntp import NtpVars, ntp
 from .php import PhpOutputs, PhpVars, php
@@ -104,6 +105,7 @@ __all__: list[str] = [
     "MinioVars",
     "NfsVars",
     "NginxVars",
+    "NodeExporterVars",
     "NodejsVars",
     "NpmGlobalPackage",
     "NtpVars",
@@ -142,6 +144,7 @@ __all__: list[str] = [
     "minio",
     "nfs",
     "nginx",
+    "node_exporter",
     "nodejs",
     "ntp",
     "php",

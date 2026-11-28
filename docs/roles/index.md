@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships thirty-three configuration roles as **library code**. Each one is the
+reemote ships thirty-four configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The thirty-three roles group by what they configure. The [catalogue](#the-catalogue)
+The thirty-four roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -84,6 +84,7 @@ and outputs.
 | [zabbix_agent](zabbix_agent.md) | Zabbix agent — the vendor keyring and repository lines with their stale-source purge, the agent packages, the rendered `zabbix_agentd.conf`, the service, one restart handler |
 | [kibana](kibana.md) | Kibana — the dependencies, the Elasticsearch signing key and Elastic apt repository, the `kibana` package, the service, the rendered `kibana.yml`, one restart handler |
 | [elasticsearch](elasticsearch.md) | Elasticsearch — the dependencies, the Elastic signing key and apt repository, the `elasticsearch` package, the rendered config and version-appropriate heap file, the service and port wait, one restart handler |
+| [node_exporter](node_exporter.md) | node_exporter — the release tarball unpacked and the binary moved into place, the service group and account, the rendered systemd unit, the running/enabled unit, the restart handler and the metrics-endpoint check |
 
 ### Base system
 
@@ -118,7 +119,6 @@ and outputs.
 | Role | Migrates | Target | Waves | Outputs | `reemote[templates]` | `run_waves` passes |
 | --- | --- | --- | --- | --- | --- | --- |
 | [repo_epel](repo_epel.md) | [`geerlingguy.repo-epel`](https://github.com/geerlingguy/ansible-role-repo-epel) | RedHat | 3–4 | none | no | 1 |
-| [repo_remi](repo_remi.md) | [`geerlingguy.repo-remi`](https://github.com/geerlingguy/ansible-role-repo-remi) | RedHat | 3–4 | none | no | 1 |
 | [apache](apache.md) | [`geerlingguy.apache`](https://github.com/geerlingguy/ansible-role-apache) | Ubuntu | 3 + one per SSL vhost | `ApacheOutputs(version, service)` | **yes** | 1 |
 | [php](php.md) | [`geerlingguy.php`](https://github.com/geerlingguy/ansible-role-php) | Ubuntu | 12 fresh / 11 converged | `PhpOutputs(version, extension_conf_paths, webserver_notified)` | no | 1 |
 | [php_versions](php_versions.md) | [`geerlingguy.php-versions`](https://github.com/geerlingguy/ansible-role-php-versions) | Ubuntu | 3 fresh / 2 converged | `PhpVersionsOutputs(version, packages, conf_paths, …)` | no | 1 |
@@ -149,7 +149,9 @@ and outputs.
 | [swap](swap.md) | [`geerlingguy.swap`](https://github.com/geerlingguy/ansible-role-swap) | Ubuntu | 5 fresh / 2 converged | none | no | 1 |
 | [minio](minio.md) | [`wezhai/minio`](https://github.com/wezhai/minio) | Ubuntu | 8 changed / 8 converged on the full set (1 + handler + one per `mc` act + sync tail) | `MinioOutputs(service, install_dir, endpoint)` | **yes** | 1 |
 | [kibana](kibana.md) | [`geerlingguy.kibana`](https://github.com/geerlingguy/ansible-role-kibana) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
+| [repo_remi](repo_remi.md) | [`geerlingguy.repo-remi`](https://github.com/geerlingguy/ansible-role-repo-remi) | RedHat | 3–4 | none | no | 1 |
 | [elasticsearch](elasticsearch.md) | [`geerlingguy.elasticsearch`](https://github.com/geerlingguy/ansible-role-elasticsearch) | Ubuntu | 2 changed / 2 converged (the wait always reports) | none | **yes** | 1 |
+| [node_exporter](node_exporter.md) | [`geerlingguy.node_exporter`](https://github.com/geerlingguy/ansible-role-node_exporter) | Ubuntu | 3 fresh (4 resolving `latest`) / 3 converged | none | no | 1 |
 
 ## Reading the columns
 
@@ -328,6 +330,15 @@ and outputs.
   service and the port wait. The `flush_handlers` tail role: the post-checkpoint
   wave never disappears, and the stateless wait — never a notifier — is its one
   honest always-changed line (D6).
+- **[node_exporter](node_exporter.md)** — the release tarball unpacked in
+  `/tmp` and the binary moved to `/usr/local/bin`, the service group and
+  account with their optional fixed ids, the rendered `node_exporter.service`
+  unit, the running/enabled unit, its restart handler and the metrics-endpoint
+  check. The all-four-barriers role: an `act` probe decides whether the
+  download pair enters the stream at all, a `control` fetch resolves `latest`,
+  the `checkpoint` reads the notification, and a `fact` verifies the running
+  exporter — so the wave count moves with the host and the converged pass
+  carries no download request rather than an unchanged one.
 
 ## Running one
 
@@ -353,8 +364,8 @@ family emits no requests, no barriers and no report lines at all rather than
 failing on the first `apt` call. The `family` field is a declaration the role
 trusts. Nine roles read `fact(LinuxDistribution)` for their own reasons —
 `certbot`, `docker`, `java`, `ntp`, `php`, `php_versions`, `postgresql`,
-`repo_epel`, `repo_remi` —
-and `certbot`, `java`, `ntp`, `postgresql`, `repo_epel` and `repo_remi` treat that
+`repo_epel`, `repo_remi` — and
+`certbot`, `java`, `ntp`, `postgresql`, `repo_epel` and `repo_remi` treat that
 read as the check
 that the machine matches the declaration, raising before any request is built
 when it does not.

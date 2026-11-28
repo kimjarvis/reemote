@@ -198,8 +198,9 @@ nav:
           - swap: roles/swap.md
           - minio: roles/minio.md
           - repo_remi: roles/repo_remi.md
-          - elasticsearch: roles/elasticsearch.md
           - kibana: roles/kibana.md
+          - elasticsearch: roles/elasticsearch.md
+          - node_exporter: roles/node_exporter.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md
