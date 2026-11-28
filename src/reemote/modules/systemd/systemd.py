@@ -14,8 +14,9 @@
 # Fact side: ``SystemdServiceState`` (a unit's raw ``ActiveState`` string, or
 # None when systemd answers nothing), ``SystemdServiceEnabled`` (whether a
 # unit's ``UnitFileState`` counts as enabled) and
-# ``SystemdNeedDaemonReload`` (whether the unit's cached fragment is stale,
-# ``NeedDaemonReload=yes``) are the per-unit probes the ``service`` and
+# ``SystemdNeedDaemonReload`` (whether a ``daemon-reload`` is pending for a
+# unit: its loaded fragment is stale, or a newly installed unit file or
+# drop-in shadows what it loaded) are the per-unit probes the ``service`` and
 # ``daemon_reload`` operations read for idempotence. ``SystemdStatus`` and
 # ``SystemdEnabled`` are the two fleet-wide facts (the unit -> active
 # bool and unit -> enabled bool parsed from ``systemctl show --all``).
@@ -142,6 +143,83 @@ _UNIT_PROPERTIES = (
 #: The dependency properties ``SystemdDependencies`` reads. Each value is a
 #: whitespace-separated list of unit names systemd prints for the property.
 _DEPENDENCY_PROPERTIES = ("Requires", "Wants", "After", "Before", "Conflicts")
+
+#: The unit-file load roots, in systemd's search-path precedence order (the
+#: highest-precedence root first). ``SystemdNeedDaemonReload`` stats these to
+#: find a unit file the running manager has never seen -- an override in
+#: ``/etc/systemd/system`` shadowing the packaged fragment in
+#: ``/usr/lib/systemd/system``. The list mirrors what ``systemd-path`` prints
+#: for admin and package unit files, without the ``system.control``,
+#: ``transient`` and ``generator`` directories: a unit loaded from one of those
+#: has no on-disk override to miss, so leaving them out can only under-report
+#: a pending reload, never invent one. The paths are spelled literally under
+#: ``/usr`` because that is the ``FragmentPath`` a merged-usr host reports --
+#: adding the ``/lib/systemd/system`` alias would stat the same file twice and
+#: make the loaded path look outranked by itself.
+_UNIT_LOAD_ROOTS = (
+    "/etc/systemd/system",
+    "/run/systemd/system",
+    "/usr/local/lib/systemd/system",
+    "/usr/lib/systemd/system",
+)
+
+#: The same precedence list for a ``systemctl --user`` manager, restricted to
+#: the system-wide user-unit roots. The login user's own ``$HOME`` roots are
+#: deliberately absent: the scan runs as the connecting user, and a fact read
+#: has no business walking a home directory it does not manage.
+_USER_UNIT_LOAD_ROOTS = (
+    "/etc/systemd/user",
+    "/run/systemd/user",
+    "/usr/local/share/systemd/user",
+    "/usr/share/systemd/user",
+    "/usr/lib/systemd/user",
+)
+
+#: The line prefixes the combined reload report prints for an on-disk unit
+#: file and for an on-disk drop-in; every other line is a ``systemctl show``
+#: property.
+_UNIT_LINE = "unit "
+_DROPIN_LINE = "dropin "
+
+
+class _ReloadReport(TypedDict):
+    """The parsed ``SystemdNeedDaemonReload`` report -- internal, testable.
+
+    ``stale`` is the ``NeedDaemonReload`` property (the fragment systemd loaded
+    changed on disk); ``fragment``/``loaded_dropins`` are what the manager has
+    loaded (``FragmentPath``/``DropInPaths``, empty for a unit it never
+    loaded); ``units``/``disk_dropins`` are what the load roots hold now, the
+    fragments in precedence order. ``pending`` turns the five into the verdict.
+    """
+
+    stale: bool
+    fragment: str
+    loaded_dropins: list[str]
+    units: list[str]
+    disk_dropins: list[str]
+
+
+def _load_root_scan(user_mode: bool = False) -> str:
+    """The shell that lists a unit's files as they sit on disk.
+
+    Prints a ``unit <path>`` line for ``<root>/<unit>`` and a ``dropin
+    <path>`` line for every ``<root>/<unit>.d/*.conf``, root by root in
+    precedence order, so the first ``unit`` line is the file a
+    ``daemon-reload`` would load. The unit name rides the ``$u`` the caller
+    assigns (this renders the loop only), so a name with a metacharacter
+    stays data rather than shell. Each entry is tested with ``-f``/``-L`` so a
+    missing directory, an unexpanded glob and a ``/dev/null`` mask all behave,
+    and the script ends in ``true`` so the read never exits non-zero.
+    """
+    roots = _USER_UNIT_LOAD_ROOTS if user_mode else _UNIT_LOAD_ROOTS
+    root_list = " ".join(shlex.quote(root) for root in roots)
+    return (
+        f'for d in {root_list}; do f="$d/$u"; '
+        f'{{ [ -f "$f" ] || [ -L "$f" ]; }} && printf "{_UNIT_LINE}%s\\n" "$f"; '
+        f'for c in "$d/$u.d/"*.conf; do [ -f "$c" ] '
+        f'&& printf "{_DROPIN_LINE}%s\\n" "$c"; done; done; true'
+    )
+
 
 # ``systemctl --version``'s first line: ``systemd 255 (255.4-1ubuntu8.6)`` --
 # the upstream integer version and the distribution release in parentheses.
@@ -286,13 +364,25 @@ class SystemdServiceEnabled:
 
 
 class SystemdNeedDaemonReload:
-    """Whether systemd's cached fragment for a unit is stale (``NeedDaemonReload``).
+    """Whether a ``daemon-reload`` is pending for a unit.
+
+    Two states make one pending: the fragment systemd loaded has **changed**
+    on disk (``NeedDaemonReload=yes``), or a **newly added** unit file or
+    drop-in now shadows what it loaded (a ``/etc/systemd/system`` override of
+    a unit still running the packaged ``/usr/lib`` fragment). The property
+    answers only the first, so the read pairs it with a stat of the load roots
+    and compares that against ``FragmentPath``/``DropInPaths``.
 
     **Commands:**
 
     ```bash
-    systemctl show -p NeedDaemonReload --value <unit>
+    systemctl show <unit> -p NeedDaemonReload -p FragmentPath -p DropInPaths
+    for d in <load root>; do test <d>/<unit> and <d>/<unit>.d/*.conf; done
     ```
+
+    Both halves ride one unprivileged shell. The scan is dropped for a
+    ``machine``/``user_name`` scope, whose filesystem this read cannot reach,
+    and for a ``SimulatedHost`` (which answers from its own model).
 
     **Returns:**
 
@@ -310,20 +400,42 @@ class SystemdNeedDaemonReload:
         Examples can be found in ``examples/modules/systemd/systemd_daemon_reload.py``.
     """
 
-    # systemd caches each unit's parsed fragment; editing the unit file on
-    # disk (a ``files.install`` of a ``/etc/systemd/system`` path, a package
-    # upgrade) leaves the cache stale until ``daemon-reload`` runs, and
-    # ``NeedDaemonReload`` is the one property that answers ``yes`` while it
-    # does -- ``no`` (or nothing, for a unit systemd cannot load) is the
-    # converged answer. The ``daemon_reload`` operation with a ``unit`` and
-    # ``service(daemon_reload=True)`` read this fact to make the reload
-    # state-gated. A bare name is normalized with ``unit_name``.
+    # systemd caches each unit's parsed fragment and ``daemon-reload`` is the
+    # only verb that re-reads it. Three on-disk situations, two of them
+    # pending (issue #75):
     #
-    # SimulatedHost seam: ``systemd_reload_pending`` holds the full unit names
-    # whose on-disk file was written since the last simulated
-    # ``daemon-reload``; membership answers. The scope flags are ignored by
-    # the single system-scope store -- a documented approximation; the real
-    # transport renders them faithfully.
+    # * an **edited** fragment -- the file systemd loaded, at the path it
+    #   loaded it from, changed on disk -- is what ``NeedDaemonReload``
+    #   reports, the staleness half;
+    # * a **newly shadowing** override is not reported: the loaded fragment is
+    #   untouched, so the property says ``no`` while a higher-precedence file
+    #   in the search path is still unknown to the manager. Only
+    #   ``daemon-reload`` re-resolves the search path, so a bare ``restart``
+    #   keeps running the packaged ``ExecStart`` while the deploy reports the
+    #   change applied. The load-root scan covers this half: a ``<root>/<unit>``
+    #   file ahead of the loaded ``FragmentPath``, or a ``<unit>.d/*.conf``
+    #   missing from ``DropInPaths``, is pending;
+    # * a **fresh** unit name (no ``FragmentPath`` at all) is not pending --
+    #   systemd loads the new file lazily on ``start``/``enable``, so the
+    #   reload would be noise. Both file halves therefore need a unit the
+    #   manager has already loaded.
+    #
+    # The converged answer stays ``no``: after the reload the loaded fragment
+    # is the highest-precedence file on disk and every drop-in on disk is
+    # loaded, so a handler request can carry ``daemon_reload=True`` without
+    # breaking idempotence (issue #50). The three properties and the scan ride
+    # one shell because the verdict needs them together; ``parse`` and
+    # ``pending`` stay pure so both halves are testable without a host. A bare
+    # name is normalized with ``unit_name``.
+    #
+    # SimulatedHost seam: the host builds the same report from its own model
+    # (``systemd_reload_report``) -- ``systemd_reload_pending`` for staleness,
+    # ``systemd_loaded_fragments``/``systemd_loaded_dropins`` for what the
+    # manager loaded, and the installed-file stores for what is on disk -- so
+    # the shadow case is decided by this class's own ``pending`` offline and
+    # not by a simulation shortcut. The scope flags are ignored by the single
+    # system-scope store -- a documented approximation; the real transport
+    # renders them faithfully.
 
     @classmethod
     def command(
@@ -333,9 +445,79 @@ class SystemdNeedDaemonReload:
         machine: str | None = None,
         user_name: str | None = None,
     ) -> str:
-        """The ``systemctl show`` command for a unit's ``NeedDaemonReload`` flag."""
+        """The combined ``systemctl show`` and load-root probe for one unit.
+
+        With no ``machine``/``user_name`` the shell assigns ``$u`` once and
+        runs the property read followed by ``_load_root_scan``; with either
+        scope flag only the property read runs, since the scan would stat the
+        wrong filesystem.
+        """
         base = _systemctl_cmd(user_mode, machine, user_name)
-        return f"{base} show -p NeedDaemonReload --value {shlex.quote(unit_name(unit))}"
+        quoted = shlex.quote(unit_name(unit))
+        properties = (
+            f'{base} show "$u" -p NeedDaemonReload -p FragmentPath -p DropInPaths'
+        )
+        if machine is not None or user_name is not None:
+            return f"u={quoted}; {properties}"
+        return f"u={quoted}; {properties}; {_load_root_scan(user_mode)}"
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> _ReloadReport:
+        """Split one report into its five parts (pure/testable).
+
+        ``unit``/``dropin``-prefixed lines are the on-disk files, kept in the
+        order the shell printed them (precedence order for the fragments);
+        every other line is a ``systemctl show`` ``Key=Value`` property, read
+        by key because ``systemctl`` does not preserve the requested order.
+        ``DropInPaths`` is one whitespace-separated line. An empty or absent
+        property reads as not-stale/no-fragment/no-drop-ins, which is what
+        ``systemctl`` prints for a unit it cannot load.
+        """
+        stale = False
+        fragment = ""
+        loaded_dropins: list[str] = []
+        units: list[str] = []
+        disk_dropins: list[str] = []
+        for line in output:
+            line = line.strip()
+            if line.startswith(_UNIT_LINE):
+                units.append(line[len(_UNIT_LINE) :])
+            elif line.startswith(_DROPIN_LINE):
+                disk_dropins.append(line[len(_DROPIN_LINE) :])
+            elif line.startswith("NeedDaemonReload="):
+                stale = line.partition("=")[2] == "yes"
+            elif line.startswith("FragmentPath="):
+                fragment = line.partition("=")[2]
+            elif line.startswith("DropInPaths="):
+                loaded_dropins = line.partition("=")[2].split()
+        return {
+            "stale": stale,
+            "fragment": fragment,
+            "loaded_dropins": loaded_dropins,
+            "units": units,
+            "disk_dropins": disk_dropins,
+        }
+
+    @classmethod
+    def pending(cls, report: _ReloadReport) -> bool:
+        """The verdict for one report (pure/testable).
+
+        Stale, or -- only for a unit the manager has already loaded, so a
+        fresh unit name stays a no-op -- a fragment on disk that outranks the
+        loaded one, or a drop-in on disk systemd never loaded. A fragment
+        loaded from a root outside the scan (a generated or transient unit)
+        cannot be outranked: the loaded path never appears among the
+        candidates, so the answer stays ``no`` rather than guessing.
+        """
+        if report["stale"]:
+            return True
+        fragment = report["fragment"]
+        if not fragment:
+            return False
+        units = report["units"]
+        if units and units[0] != fragment and fragment in units:
+            return True
+        return bool(set(report["disk_dropins"]) - set(report["loaded_dropins"]))
 
     @classmethod
     async def process(
@@ -346,15 +528,15 @@ class SystemdNeedDaemonReload:
         machine: str | None = None,
         user_name: str | None = None,
     ) -> bool:
-        pending = getattr(host, "systemd_reload_pending", None)
-        if pending is not None:
-            # SimulatedHost seam: membership in the pending-unit set.
-            return unit_name(unit) in pending
-        # Real transport: `systemctl show` over asyncssh; the property
-        # prints ``yes``/``no`` with ``--value``, and anything else (an
-        # empty answer for an unloadable unit) is not pending.
+        report = getattr(host, "systemd_reload_report", None)
+        if report is not None:
+            # SimulatedHost seam: the host models the loaded state and the
+            # files on disk; the verdict is this class's own.
+            return cls.pending(report(unit_name(unit), user_mode))
+        # Real transport: one unprivileged shell over asyncssh. A failure (or
+        # a missing systemctl) prints nothing, which parses as not pending.
         stdout = await host.run_shell(cls.command(unit, user_mode, machine, user_name))
-        return stdout.strip() == "yes"
+        return cls.pending(cls.parse(stdout.splitlines()))
 
 
 class SystemdStatus:
@@ -1315,9 +1497,10 @@ async def service(
         enabled (bool | None, optional): Whether the unit should be enabled
             on boot; ``None`` leaves the boot setting alone. Defaults to None.
         daemon_reload (bool, optional): Reload the systemd daemon to read
-            updated unit files before anything else, only while the unit
-            reports ``NeedDaemonReload`` -- idempotent, so a converged run
-            yields no reload. Defaults to False.
+            updated unit files before anything else, only while the unit is
+            reload-pending -- its loaded fragment changed, or a unit file or
+            drop-in now shadows it. Idempotent, so a converged run yields no
+            reload. Defaults to False.
         reset_failed (bool, optional): Clear a ``failed`` state with
             ``reset-failed`` before starting/restarting. Defaults to False.
         soft_reload (bool, optional): When ``reloaded`` is set, use
@@ -1441,7 +1624,8 @@ async def service(
     # by ``**kwargs`` with no effect.
     #
     # ``daemon_reload`` is gated on the ``SystemdNeedDaemonReload`` read (the
-    # reload is yielded only while the unit's cached fragment is stale),
+    # reload is yielded only while the unit's loaded fragment is stale or a
+    # newly installed file shadows it),
     # while ``restarted``/``reloaded`` are stateless (always yield when set,
     # like any non-idempotent operation);
     # ``running`` and ``enabled`` compare against the
@@ -1461,11 +1645,16 @@ async def service(
     reasons: list[str] = []
     scope = {"user_mode": user_mode, "machine": machine, "user_name": user_name}
 
-    # State-gated (issue #50): systemd invalidates its cached fragment on
-    # ``daemon-reload``, so a converged run answers ``no`` and the reload
-    # -- the whole point of which is a real on-disk unit-file change -- is
-    # skipped. This is what lets a handler request stay
-    # ``daemon_reload=True, restarted=True`` without breaking convergence.
+    # State-gated (issues #50 and #75): systemd invalidates its cached
+    # fragment on ``daemon-reload``, so a converged run answers ``no`` and the
+    # reload -- the whole point of which is a real on-disk unit-file change --
+    # is skipped. The gate reads both halves of "changed": the
+    # ``NeedDaemonReload`` staleness property, and the load roots compared
+    # against what the manager loaded, because a newly added override of an
+    # already-loaded unit leaves the property saying ``no`` (the packaged
+    # fragment it describes was never touched). This is what lets a handler
+    # request stay ``daemon_reload=True, restarted=True`` without breaking
+    # convergence.
     if daemon_reload and await ctx.facts.get(SystemdNeedDaemonReload, unit, **scope):
         ctx.changed = True
         reasons.append("daemon-reload")
@@ -1558,10 +1747,11 @@ async def daemon_reload(
         user_name (str | None, optional): Connect to a specific user's
             systemd session. Defaults to None.
         unit (str | None, optional): Make the reload state-gated -- yield
-            only while this unit reports ``NeedDaemonReload`` (its cached
-            fragment is stale). ``None`` (the default) keeps the baseline's
-            unconditional, stateless reload. A bare name gets ``.service``
-            appended, any other systemd suffix is kept.
+            only while this unit is reload-pending (its loaded fragment
+            changed on disk, or a unit file or drop-in now shadows it).
+            ``None`` (the default) keeps the baseline's unconditional,
+            stateless reload. A bare name gets ``.service`` appended, any
+            other systemd suffix is kept.
         **kwargs: Additional keyword arguments.
 
     Yields:
@@ -1584,7 +1774,7 @@ async def daemon_reload(
         yield op(systemd.daemon_reload, name="Reload systemd daemon", sudo=True)
 
         # The state-gated form of a unit whose file a files.install just wrote
-        # ->  systemctl daemon-reload, but only while NeedDaemonReload=yes
+        # ->  systemctl daemon-reload, but only while the unit is reload-pending
         # (a converged run yields nothing and reports no change)
         yield op(
             systemd.daemon_reload,
@@ -1610,9 +1800,11 @@ async def daemon_reload(
     # like ``iptables.zero``, documented as such): it reads no fact and always
     # yields one ``daemon-reload`` command. With a unit it becomes
     # state-gated the way ``mask`` and ``reset_failed`` are: read
-    # ``SystemdNeedDaemonReload`` and yield only while the unit's cached
-    # fragment is stale, so the idempotent companion of a unit-file
-    # ``files.install`` converges to no change. Needs root for a
+    # ``SystemdNeedDaemonReload`` and yield only while a reload is pending for
+    # the unit, so the idempotent companion of a unit-file ``files.install``
+    # converges to no change -- including the override case, where a real
+    # systemd keeps answering ``NeedDaemonReload=no`` for a unit file it has
+    # never seen. Needs root for a
     # system manager: flag the request ``sudo=True``.
     scope = {"user_mode": user_mode, "machine": machine, "user_name": user_name}
     if unit is not None:

@@ -8,8 +8,9 @@ helper; the per-unit ``SystemdServiceState``/``SystemdServiceEnabled``/
 ``SystemdNeedDaemonReload`` probes and the ``service``/``daemon_reload``
 operations (idempotence against the
 seams, seam mutation, the baseline operation-fixture parity, the Ansible
-``sleep`` restart split, the ``running``/``enabled`` opt-out sentinels and the
-backward-compatible ``server.service``
+``sleep`` restart split, the ``running``/``enabled`` opt-out sentinels, the
+reload-pending report -- the ``NeedDaemonReload`` property unioned with the
+load-root scan (issue #75) -- and the backward-compatible ``server.service``
 alias); the fleet-wide
 ``SystemdStatus``/``SystemdEnabled`` ports (the baseline fact-fixture parity over
 canned shell output, plus the seam projections); and the seven reemote
@@ -66,6 +67,7 @@ from reemote.modules.systemd.systemd import (
     SystemdUnitFiles,
     SystemdUnitProperties,
     SystemdVersion,
+    _load_root_scan,
     _spool_path,
     _SystemdConfFile,
     unit_name,
@@ -141,18 +143,268 @@ async def test_systemd_service_enabled_reads_the_simulated_seam():
     assert not await SystemdServiceEnabled.process(host, "nginx")
 
 
+# The property half of the read, as the fact renders it. ``systemctl show``
+# is asked for the three keys without ``--value`` because the verdict needs
+# the ``DropInPaths`` list, which ``--value`` would flatten.
+_PROPERTY_READ = 'show "$u" -p NeedDaemonReload -p FragmentPath -p DropInPaths'
+
+
+def load_packaged_unit(host: SimulatedHost, unit: str, root: str = "/usr/lib/systemd/system") -> None:
+    """Give the simulated manager a unit file it has already loaded.
+
+    Seeds both halves the ``SystemdNeedDaemonReload`` report reads -- the file
+    on the simulated disk and the loaded state -- which is what switches the
+    host's permissive staleness marking off, so a later install of an
+    override at a higher-precedence root behaves like the real
+    ``NeedDaemonReload=no`` answer of issue #75.
+    """
+    path = f"{root}/{unit}"
+    host.remote_files[path] = b"[Unit]\n"
+    host.existing_files.add(path)
+    host.systemd_loaded_fragments[unit] = path
+
+
+def test_systemd_need_daemon_reload_renders_the_combined_read():
+    # One unprivileged shell carries both halves; the unit name is assigned to
+    # ``$u`` once so the scan and the property read share it.
+    assert SystemdNeedDaemonReload.command("httpd") == (
+        f"u=httpd.service; systemctl {_PROPERTY_READ}; {_load_root_scan()}"
+    )
+    # A bare name is normalized, and a name with a metacharacter stays data.
+    assert SystemdNeedDaemonReload.command("logrotate.timer").startswith(
+        "u=logrotate.timer; "
+    )
+    assert SystemdNeedDaemonReload.command("my-service; whoami").startswith(
+        "u='my-service; whoami.service'; "
+    )
+
+
+def test_systemd_need_daemon_reload_scan_walks_the_load_roots():
+    # The roots in systemd's precedence order, and the two line markers the
+    # parser splits the report on.
+    scan = _load_root_scan()
+    assert scan.index("/etc/systemd/system") < scan.index("/run/systemd/system") < scan.index(
+        "/usr/local/lib/systemd/system"
+    ) < scan.index("/usr/lib/systemd/system")
+    assert 'printf "unit %s\\n"' in scan
+    assert 'printf "dropin %s\\n"' in scan
+    assert scan.endswith("done; done; true")
+    # A ``--user`` manager has its own search path, and the scan follows it.
+    user_scan = _load_root_scan(user_mode=True)
+    assert "/usr/share/systemd/user" in user_scan
+    assert "/usr/lib/systemd/system" not in user_scan
+
+
+def test_systemd_need_daemon_reload_scoped_read_drops_the_scan():
+    # The scan would stat the wrong filesystem, so a machine/session scope
+    # reads only the property.
+    for kwargs, base in (
+        ({"machine": "testmachine"}, "systemctl --machine=testmachine"),
+        ({"user_name": "testuser"}, "systemctl --machine=testuser@.host"),
+        (
+            {"user_mode": True, "machine": "testmachine", "user_name": "testuser"},
+            "systemctl --user --machine=testuser@testmachine",
+        ),
+    ):
+        command = SystemdNeedDaemonReload.command("httpd", **kwargs)
+        assert command == f"u=httpd.service; {base} {_PROPERTY_READ}"
+
+
+def test_systemd_need_daemon_reload_parses_the_report():
+    # Properties are read by key -- ``systemctl`` answers in its own (sorted)
+    # order -- ``DropInPaths`` is one whitespace-separated line, and the
+    # on-disk lines keep the order the shell printed them.
+    assert SystemdNeedDaemonReload.parse(
+        [
+            "DropInPaths=/etc/systemd/system/httpd.service.d/limits.conf",
+            "FragmentPath=/usr/lib/systemd/system/httpd.service",
+            "NeedDaemonReload=no",
+            "unit /etc/systemd/system/httpd.service",
+            "dropin /etc/systemd/system/httpd.service.d/limits.conf",
+            "dropin /run/systemd/system/httpd.service.d/extra.conf",
+        ]
+    ) == {
+        "stale": False,
+        "fragment": "/usr/lib/systemd/system/httpd.service",
+        "loaded_dropins": ["/etc/systemd/system/httpd.service.d/limits.conf"],
+        "units": ["/etc/systemd/system/httpd.service"],
+        "disk_dropins": [
+            "/etc/systemd/system/httpd.service.d/limits.conf",
+            "/run/systemd/system/httpd.service.d/extra.conf",
+        ],
+    }
+
+
+def test_systemd_need_daemon_reload_parses_an_unloadable_unit():
+    # An absent ``systemctl`` prints nothing; a unit systemd cannot load
+    # answers the three keys empty. Both read as nothing pending.
+    empty = {
+        "stale": False,
+        "fragment": "",
+        "loaded_dropins": [],
+        "units": [],
+        "disk_dropins": [],
+    }
+    assert SystemdNeedDaemonReload.parse([]) == empty
+    assert SystemdNeedDaemonReload.parse(
+        ["DropInPaths=", "FragmentPath=", "NeedDaemonReload=no"]
+    ) == empty
+    assert not SystemdNeedDaemonReload.pending(empty)
+
+
+def _reload_report(**overrides) -> dict:
+    """A converged report -- loaded from the packaged root, nothing else there."""
+    report = {
+        "stale": False,
+        "fragment": "/usr/lib/systemd/system/httpd.service",
+        "loaded_dropins": [],
+        "units": ["/usr/lib/systemd/system/httpd.service"],
+        "disk_dropins": [],
+    }
+    report.update(overrides)
+    return report
+
+
+@pytest.mark.parametrize(
+    ("overrides", "pending"),
+    [
+        # The staleness half: the loaded fragment changed on disk.
+        ({"stale": True}, True),
+        ({"stale": True, "fragment": ""}, True),
+        # The converged state: the loaded fragment is top of the search path.
+        ({}, False),
+        # A new override ahead of the loaded fragment (issue #75) -- the case
+        # the property alone answers ``no`` for.
+        (
+            {
+                "units": [
+                    "/etc/systemd/system/httpd.service",
+                    "/usr/lib/systemd/system/httpd.service",
+                ]
+            },
+            True,
+        ),
+        # A drop-in the manager never loaded.
+        (
+            {"disk_dropins": ["/etc/systemd/system/httpd.service.d/override.conf"]},
+            True,
+        ),
+        # Every drop-in on disk is already loaded -- nothing to reload.
+        (
+            {
+                "loaded_dropins": ["/etc/systemd/system/httpd.service.d/override.conf"],
+                "disk_dropins": ["/etc/systemd/system/httpd.service.d/override.conf"],
+            },
+            False,
+        ),
+        # A unit the manager has never loaded starts lazily; the reload would
+        # be noise.
+        ({"fragment": "", "units": ["/etc/systemd/system/httpd.service"]}, False),
+        # A unit loaded from a root outside the scan (transient or generated)
+        # cannot be outranked, so the read declines rather than guessing.
+        (
+            {
+                "fragment": "/run/systemd/generator/httpd.service",
+                "units": ["/etc/systemd/system/httpd.service"],
+            },
+            False,
+        ),
+    ],
+)
+def test_systemd_need_daemon_reload_verdicts(overrides: dict, pending: bool):
+    assert SystemdNeedDaemonReload.pending(_reload_report(**overrides)) is pending
+
+
+async def test_systemd_need_daemon_reload_reads_a_shadowing_override():
+    # The live bug: the property says ``no`` while an ``/etc`` override now
+    # outranks the packaged fragment the manager loaded.
+    host = CannedShellHost(
+        "NeedDaemonReload=no\n"
+        "FragmentPath=/usr/lib/systemd/system/cron.service\n"
+        "DropInPaths=\n"
+        "unit /etc/systemd/system/cron.service\n"
+        "unit /usr/lib/systemd/system/cron.service\n"
+    )
+    assert await SystemdNeedDaemonReload.process(host, "cron")
+    # Both halves ride the one shell.
+    assert len(host.shells) == 1
+
+
 async def test_systemd_need_daemon_reload_parses_the_property():
-    host = CannedShellHost("yes\n")
+    host = CannedShellHost(
+        "NeedDaemonReload=yes\n"
+        "FragmentPath=/usr/lib/systemd/system/httpd.service\n"
+        "DropInPaths=\n"
+        "unit /usr/lib/systemd/system/httpd.service\n"
+    )
     assert await SystemdNeedDaemonReload.process(host, "httpd")
-    assert host.shells == ["systemctl show -p NeedDaemonReload --value httpd.service"]
-    assert not await SystemdNeedDaemonReload.process(CannedShellHost("no\n"), "httpd")
-    # An empty answer (a unit systemd cannot load) is not pending.
+    assert host.shells == [SystemdNeedDaemonReload.command("httpd")]
+    # The converged answer of the same unit after the reload.
+    assert not await SystemdNeedDaemonReload.process(
+        CannedShellHost(host.shells[0].replace("NeedDaemonReload=yes", "NeedDaemonReload=no")),
+        "httpd",
+    )
+    # An empty answer (a missing ``systemctl``, a failed read) is not pending.
     assert not await SystemdNeedDaemonReload.process(CannedShellHost(""), "httpd")
+
+
+async def test_systemd_need_daemon_reload_scoped_read_uses_the_property_only():
+    host = CannedShellHost(
+        "NeedDaemonReload=no\n"
+        "FragmentPath=/usr/lib/systemd/system/httpd.service\n"
+        "DropInPaths=\n"
+    )
+    assert not await SystemdNeedDaemonReload.process(host, "httpd", machine="testmachine")
+    assert host.shells == [
+        f'u=httpd.service; systemctl --machine=testmachine {_PROPERTY_READ}'
+    ]
 
 
 async def test_systemd_need_daemon_reload_reads_the_simulated_seam():
     host = SimulatedHost(name="h", systemd_reload_pending={"httpd.service"})
     assert await SystemdNeedDaemonReload.process(host, "httpd")
+    assert not await SystemdNeedDaemonReload.process(host, "nginx")
+
+
+async def test_systemd_need_daemon_reload_seam_sees_a_shadowing_override():
+    # The offline reproduction of issue #75: with the loaded state modelled,
+    # installing the override marks no staleness at all -- and the read is
+    # still pending, because the library compares it against the disk.
+    host = SimulatedHost(name="h", services={"varnish.service": "active"})
+    load_packaged_unit(host, "varnish.service")
+    assert not await SystemdNeedDaemonReload.process(host, "varnish")
+
+    host.remote_files["/tmp/varnish-spool"] = b"[Service]\n"
+    host.install_file("/tmp/varnish-spool", "/etc/systemd/system/varnish.service", 644)
+    assert "varnish.service" not in host.systemd_reload_pending
+    assert await SystemdNeedDaemonReload.process(host, "varnish")
+
+
+async def test_systemd_need_daemon_reload_seam_sees_a_new_dropin():
+    # A drop-in written beside the loaded one is the same shadow, in the
+    # ``.d`` directory; the reload lands it and the next pass converges.
+    host = SimulatedHost(
+        name="h",
+        systemd_loaded_fragments={"nginx.service": "/usr/lib/systemd/system/nginx.service"},
+        systemd_loaded_dropins={"nginx.service": ["/etc/systemd/system/nginx.service.d/limits.conf"]},
+    )
+    for path in (
+        "/usr/lib/systemd/system/nginx.service",
+        "/etc/systemd/system/nginx.service.d/limits.conf",
+    ):
+        host.remote_files[path] = b"[Service]\n"
+        host.existing_files.add(path)
+    assert not await SystemdNeedDaemonReload.process(host, "nginx")
+
+    dropin = "/etc/systemd/system/nginx.service.d/proxy.conf"
+    host.remote_files[dropin] = b"[Service]\n"
+    host.existing_files.add(dropin)
+    assert await SystemdNeedDaemonReload.process(host, "nginx")
+
+    await send_command(host, SystemctlCommand(action="daemon-reload"))
+    assert host.systemd_loaded_dropins["nginx.service"] == sorted(
+        [dropin, "/etc/systemd/system/nginx.service.d/limits.conf"]
+    )
     assert not await SystemdNeedDaemonReload.process(host, "nginx")
 
 
@@ -379,6 +631,43 @@ async def test_service_daemon_reload_then_restart_pending_unit():
         SystemctlCommand(action="daemon-reload"),
         SystemctlCommand(action="restart", unit="firewall.service"),
     ]
+
+
+async def test_service_daemon_reload_then_restart_a_shadowing_override():
+    # Issue #75 end to end: the override a ``files.install`` wrote outranks the
+    # packaged fragment the manager loaded, and ``NeedDaemonReload`` never
+    # says yes to it. The request must still reload before restarting, and the
+    # reload must land the override so the next pass converges (criterion 1 of
+    # issue #50).
+    host = SimulatedHost(name="h", services={"varnish.service": "active"})
+    load_packaged_unit(host, "varnish.service")
+    host.remote_files["/tmp/varnish-spool"] = b"[Service]\n"
+    host.install_file("/tmp/varnish-spool", "/etc/systemd/system/varnish.service", 644)
+
+    request = op(
+        systemd.service,
+        service="varnish",
+        restarted=True,
+        daemon_reload=True,
+        sudo=True,
+    )
+    ctx, commands = await materialize(host, request)
+    assert ctx.changed
+    assert commands == [
+        SystemctlCommand(action="daemon-reload"),
+        SystemctlCommand(action="restart", unit="varnish.service"),
+    ]
+    for cmd in commands:
+        await send_command(host, cmd)
+    assert host.systemd_loaded_fragments["varnish.service"] == (
+        "/etc/systemd/system/varnish.service"
+    )
+
+    ctx, commands = await materialize(host, request)
+    # ``restarted=True`` is a direction rather than a state, so the restart
+    # still runs; what converges is the reload half -- the override is the
+    # loaded fragment now, so no second ``daemon-reload`` is planned.
+    assert commands == [SystemctlCommand(action="restart", unit="varnish.service")]
 
 
 async def test_service_commands_mutate_the_simulated_host():
@@ -768,6 +1057,24 @@ async def test_daemon_reload_gated_forwards_the_scope():
         host, op(systemd.daemon_reload, unit="httpd", user_mode=True)
     )
     assert commands == [SystemctlCommand(action="daemon-reload", user_mode=True)]
+
+
+async def test_daemon_reload_gated_with_a_unit_yields_for_a_shadowing_override():
+    # The gated form reads the same union as ``service``, so a new override of
+    # a loaded unit -- property ``no``, disk ahead of the fragment -- plans the
+    # reload, and the reload converges.
+    host = SimulatedHost(name="h")
+    load_packaged_unit(host, "varnish.service")
+    host.remote_files["/etc/systemd/system/varnish.service"] = b"[Service]\n"
+    host.existing_files.add("/etc/systemd/system/varnish.service")
+    ctx, commands = await materialize(host, op(systemd.daemon_reload, unit="varnish"))
+    assert ctx.changed
+    assert ctx.reason == "varnish.service reload-pending, will daemon-reload"
+    assert commands == [SystemctlCommand(action="daemon-reload")]
+    await send_command(host, commands[0])
+    ctx, commands = await materialize(host, op(systemd.daemon_reload, unit="varnish"))
+    assert not ctx.changed
+    assert commands == []
 
 
 # --- seam mutation for the extended actions ----------------------------------

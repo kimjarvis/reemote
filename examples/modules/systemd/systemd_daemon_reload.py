@@ -21,8 +21,10 @@ unit file; a config-writing operation such as ``systemd.dropin`` therefore
 chains its own reload only when it actually changed a file.
 
 The ``unit`` form makes the reload **state-gated**: it reads
-``SystemdNeedDaemonReload`` (systemd's own ``NeedDaemonReload`` property) and
-yields the command only while that unit's cached fragment is stale. This is
+``SystemdNeedDaemonReload`` -- systemd's own ``NeedDaemonReload`` property
+unioned with a stat of the unit load roots -- and yields the command only while
+a reload is pending for that unit, either because the fragment it loaded went
+stale or because a unit file or drop-in now shadows it (issue #75). This is
 the idempotent companion of a ``files.install`` of a unit file -- after the
 reload runs, a converged pass reports no change, so a handler request built
 with ``restart_handler(..., daemon_reload=True)`` never breaks convergence.
@@ -97,8 +99,9 @@ def deploy(host: Host) -> Generator[OperationRequest]:
         sudo=True,
         when=is_systemd,
     )
-    # The state-gated form: yielded only while the unit's cached fragment is
-    # stale (NeedDaemonReload=yes), so a converged host plans no change.
+    # The state-gated form: yielded only while a reload is pending for the unit
+    # (its loaded fragment went stale, or a new override shadows it), so a
+    # converged host plans no change.
     yield op(
         systemd.daemon_reload,
         name="Reload if the web server unit is stale",

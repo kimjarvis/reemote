@@ -620,7 +620,9 @@ from reemote.modules.sysctl.sysctl import (
     _parse_conf,
 )
 from reemote.modules.systemd.systemd import (
+    _UNIT_LOAD_ROOTS,
     _UNIT_SUFFIXES,
+    _USER_UNIT_LOAD_ROOTS,
     SystemctlCommand,
     SystemdFailedUnit,
     SystemdFileInstallCommand,
@@ -631,6 +633,7 @@ from reemote.modules.systemd.systemd import (
     SystemdTimer,
     SystemdTmpfilesCommand,
     SystemdUnitFile,
+    _ReloadReport,
 )
 from reemote.modules.ufw.ufw import (
     UfwDefaultPolicyCommand,
@@ -2381,15 +2384,30 @@ class SimulatedHost(Host):
     # operation reads it for idempotence), keeping it in sync with
     # ``systemd_unit_files``.
     systemd_unit_properties: dict[str, dict[str, str]] = field(default_factory=dict)
-    # The units whose on-disk file changed since the last simulated
-    # ``daemon-reload`` (full unit names), backing ``SystemdNeedDaemonReload``
-    # and the state-gated ``daemon_reload``/``service(daemon_reload=True)``
-    # reads. The simulation models systemd's stale cached fragment: a unit
-    # file or drop-in installed under a ``/systemd/system/`` path joins the
-    # set (``install_file``/``install_systemd_conf_file``), a simulated
-    # ``systemctl daemon-reload`` clears it. Defaults to the empty set --
-    # nothing pending, the converged answer.
+    # The units whose loaded fragment changed on disk since the last simulated
+    # ``daemon-reload`` (full unit names), backing the staleness half of
+    # ``SystemdNeedDaemonReload`` and the state-gated
+    # ``daemon_reload``/``service(daemon_reload=True)`` reads. The simulation
+    # models systemd's stale cached fragment: a unit file or drop-in installed
+    # under a ``/systemd/system/`` path joins the set
+    # (``install_file``/``install_systemd_conf_file``) when the host has no
+    # loaded state modelled for that unit or when the written path is the
+    # loaded one, and a simulated ``systemctl daemon-reload`` clears it.
+    # Defaults to the empty set -- nothing stale, the converged answer.
     systemd_reload_pending: set[str] = field(default_factory=set)
+    # What the simulated manager has loaded, the read-side model
+    # ``SystemdNeedDaemonReload`` compares the simulated disk against (issue
+    # #75): ``systemd_loaded_fragments`` is the unit -> ``FragmentPath`` answer
+    # and ``systemd_loaded_dropins`` the unit -> ``DropInPaths`` answer. A unit
+    # absent from the fragment store models a host that describes no loaded
+    # state for it (the permissive default every pre-issue-75 test relies on);
+    # an empty string models a loaded unit with no fragment of its own (a
+    # transient or generated one), which nothing can shadow. A simulated
+    # ``daemon-reload`` re-resolves both from the disk stores, so a shadowing
+    # override converges. A test seeds them to model a packaged unit a role is
+    # about to shadow.
+    systemd_loaded_fragments: dict[str, str] = field(default_factory=dict)
+    systemd_loaded_dropins: dict[str, list[str]] = field(default_factory=dict)
     # The ``systemctl --version`` banner (a partial/empty dict normalizes to
     # version None), backing ``SystemdVersion``. Defaults to {} -- a simulated
     # host whose systemctl could not be read.
@@ -2794,9 +2812,10 @@ class SimulatedHost(Host):
             case MountCommand(path=path, device=device, fs_type=fs_type, options=options):
                 self.mount_filesystem(path, device, fs_type, options)
             case SystemctlCommand(action="daemon-reload"):
-                # The reload invalidates every cached fragment: the pending
-                # state ``SystemdNeedDaemonReload`` answers clears wholesale.
-                self.systemd_reload_pending.clear()
+                # The reload invalidates every cached fragment and re-resolves
+                # the search path: the pending state clears and the loaded
+                # fragment/drop-in model follows the simulated disk.
+                self.reload_systemd_units()
             case SystemctlCommand(
                 action="start" | "restart" | "reload" | "reload-or-try-restart",
                 unit=unit,
@@ -5156,24 +5175,108 @@ class SimulatedHost(Host):
             self.preset_systemd_unit(unit)
 
     def mark_systemd_unit_reload_pending(self, path: str) -> None:
-        """Record that a unit's on-disk file changed: the unit is reload-pending.
+        """Record that a unit's loaded file changed: the unit is reload-pending.
 
         systemd caches each unit's parsed fragment, and a file installed
         under a ``/systemd/system/`` load path (``/etc``, ``/run``,
-        ``/usr/lib`` or ``/lib``) leaves that cache stale -- the state
-        ``SystemdNeedDaemonReload`` answers and the simulated
+        ``/usr/lib`` or ``/lib``) leaves that cache stale -- the staleness
+        half of ``SystemdNeedDaemonReload``, which the simulated
         ``systemctl daemon-reload`` clears. A top-level unit file
         (``<unit>.service``) marks its own unit; a drop-in
         (``<unit>.d/<name>.conf``) marks the unit owning the directory. Any
         other path marks nothing.
+
+        Only the staleness half lives here (issue #75). When the host models
+        what the manager loaded, an install at a path the manager never
+        loaded marks nothing -- the faithful ``NeedDaemonReload=no`` answer a
+        real systemd gives for a newly shadowing override -- and the
+        loaded-versus-disk comparison inside
+        ``SystemdNeedDaemonReload.pending`` answers the reload instead. A
+        unit with no loaded state modelled keeps the permissive marking the
+        pre-issue-75 tests rely on.
         """
         if "/systemd/system/" not in path:
             return
         pure = PurePosixPath(path)
         if pure.name.endswith(_UNIT_SUFFIXES):
-            self.systemd_reload_pending.add(pure.name)
+            unit = pure.name
         elif pure.parent.name.endswith(".d"):
-            self.systemd_reload_pending.add(pure.parent.name[:-2])
+            unit = pure.parent.name[:-2]
+        else:
+            return
+        loaded = self.systemd_loaded_fragments.get(unit)
+        if loaded is None:
+            self.systemd_reload_pending.add(unit)
+            return
+        if path == loaded or path in self.systemd_loaded_dropins.get(unit, []):
+            self.systemd_reload_pending.add(unit)
+
+    def systemd_unit_disk_files(
+        self, unit: str, user_mode: bool = False
+    ) -> tuple[list[str], list[str]]:
+        """The unit's files as the simulated disk holds them, in precedence order.
+
+        ``(fragments, drop-ins)`` under the roots ``SystemdNeedDaemonReload``
+        stats -- ``_UNIT_LOAD_ROOTS``, or ``_USER_UNIT_LOAD_ROOTS`` for a
+        ``--user`` manager -- read back out of the filesystem seams
+        (``remote_files``/``existing_files``), so a unit file or drop-in a
+        ``files.install``/``dropin`` wrote appears without a test seeding a
+        second store.
+        """
+        roots = _USER_UNIT_LOAD_ROOTS if user_mode else _UNIT_LOAD_ROOTS
+        disk = set(self.remote_files) | set(self.existing_files)
+        fragments: list[str] = []
+        dropins: list[str] = []
+        for root in roots:
+            fragment = f"{root}/{unit}"
+            if fragment in disk:
+                fragments.append(fragment)
+            prefix = f"{root}/{unit}.d/"
+            dropins.extend(
+                sorted(
+                    path
+                    for path in disk
+                    if path.startswith(prefix) and path.endswith(".conf")
+                )
+            )
+        return fragments, dropins
+
+    def systemd_reload_report(self, unit: str, user_mode: bool = False) -> _ReloadReport:
+        """This host's ``SystemdNeedDaemonReload`` report, from its own state.
+
+        The seam counterpart of the real combined read: ``stale`` comes from
+        ``systemd_reload_pending``, ``fragment``/``loaded_dropins`` from the
+        loaded-state stores, and ``units``/``disk_dropins`` from the simulated
+        disk. The verdict stays the library's own
+        (``SystemdNeedDaemonReload.pending``), so an offline test exercises
+        the shadow comparison instead of a simulation shortcut.
+        """
+        units, disk_dropins = self.systemd_unit_disk_files(unit, user_mode)
+        return {
+            "stale": unit in self.systemd_reload_pending,
+            "fragment": self.systemd_loaded_fragments.get(unit, ""),
+            "loaded_dropins": list(self.systemd_loaded_dropins.get(unit, [])),
+            "units": units,
+            "disk_dropins": disk_dropins,
+        }
+
+    def reload_systemd_units(self) -> None:
+        """Record a simulated ``systemctl daemon-reload``.
+
+        The reload invalidates every cached fragment (the pending set clears
+        wholesale) and re-resolves each modelled unit's loaded fragment and
+        drop-ins from the simulated disk in precedence order, so the
+        shadowing override the read flagged becomes the loaded one and the
+        next read converges to ``no`` -- the behaviour the real manager has.
+        A unit with nothing on disk any more keeps the fragment it had loaded.
+        """
+        units = set(self.systemd_reload_pending) | set(self.systemd_loaded_fragments)
+        self.systemd_reload_pending.clear()
+        for unit in sorted(units):
+            fragments, dropins = self.systemd_unit_disk_files(unit)
+            if fragments:
+                self.systemd_loaded_fragments[unit] = fragments[0]
+            self.systemd_loaded_dropins[unit] = dropins
 
     def put_file(self, src, dest: str) -> None:
         """Record a simulated scp upload: store the IO-like source's content.

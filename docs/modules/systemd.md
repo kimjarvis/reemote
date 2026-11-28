@@ -16,8 +16,17 @@ accepts the scope flags `user_mode`/`machine`/`user_name` to target the
 per-user manager, a named machine, or a specific user's session. Operations
 are idempotent through facts: they read the current state and yield a command
 descriptor only when it differs from the request — `daemon_reload` with a
-`unit` included, gated on the `NeedDaemonReload` property read (the no-unit
-form stays the baseline's stateless reload). In `service`, each of the two
+`unit` included, gated on the `SystemdNeedDaemonReload` read (the no-unit
+form stays the baseline's stateless reload). That read answers two different
+kinds of pending, because `NeedDaemonReload` alone answers only one: the
+*staleness* of the fragment systemd loaded, and the load roots compared
+against `FragmentPath`/`DropInPaths` for a *newly shadowing* unit file or
+drop-in — an `/etc/systemd/system` override of a unit the manager still runs
+from `/usr/lib`, which systemd reports as not reload-pending until the search
+path is re-resolved (issue #75). A fresh unit name is pending neither way:
+systemd loads it lazily on `start`/`enable`, so no reload is issued. After the
+reload the answers all go back to `no`, which is what lets a handler request
+carry `daemon_reload=True` and still converge. In `service`, each of the two
 managed axes has an opt-out sentinel: `enabled=None` leaves the boot setting
 alone and `running=None` (Ansible's `state: omit`) leaves the active state
 alone, so one request can reconcile exactly the half the operator declared.

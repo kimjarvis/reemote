@@ -136,10 +136,15 @@ def service_handler(
             ``action="reloaded"`` or ``"running"`` it is forwarded and ignored.
         daemon_reload (bool): Forward ``daemon_reload=True`` to each
             ``systemd.service`` request, so a unit-file-bearing role's handler
-            reloads the daemon before restarting -- state-gated (issue #50),
-            the reload is issued only while the unit reports
-            ``NeedDaemonReload``. ``False`` (the default) omits the keyword
-            entirely, so the plan is byte-identical to one built without it.
+            reloads the daemon before restarting -- state-gated (issues #50
+            and #75), the reload is issued only while the unit is
+            reload-pending, either because its loaded fragment changed or
+            because a file the manager has never seen now shadows it. With a
+            unit file among the notifying writes this is the whole handler;
+            only a change no unit file is involved in still needs a separate
+            unconditional ``systemd.daemon_reload`` request.
+            ``False`` (the default) omits the keyword entirely, so the plan is
+            byte-identical to one built without it.
         name (str | None): A label template for each request's plan/log ``name``,
             formatted with ``service=``. When ``None`` (the default) it is built
             from ``action`` -- e.g. ``"Restart nginx (handler)"``,
@@ -246,7 +251,8 @@ def restart_handler(
             each restart (Ansible's ``sleep:``); ``None`` keeps the single
             ``systemctl restart``.
         daemon_reload (bool): Reload the daemon (state-gated) before each
-            restart -- for handlers notified by a unit-file write.
+            restart -- for handlers notified by a unit-file write, including
+            one that overrides a packaged unit.
         name (str | None): A label template formatted with ``service=``; ``None``
             builds ``"Restart {service} (handler)"``.
         sudo (Privilege | bool): The escalation flag forwarded to each request.

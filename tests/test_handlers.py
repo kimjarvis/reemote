@@ -430,6 +430,56 @@ async def test_daemon_reload_handler_reloads_then_converges():
         assert host.systemd_reload_pending == set()
 
 
+async def test_daemon_reload_handler_reloads_for_a_shadowing_override():
+    # Issue #75 at the handler layer: the unit file the deploy wrote is a new
+    # override of a packaged unit the manager already loaded, so nothing is
+    # modelled as stale at all -- and the factory-built handler still reloads
+    # before it restarts, because the gate compares the load roots against
+    # what was loaded. The reload lands the override, so the next run plans
+    # none of it.
+    seeded: dict[str, Host] = {}
+
+    def persistent_factory(entry: dict) -> Host:
+        host = seeded.get(entry["host"])
+        if host is None:
+            host = SimulatedHost.from_inventory(entry)
+            host.services = {"varnish.service": "active"}
+            for path in (
+                "/usr/lib/systemd/system/varnish.service",
+                "/etc/systemd/system/varnish.service",
+            ):
+                host.remote_files[path] = b"[Service]\n"
+                host.existing_files.add(path)
+            # Only the packaged fragment is loaded; the override is unknown.
+            host.systemd_loaded_fragments = {
+                "varnish.service": "/usr/lib/systemd/system/varnish.service"
+            }
+            seeded[entry["host"]] = host
+        return host
+
+    restart = restart_handler({"web1", "web2"}, "varnish", daemon_reload=True)
+
+    _plans, report, _hosts = await run(
+        INVENTORY, restart, host_factory=persistent_factory
+    )
+    assert report is not None
+    log = format_log(report)
+    assert log.count("$ sudo systemctl daemon-reload") == 2
+    assert log.count("$ sudo systemctl restart varnish.service") == 2
+    for host in seeded.values():
+        # No staleness was ever recorded -- the shadow comparison planned this.
+        assert host.systemd_reload_pending == set()
+        assert host.systemd_loaded_fragments["varnish.service"] == (
+            "/etc/systemd/system/varnish.service"
+        )
+
+    _plans, second, _hosts = await run(
+        INVENTORY, restart, host_factory=persistent_factory
+    )
+    assert second is not None
+    assert "daemon-reload" not in format_log(second)
+
+
 async def test_handler_dry_run_is_an_honest_preview():
     _plans, report, _hosts = await run(
         INVENTORY, ensure_nginx_enabled, host_factory=host_factory
