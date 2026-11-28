@@ -8,11 +8,13 @@ Why express server configuration in Python at all? Because a deployment then sha
 
 !!! note "Reading order"
 
-    Everything below is ordered so understanding builds up. Skim
+    Everything below is ordered so understanding builds up. Start with the
+    [under-a-minute demo on the Home page](index.md#try-it-in-under-a-minute-docker-connector),
+    then skim
     [Core vocabulary](#core-vocabulary) and [Your first deployment](#your-first-deployment)
-    to get something running, then return to the model sections
-    ([The execution model](#the-execution-model)) when you need the detail. If
-    you only want to find the fact or operation for a task, jump straight to
+    to run the same program against a real server. Return to the model sections
+    ([The execution model](#the-execution-model)) when you need the detail, and
+    if you only want to find the fact or operation for a task, jump straight to
     [Finding facts, operations and examples](#finding-facts-operations-and-examples).
 
 ## How the documentation is organised
@@ -21,7 +23,7 @@ The documentation is small and deliberately layered:
 
 | Section | Purpose |
 | --- | --- |
-| **Home** ([index](index.md)) | A ten-minute introduction: install, one inventory, one script, preview and apply. |
+| **Home** ([index](index.md)) | An under-a-minute introduction: install, one docker-connector inventory, one script, dry run and apply. |
 | **Guide** (this page) | The one-hour progression from a first script to the execution model and extension points. |
 | **API Reference → Modules** | One page per subject area — [files](modules/files.md), [apt](modules/apt.md), [dnf](modules/dnf.md), [systemd](modules/systemd.md), [server](modules/server.md) and more. Each page lists the facts and operations of that namespace with their signatures, arguments, return types and the exceptions they raise. |
 | **API Reference → Actions** ([actions](actions/actions.md)) | The immediate-execution escape hatch: bespoke commands, staged scripts, connection waits. |
@@ -74,7 +76,7 @@ The runner pulls requests off that generator and drives them; it is the only cod
 
 ## Your first deployment
 
-This is the smallest useful program: one inventory, one deploy, one file written to a safe temporary path. It needs no administrator rights and touches nothing but the file it names.
+The Home page ran the smallest useful program for you: one inventory, one deploy, one file written to a safe temporary path, with the docker connector supplying the host. This section runs the same program against a real server over SSH. It needs no administrator rights and touches nothing but the file it names — and unlike the demo's throwaway containers, the server keeps its state between runs, which is what lets the second run below report *no change*.
 
 Create `inventory.json`:
 
