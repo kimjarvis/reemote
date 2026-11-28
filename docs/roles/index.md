@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships twenty-seven configuration roles as **library code**. Each one is the
+reemote ships twenty-eight configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The twenty-seven roles group by what they configure. The [catalogue](#the-catalogue)
+The twenty-eight roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -85,6 +85,7 @@ and outputs.
 | Role | Purpose |
 | --- | --- |
 | [hosts](hosts.md) | Hostname and hosts file — the rendered `/etc/hostname` and `/etc/hosts` (loopback, default-route, additional entries, the IPv6 block), each with its metadata companion |
+| [swap](swap.md) | Swap file — the `/etc/fstab` entry, the file built at the wanted size (`dd`, `0600`, `mkswap`), activated and deactivated around removals and resizes, and `vm.swappiness` in a sysctl drop-in |
 | [systemd](systemd.md) | systemd units — the load path, the rendered unit or drop-in file, the two reload handlers, each unit's running and enabled state, and the opt-in uninstall |
 
 ### Security and certificates
@@ -138,6 +139,7 @@ and outputs.
 | [glusterfs](glusterfs.md) | [`geerlingguy.glusterfs`](https://github.com/geerlingguy/ansible-role-glusterfs) | Ubuntu | 2 fresh / 2 converged | none | no | 1 |
 | [firewall](firewall.md) | [`geerlingguy.firewall`](https://github.com/geerlingguy/ansible-role-firewall) | Ubuntu | 4 first run / 2 converged | none | **yes** | 1 |
 | [zabbix_agent](zabbix_agent.md) | [`dj-wasabi/ansible-zabbix-agent`](https://github.com/ansible-community/ansible-zabbix-agent) | Ubuntu | 5 fresh / 4 converged | none | **yes** | 1 |
+| [swap](swap.md) | [`geerlingguy.swap`](https://github.com/geerlingguy/ansible-role-swap) | Ubuntu | 5 fresh / 2 converged | none | no | 1 |
 
 ## Reading the columns
 
@@ -276,6 +278,13 @@ and outputs.
   one restart handler. The second `async def` factory: the signing key is one
   inventory-wide control-side fetch, and the frozen `sign_keys` table raises
   loudly on a release it does not know.
+- **[swap](swap.md)** — one swap file: the `/etc/fstab` entry keyed by the
+  device, the file built at the wanted size at `0600` root:root, `mkswap`ed and
+  `swapon`ed, `swapoff`ed before any removal or resize, plus `vm.swappiness`
+  persisted and applied. The fact-fork role: one `fact(files.File)` read
+  decides both include branches, and the four commands are `act` barriers the
+  body fail-checks itself — on a converged host the whole command chain is not
+  merely idempotent, it is absent.
 
 ## Running one
 

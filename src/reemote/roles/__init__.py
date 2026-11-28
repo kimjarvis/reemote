@@ -66,6 +66,7 @@ from .postgresql import PostgresqlVars, postgresql, postgresql_data
 from .redis import RedisVars, redis
 from .repo_epel import EpelVars, repo_epel
 from .security import SecurityVars, security
+from .swap import SwapVars, swap
 from .systemd import SystemdVars, UnitSpec, systemd
 from .users import DeletedUserSpec, GroupSpec, UserSpec, UsersVars, users
 from .zabbix_agent import ZabbixAgentVars, zabbix_agent
@@ -105,6 +106,7 @@ __all__: list[str] = [
     "PostgresqlVars",
     "RedisVars",
     "SecurityVars",
+    "SwapVars",
     "SystemdVars",
     "UnitSpec",
     "UserSpec",
@@ -135,6 +137,7 @@ __all__: list[str] = [
     "redis",
     "repo_epel",
     "security",
+    "swap",
     "systemd",
     "users",
     "zabbix_agent",
