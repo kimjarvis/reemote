@@ -89,7 +89,7 @@
 #   ``deb822_repository`` did the key install and the write in one task; here
 #   they are two requests in one wave, the key first, so the chained index
 #   refresh (D1) still runs against a signed repository.
-# * the host-family guard is the body's opening ``if``, not a ``when=`` on
+# * D9: the host-family guard is the body's opening ``if``, not a ``when=`` on
 #   every request, and the variable validation is pydantic: a bad
 #   ``php_version`` raises ``ValidationError`` -- a ``ValueError``, so the
 #   runner maps it -- before any host is contacted.
