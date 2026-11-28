@@ -160,8 +160,11 @@ Everything before the requests is a barrier the driver runs for all hosts at onc
 There is **no configure stage** and **no checkpoint**: the Ansible role never
 edits a repo file (Remi ships `[remi]` disabled and is used with
 `--enablerepo=remi`), nothing reads an outcome, and a converged host's pass ends
-at wave 1 with an empty final wave that the driver does not even append. A host
-whose `host.family` is not `"RedHat"` returns before its first `yield`, so it
+at wave 1 with an empty final wave that the driver does not even append. Only
+`[remi]` is off, though: the same RPM ships `[remi-modular]` and `[remi-safe]`
+with `enabled=1`, so a successful install does leave those two repositories
+enabled while the role itself changes no file contents anywhere. A host whose
+`host.family` is not `"RedHat"` returns before its first `yield`, so it
 emits no requests and no report lines at all.
 
 ## 7. Transcript
