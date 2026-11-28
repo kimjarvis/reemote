@@ -191,6 +191,7 @@ nav:
           - users: roles/users.md
           - hosts: roles/hosts.md
           - kubectl: roles/kubectl.md
+          - helm: roles/helm.md
           - systemd: roles/systemd.md
           - glusterfs: roles/glusterfs.md
           - firewall: roles/firewall.md

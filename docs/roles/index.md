@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships forty-one configuration roles as **library code**. Each one is the
+reemote ships forty-two configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The forty-one roles group by what they configure. The [catalogue](#the-catalogue)
+The forty-two roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -74,6 +74,7 @@ and outputs.
 | [drush](drush.md) | Drush — the launcher phar and its executable bit |
 | [git](git.md) | Git — the apt-cache refresh and the `git_packages` install, as one request |
 | [kubectl](kubectl.md) | kubectl — the checksum-pinned release binary, installed version-suffixed with the bare name symlinked beside it |
+| [helm](helm.md) | helm — the checksum-pinned release tarball extracted into a versioned staging dir and the binary copied into place, gated on a `stat` and a version probe |
 | [mailhog](mailhog.md) | MailHog — the two release binaries downloaded into `/opt/mailhog` and the started, enabled `mailhog.service` unit |
 | [supervisor](supervisor.md) | Supervisor — the pip-installed `supervisor` package, the `0755` log/config directories, the rendered `supervisord.conf`, the present/absent program `conf.d` files, the rendered systemd unit, and one restart handler |
 | [daemonize](daemonize.md) | daemonize — the `build-essential` toolchain, the release tarball extracted behind a `creates:` gate, and the `configure`/`make`/`make install` build gated on a `PATH` probe |
@@ -149,6 +150,7 @@ and outputs.
 | [users](users.md) | [`singleplatform-eng/ansible-users`](https://github.com/singleplatform-eng/ansible-users) | Ubuntu | exactly 1 (`2` under the `on_create` gate) | none | no | 1 |
 | [hosts](hosts.md) | [`ajsalminen/ansible-role-hosts`](https://github.com/ajsalminen/ansible-role-hosts) | Ubuntu | 2 (1 with a content override) | none | no | 1 |
 | [kubectl](kubectl.md) | [`andrewrothstein.kubectl`](https://github.com/andrewrothstein/ansible-kubectl) | Ubuntu | exactly 2 | none | no | 1 |
+| [helm](helm.md) | [`geerlingguy.helm`](https://github.com/geerlingguy/ansible-role-helm) | Ubuntu | 2 fresh / 2 converged (3 with a stale binary) | none | no | 1 |
 | [systemd](systemd.md) | [`0x0I/systemd`](https://github.com/0x0I/ansible-role-systemd) | Ubuntu | 2 (3 with a per-user unit) | none | **yes** | 1 |
 | [glusterfs](glusterfs.md) | [`geerlingguy.glusterfs`](https://github.com/geerlingguy/ansible-role-glusterfs) | Ubuntu | 2 fresh / 2 converged | none | no | 1 |
 | [firewall](firewall.md) | [`geerlingguy.firewall`](https://github.com/geerlingguy/ansible-role-firewall) | Ubuntu | 4 first run / 2 converged | none | **yes** | 1 |
@@ -287,6 +289,13 @@ and outputs.
   `fact(server.Arch)` barrier closes the first wave, the three tasks follow in
   the second, and both the architecture map and the checksum table fail fast
   before a byte is fetched.
+- **[helm](helm.md)** — the checksum-pinned release tarball, extracted control-
+  side into a version-suffixed staging directory and the binary copied into
+  place, but only when the `stat` gate or the version probe says the wanted
+  release is not there. The two-barrier gate role: a `fact(FileExists)` and a
+  conditional `act(Shell)` version probe decide the install, the digest table
+  fail-fasts before any fetch (the role verified nothing upstream), and a
+  converged host re-runs neither the fetch nor the copy.
 - **[systemd](systemd.md)** — the load-path directory, the rendered unit or
   drop-in file, `Reload systemd units` and `Reload systemd daemon`, each unit's
   running and enabled state, and the opt-in uninstall. The per-request

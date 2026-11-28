@@ -55,6 +55,7 @@ from .elasticsearch import ElasticsearchVars, elasticsearch
 from .firewall import FirewallVars, ForwardedPort, firewall
 from .git import GitVars, git
 from .glusterfs import GlusterfsVars, glusterfs
+from .helm import HelmChecksum, HelmVars, helm
 from .hosts import HostsEntry, HostsVars, hosts
 from .htpasswd import HtpasswdCredential, HtpasswdVars, htpasswd
 from .java import JavaVars, java
@@ -106,6 +107,8 @@ __all__: list[str] = [
     "GitVars",
     "GlusterfsVars",
     "GroupSpec",
+    "HelmChecksum",
+    "HelmVars",
     "HostsEntry",
     "HostsVars",
     "HtpasswdCredential",
@@ -157,6 +160,7 @@ __all__: list[str] = [
     "firewall",
     "git",
     "glusterfs",
+    "helm",
     "hosts",
     "htpasswd",
     "java",
