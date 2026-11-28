@@ -9,9 +9,11 @@ flag, elevated ``command_shell`` renderings), the operation's the baseline
 overwrite, the equal-content no-op, and the error branches), the issue #22
 Ansible remote-copy parity (a file ``dest`` renames, ``mode``/``user``/
 ``group`` converge in the same request, and ``overwrite=True`` is
-sha1-gated so a drifted target converges once then no-ops), the deliberate
-phase-unaware deviation (absent src / absent rename parent raise
-``ValueError`` in *both* phases, where the baseline logs softly while planning),
+sha1-gated so a drifted target converges once then no-ops), the strict src/dest
+checks (absent src / absent rename parent raise ``ValueError`` in an applying
+materialization, where the baseline logged softly while planning) and issue
+#73's planning carve-out (a never-send materialization reports a plan line for
+an absent src, so a put-then-copy deploy previews in one pass),
 the upstream src check that rejects a symlink source (kept verbatim, unlike
 ``files.move`` which accepts links), the ``SimulatedHost`` seam dispatch
 (the source stays in place, both dest forms), and end-to-end plan/log
@@ -76,9 +78,16 @@ def make_host(
 
 
 async def materialize(
-    host: SimulatedHost, *, phase: str = "prepare", **kwargs
+    host: SimulatedHost, *, phase: str = "prepare", planning: bool = False, **kwargs
 ) -> tuple[OpContext, list]:
-    ctx = OpContext(host=host, facts=FactCache(host, phase=phase))
+    """Materialize ``files.copy`` against ``host``.
+
+    ``planning=True`` builds the context a dry step threads (issue #73): the
+    never-send marker an operation trades its absent-src ``ValueError`` for.
+    """
+    ctx = OpContext(
+        host=host, facts=FactCache(host, phase=phase), planning=planning
+    )
     commands = [cmd async for cmd in files.copy(ctx, **kwargs)]
     return ctx, commands
 
@@ -198,14 +207,38 @@ async def test_copy_invalid_dest_fixture_raises():
         await materialize(host, src=SRC, dest=DEST)
 
 
-async def test_copy_absent_src_raises_in_both_phases():
+async def test_copy_absent_src_raises_when_applying():
     # The baseline's invalid_src.json logs softly while planning and raises
-    # only while executing; reemote is phase-unaware and deliberately
-    # raises in both phases (the files.move strictness, kept).
+    # only while executing; reemote raises in every materialization that can
+    # send (the files.move strictness, kept).
     host = make_host(dest_stats={"mode": 700})
     for phase in ("prepare", "apply"):
         with pytest.raises(ValueError, match=r"src /tmp/testfile does not exist"):
             await materialize(host, src=SRC, dest=DEST, phase=phase)
+
+
+async def test_copy_absent_src_plans_when_planning():
+    """Issue #73: a never-send materialization reports a plan line for an absent
+    ``src`` instead of raising -- the source may be staged by an earlier
+    request of the same deploy."""
+    host = make_host(dest_stats={"mode": 700})
+    ctx, commands = await materialize(host, planning=True, src=SRC, dest=DEST)
+
+    assert commands == []
+    assert ctx.changed
+    assert ctx.reason == (
+        f"src {SRC} absent at plan time; copy planned once it is staged"
+    )
+
+
+async def test_copy_symlink_src_raises_when_planning():
+    """The carve-out keys on *absence* (both reads ``None``), not on falsiness:
+    a symlink source reads ``False`` for both facts and stays the error
+    upstream's check made it."""
+    host = make_host(src_stats=False, dest_stats={"mode": 700})
+    host.link_stats[SRC] = {"mode": 600, "link_target": "file.txt"}
+    with pytest.raises(ValueError, match=r"src /tmp/testfile does not exist"):
+        await materialize(host, planning=True, src=SRC, dest=DEST)
 
 
 async def test_copy_absent_dest_is_a_rename_target_gated_on_its_parent():
@@ -631,3 +664,28 @@ async def test_put_then_copy_in_one_deploy_raises_at_prepare():
 
     with pytest.raises(ValueError, match=r"src /tmp/hosts does not exist"):
         await run(INVENTORY, deploy, host_factory=factory)
+
+
+async def test_put_then_copy_in_one_deploy_previews_when_dry():
+    # Issue #73's other half: that same deploy previews. A dry run never sends,
+    # so the put's file is absent when the copy materializes -- and a
+    # materialization that can never send says so as a plan line.
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        yield op(files.put, name="Stage hosts", src=PAYLOAD, dest="/tmp/hosts")
+        yield op(files.copy, name="Copy hosts", src="/tmp/hosts", dest="/etc")
+
+    def factory(entry: dict) -> SimulatedHost:
+        host = SimulatedHost.from_inventory(entry)
+        host.directory_stats = {"/etc": {"mode": 755}}
+        return host
+
+    plans, report, hosts = await run(
+        INVENTORY, deploy, host_factory=factory, dry=True
+    )
+    assert report is None
+    _put_plan, copy_plan = plans["web1"]
+    assert copy_plan.changed
+    assert copy_plan.reason == (
+        "src /tmp/hosts absent at plan time; copy planned once it is staged"
+    )
+    assert "/tmp/hosts" not in hosts[0].remote_files

@@ -353,12 +353,21 @@ class OpContext:
 
     This is the mechanism by which an operation communicates ``changed``
     and ``reason`` back to the driver (design doc section 6.3, approach C).
+
+    ``planning`` says whether this invocation's commands can ever be sent.
+    The driver sets it for the two phases that read but never write -- the
+    prepare phase of ``run()`` and a ``dry=True`` step of ``run_waves()``
+    (issue #73) -- and leaves it false where the same materialization is
+    followed by ``send_command``. An operation whose *input* a request later
+    in the same deploy produces uses it to report a plan line instead of
+    raising on state that does not exist yet; see ``files.unarchive``.
     """
 
     host: Host
     facts: "FactCache"
     changed: bool = False
     reason: str = ""
+    planning: bool = False
 
 
 class FactCache:

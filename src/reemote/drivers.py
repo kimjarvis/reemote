@@ -262,12 +262,21 @@ class WaveReport:
         return format_waves(self)
 
 
-async def materialize(host: Host, cache: FactCache, request: OperationRequest):
+async def materialize(
+    host: Host, cache: FactCache, request: OperationRequest, *, planning: bool = False
+):
     """Fully materialize an operation's async command generator.
 
     Returns ``(ctx, commands)``. Materializing computes ``ctx.changed``
     (design doc section 6.3, cost of approach C); it is a coroutine because
     the operation awaits facts, which gather their values asynchronously.
+
+    ``planning`` is threaded onto the ``OpContext`` for the phases that read
+    state and never send a command -- a dry prepare, a ``dry=True`` wave step
+    (issue #73). It is ``False`` by default, so an operation's missing-input
+    check stays strict everywhere a materialization is followed by
+    ``send_command``: only a preview may trade a ``ValueError`` for a plan line
+    naming the input it could not see.
 
     An operation must be an async generator function. Anything else -- e.g.
     an action class passed to ``op()`` -- raises ``OperationError`` here rather
@@ -280,7 +289,7 @@ async def materialize(host: Host, cache: FactCache, request: OperationRequest):
             "async-generator operation; actions cannot run inside a deploy "
             "(call gather_action before, between or after deploys instead)"
         )
-    ctx = OpContext(host=host, facts=cache)
+    ctx = OpContext(host=host, facts=cache, planning=planning)
     commands = [cmd async for cmd in request.func(ctx, *request.args, **request.kwargs)]
     return ctx, commands
 
@@ -548,7 +557,7 @@ async def send_command(
 
 
 async def _prepare_host(
-    host: Host, deploy_func: Callable
+    host: Host, deploy_func: Callable, *, planning: bool = False
 ) -> tuple[HostRuntime, list[PlannedOperation]]:
     """Prepare one host: collect its request sequence and materialize the plan.
 
@@ -557,6 +566,11 @@ async def _prepare_host(
     whole inventory to overlap the fact reads over SSH. Within a host the
     requests are materialized in order against pre-deployment state (prepare
     never sends commands, so nothing mutates between them).
+
+    ``planning`` marks a prepare that will never be applied -- the prepare of a
+    ``dry=True`` ``run()`` -- and reaches every operation through
+    ``materialize`` (issue #73). The prepare of a *full* run stays strict, so a
+    missing input still fails before a single command is sent.
 
     A request whose ``when`` guard fails on this host is *not* materialized:
     the plan records a ``skipped`` entry without reading any facts (the
@@ -607,7 +621,7 @@ async def _prepare_host(
                 )
             )
             continue
-        ctx, commands = await materialize(host, cache, request)
+        ctx, commands = await materialize(host, cache, request, planning=planning)
         plan.append(
             PlannedOperation(
                 request=request,
@@ -628,7 +642,7 @@ async def _prepare_host(
 
 @_deploy_phase
 async def run_prepare(
-    hosts: Iterable[Host], deploy_func: Callable
+    hosts: Iterable[Host], deploy_func: Callable, *, planning: bool = False
 ) -> tuple[list[HostRuntime], dict[str, list[PlannedOperation]]]:
     """Prepare phase: invoke each host's generator and materialize the plan.
 
@@ -638,6 +652,11 @@ async def run_prepare(
     the results come back in input order, so ``runtimes`` and ``plans`` stay
     deterministic. A coroutine, because materializing awaits operations and
     their facts.
+
+    ``planning`` is forwarded to every ``_prepare_host`` and so to every
+    operation, which lets an operation report a plan line for an input the
+    deploy itself has not produced yet instead of raising (issue #73).
+    ``run()`` passes it only for ``dry=True``.
 
     The ``_deploy_phase`` wrapper holds the in-deploy guard for the whole
     phase: a ``gather_action`` call from a deploy generator raises
@@ -653,7 +672,7 @@ async def run_prepare(
     """
     host_list = list(hosts)
     results = await asyncio.gather(
-        *(_prepare_host(host, deploy_func) for host in host_list),
+        *(_prepare_host(host, deploy_func, planning=planning) for host in host_list),
         return_exceptions=True,
     )
     connection_errors: list[HostConnectionError] = []
@@ -914,6 +933,11 @@ async def run(
     host state. A coroutine: both the prepare phase (which materializes
     the plan) and the apply phase (which executes commands via the async
     ``send_command``) are awaited.
+
+    ``dry=True`` prepares in planning mode (issue #73): because nothing will
+    be applied, an operation whose input a later request of the same deploy
+    creates reports a plan line rather than raising. A full ``run()`` keeps its
+    strict prepare, so a mistyped input still fails before anything mutates.
     """
     # Fail fast on a malformed inventory before materializing -- and
     # potentially connecting -- any host. The default factory validates each
@@ -922,7 +946,7 @@ async def run(
     validate_inventory(inventory)
     host_list = [host_factory(entry) for entry in inventory]
     try:
-        runtimes, plans = await run_prepare(host_list, deploy_func)
+        runtimes, plans = await run_prepare(host_list, deploy_func, planning=dry)
         if dry:
             return plans, None, host_list
         report = await run_apply(runtimes, plans=plans)
@@ -963,7 +987,13 @@ async def run_waves(
     ``dry=True`` is a one-wave preview: no barrier ever runs, and the first
     parked barrier is recorded ``unknown`` and stops the loop, because a
     barrier's outcome may depend on requests that were planned but never
-    applied (section 6.3).
+    applied (section 6.3). The same reason makes a dry step a *planning*
+    materialization (issue #73): an operation whose input an earlier request of
+    this deploy stages reports a plan line instead of raising on the host that
+    does not have it yet, so a spool-then-extract deploy previews in one wave.
+    A ``dry=False`` step stays strict, and on the wave path the strict read is
+    not a problem for that shape anyway -- requests apply one per step, so the
+    spool has landed before the extract reads it.
 
     Returns ``(report, hosts)`` so a caller can render ``report.tree()``, fold
     ``report.merged()`` into the familiar ``ApplyReport``, and inspect the final
@@ -1135,7 +1165,9 @@ async def _step(
     A request whose ``when`` guard fails returns a ``skipped`` plan and log
     entry without materializing or sending anything, so it is logged, not
     omitted, and never queues a handler. In ``dry`` mode the request is planned
-    but not applied, so the log entry is ``None``.
+    but not applied, so the log entry is ``None`` -- and the operation is
+    materialized in planning mode, which is what lets a preview read an input a
+    previous request of the same deploy would have created (issue #73).
     """
     request = rt.pulled
     guard = request.when_failure(rt.host)
@@ -1164,7 +1196,7 @@ async def _step(
     # A fresh cache per step, exactly as run_apply does today, so an operation
     # that reads a fact sees the effect of the requests already applied.
     cache = FactCache(rt.host, phase="wave")
-    ctx, commands = await materialize(rt.host, cache, request)
+    ctx, commands = await materialize(rt.host, cache, request, planning=dry)
     planned = PlannedOperation(
         request=request,
         changed=ctx.changed,

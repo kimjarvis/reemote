@@ -479,9 +479,14 @@ Without it the operation is stateless like pyinfra's -- extraction always
 yields and always reports changed (there is no fact that can compare an
 extracted tree). `dest` is created with its parents when absent (the issue's
 requirement -- pyinfra raises on a non-existing directory); a `dest` held by
-a non-directory raises `ValueError`, and a remote `src` that is absent or not
-a regular file raises in *both* phases, the phase-unaware strictness
-`files.move`/`files.copy` chose. `extra_opts` is a tuple, not pyinfra's list
+a non-directory and a remote `src` that is *not a regular file* raise
+`ValueError` in every phase. An **absent** remote `src` raises in a
+materialization that can send commands, and reports a plan line in one that
+cannot -- the prepare of a `dry=True` `run` or a `dry=True` `run_waves` step
+(issue #73) -- because the same deploy may stage the archive first:
+`files.install` the tarball, then extract it, and the preview says the
+extraction is planned once it is staged instead of failing on a path only the
+apply creates. `files.move`/`files.copy` degrade the same way. `extra_opts` is a tuple, not pyinfra's list
 (request arguments must be hashable), placed between the tool's flags and the
 archive path -- tar keeps `-f` adjacent to the path so an extra is never
 mistaken for it. `user`/`group` yield a recursive `chown` of `dest` after the
@@ -541,13 +546,14 @@ raising, and `mode`/`user`/`group` yield a `chown`/`chmod` on the moved path
 after the `mv` (chown first — it clears setuid/setgid bits). It is
 **stateless** like the baseline — a valid move always yields a command,
 there is no idempotent no-op branch — and it reads `File(src)`,
-`Directory(dest)` and `File(full_dest)` to validate. An absent source and an
-existing target without `overwrite` raise `ValueError`. The baseline's
-phase-aware softness for the absence case (a log while planning, an
-error only while executing) is deliberately dropped — reemote operations
-are phase-unaware, so they raise in *both* phases. A consequence: a
-"create a file then move it" flow cannot share one deploy (prepare would
-raise on the not-yet-created source) and spans two runs instead. All
+`Directory(dest)` and `File(full_dest)` to validate. An existing target without
+`overwrite` raises `ValueError` in every phase. An absent source raises in a
+materialization that can send commands and — restoring the baseline's
+phase-aware softness for the one case it protected (issue #73) — reports a plan
+line in one that cannot: a `dry=True` `run` or a `dry=True` `run_waves` step
+previews a "create a file then move it" deploy, while a real `run` still
+prepares strictly and fails before it mutates anything, so such a flow spans
+two runs whenever it might be applied. All
 commands are shell text, so `sudo=True` elevates the whole move — a
 vehicle for the two-run spool-and-install shape: `files.edit` spools the
 transformed content into a login-user-writable path in one run, then
@@ -579,10 +585,14 @@ converges without re-copying. The mode accepts the `files.file` spellings
 (a symbolic mode never equals the fact's octal int, so its `chmod` re-runs
 every pass); the named account must already exist. A target that is not a
 regular file, or a hash that cannot be read (a directory source), skips the
-comparison and the copy is planned. An absent source, an absent or
-non-directory rename parent, and an existing *different* target without
-`overwrite` raise `ValueError` in *both* phases (the same phase-unaware
-strictness as `files.move`), so a "create then copy" flow spans two runs.
+comparison and the copy is planned. An absent or non-directory rename parent,
+and an existing *different* target without `overwrite`, raise `ValueError` in
+every phase. An absent source raises in a materialization that can send commands
+and reports a plan line in one that cannot (the same issue #73 degradation as
+`files.move`), so a "create then copy" flow previews in one pass but still
+spans two runs when it might be applied. A symlink source raises in every
+phase -- both facts read `False`, not `None`, so upstream's rejection is never
+mistaken for absence.
 The commands are shell text, so `sudo=True` elevates the whole copy — the
 one-request shape for installing a built artifact (a PHP module, say) under
 a root-owned path with its final name, mode and owner.

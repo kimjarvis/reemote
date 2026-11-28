@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Kim Jarvis.
 # SPDX-License-Identifier: EPL-2.0
 
-"""Example: extract a source tarball with files.unarchive (issues #21, #58).
+"""Example: extract a source tarball with files.unarchive (issues #21, #58, #73).
 
 This is a *usage* example, not part of the library. ``files.unarchive`` is the
 pyinfra ``files.unarchive`` migration that closes issue #21 -- Ansible's
@@ -48,6 +48,13 @@ How it works:
 * **Two privilege levels.** The extraction, mkdir, spool cleanup, ownership
   and mode steps are shell text, so ``sudo=True`` elevates them for a
   root-owned workspace; the scp spool transfer stays unprivileged regardless.
+* **An archive this same deploy stages (issue #73).** A remote ``src`` that is
+  absent raises -- except in a materialization that can never send, where the
+  request reports a plan line instead. That is what makes the Ansible
+  controller-asset ``unarchive`` (``copy: yes``, a file from the role's ``files/``
+  directory) expressible as one deploy: ``files.install(content=<bytes>)``
+  spools the archive, ``files.unarchive`` extracts it, and ``--dry`` previews
+  both. The fourth deploy below shows that pair.
 * **Ownership and mode.** ``user``/``group`` chown ``dest`` recursively after
   the extraction, and ``mode`` (issue #58, Ansible's ``unarchive`` ``mode:``)
   chmods it recursively after the chown -- a chown clears setuid/setgid bits,
@@ -65,7 +72,9 @@ The script extracts the tarball, then runs the very same deploy a second
 time: the first run extracts, the second reports no change on every host (the
 ``creates`` directory now exists, so the gate short-circuits before any
 fetch). A third deploy shows the issue #58 addition -- the same extraction
-with Ansible's ``mode: 0755``, which the geerlingguy.helm role asks for.
+with Ansible's ``mode: 0755``, which the geerlingguy.helm role asks for. A
+fourth stages the archive itself with ``files.install`` and previews it
+``--dry`` (issue #73).
 
 Every request carries ``when=is_ubuntu``, the declarative eligibility guard:
 the predicate reads only **static** inventory data -- ``host.family``, set by the ``"family"`` key of the inventory entry -- and is a stable module-level
@@ -83,6 +92,7 @@ Run it with::
 """
 
 import asyncio
+import gzip
 import json
 import sys
 from collections.abc import Generator
@@ -117,6 +127,14 @@ HELM_VERSION = "v3.2.1"
 HELM_URL = f"https://get.helm.sh/helm-{HELM_VERSION}-linux-amd64.tar.gz"
 HELM_DIR = f"{WORKSPACE}/helm"
 HELM_EXTRACTED = f"{HELM_DIR}/linux-amd64"
+
+# Issue #73's shape: the archive is not a URL but a file the *same deploy*
+# stages, the Ansible controller asset a role keeps in ``files/``. The bytes are
+# a placeholder -- a dry run never writes them, and the extraction below is what
+# reads them.
+STAGE_DIR = f"{WORKSPACE}/reemote-example"
+STAGED_ARCHIVE = f"{STAGE_DIR}/payload.tar.gz"
+STAGED_CONTENT = gzip.compress(b"payload placeholder\n")
 
 def is_ubuntu(host: Host) -> bool:
     """``when`` guard: the host belongs to the ``"Ubuntu"`` OS family.
@@ -175,6 +193,37 @@ def extract_with_mode(host: Host) -> Generator[OperationRequest]:
     )
 
 
+def spool_then_extract(host: Host) -> Generator[OperationRequest]:
+    """Stage the archive in the same deploy, then extract it (issue #73).
+
+    Ansible's ``unarchive`` with ``copy: yes`` ships a controller-side file and
+    unpacks it; reemote has no controller path, so the role's asset becomes
+    ``files.install(content=<bytes>)`` followed by ``files.unarchive`` on that
+    remote path. Before issue #73 the pair could not share one deploy: the dry
+    preview read the ``File`` fact for an archive only the apply would spool and
+    raised ``src ... does not exist``. Now the preview plans it, while a real
+    apply still raises if the archive is genuinely missing.
+    """
+    yield op(
+        files.install,
+        name="Spool the payload archive",
+        content=STAGED_CONTENT,
+        dest=STAGED_ARCHIVE,
+        mode="0644",
+        sudo=True,
+        when=is_ubuntu,
+    )
+    yield op(
+        files.unarchive,
+        name="Extract the payload archive",
+        src=STAGED_ARCHIVE,
+        dest=STAGE_DIR,
+        creates=f"{STAGE_DIR}/payload",
+        sudo=True,
+        when=is_ubuntu,
+    )
+
+
 async def main() -> None:
     try:
         inventory = json.loads(Path("inventory.json").read_text(encoding="utf-8"))
@@ -212,6 +261,19 @@ async def main() -> None:
 
         plans, report, _hosts = await run(inventory, extract_with_mode)
         print("\n== Log: extract with mode 0755 ==")
+        assert report is not None
+        print(format_log(report))
+
+        # Fourth deploy (issue #73): the archive is staged by the request before
+        # it. --dry reads host state the apply has not created yet, so the
+        # extraction plans itself ("absent at plan time; extraction planned once
+        # it is staged") instead of aborting the preview.
+        plans, _, _hosts = await run(inventory, spool_then_extract, dry=True)
+        print("\n== Plan: spool then extract (--dry) ==")
+        print(format_plan(plans))
+
+        plans, report, _hosts = await run(inventory, spool_then_extract)
+        print("\n== Log: spool then extract ==")
         assert report is not None
         print(format_log(report))
     except (OSError, json.JSONDecodeError) as exc:

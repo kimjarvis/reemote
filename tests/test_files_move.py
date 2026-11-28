@@ -8,10 +8,12 @@ elevated ``command_shell`` renderings), the operation's the baseline
 ``files.move`` fixture parity (no-conflict move, directory/link sources,
 overwrite's ``rm -rf`` + ``mv`` pair, and the error branches), the issue #22
 rename/metadata parity (a file ``dest`` renames, ``mode``/``user``/``group``
-ride the move; the operation stays stateless by design), the deliberate
-phase-unaware deviation (absent src / absent rename parent raise
-``ValueError`` in *both* phases, where the baseline logs softly while planning),
-the ``SimulatedHost`` seam dispatch (both dest forms), end-to-end plan/log
+ride the move; the operation stays stateless by design), the strict src/dest
+checks (absent src / absent rename parent raise ``ValueError`` in an applying
+materialization, where the baseline logged softly while planning) and issue
+#73's planning carve-out (a never-send materialization reports a plan line for
+an absent src, so an edit-then-move deploy previews in one pass), the
+``SimulatedHost`` seam dispatch (both dest forms), end-to-end plan/log
 behaviour with ``sudo=True``, and the ``/etc/hosts`` recipe: ``files.edit``
 spools the transformed content into a writable path in one run, then
 ``files.move`` installs it into ``/etc`` elevated in a second run -- the
@@ -76,8 +78,19 @@ def make_host(
     return host
 
 
-async def materialize(host: SimulatedHost, **kwargs) -> tuple[OpContext, list]:
-    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+async def materialize(
+    host: SimulatedHost, *, planning: bool = False, **kwargs
+) -> tuple[OpContext, list]:
+    """Materialize ``files.move`` against ``host``.
+
+    ``planning=True`` builds the context a dry step threads (issue #73): the
+    never-send marker an operation trades its absent-src ``ValueError`` for.
+    """
+    ctx = OpContext(
+        host=host,
+        facts=FactCache(host, phase="wave" if planning else "prepare"),
+        planning=planning,
+    )
     commands = [cmd async for cmd in files.move(ctx, **kwargs)]
     return ctx, commands
 
@@ -189,13 +202,37 @@ async def test_move_invalid_dest_fixture_raises():
         await materialize(host, src=SRC, dest=DEST)
 
 
-async def test_move_absent_src_raises_in_both_phases():
+async def test_move_absent_src_raises_when_applying():
     # The baseline's invalid_src.json logs softly while planning and raises only
-    # while executing; reemote is phase-unaware and deliberately raises in
-    # both phases (the recorded deviation).
+    # while executing; reemote raises in every materialization that can send --
+    # the prepare and the apply phase of a real run alike (the deviation).
     host = make_host(dest_stats={"mode": 700})
     with pytest.raises(ValueError, match=r"src /tmp/testfile does not exist"):
         await materialize(host, src=SRC, dest=DEST)
+
+
+async def test_move_absent_src_plans_when_planning():
+    """Issue #73: a never-send materialization reports a plan line for an absent
+    ``src`` -- the source may be staged by an earlier request of the same
+    deploy -- instead of raising."""
+    host = make_host(dest_stats={"mode": 700})
+    ctx, commands = await materialize(host, planning=True, src=SRC, dest=DEST)
+
+    assert commands == []
+    assert ctx.changed
+    assert ctx.reason == (
+        f"src {SRC} absent at plan time; move planned once it is staged"
+    )
+
+
+async def test_move_absent_dest_parent_still_raises_when_planning():
+    """The carve-out is only for the *source*: a rename target whose parent is
+    absent is a caller bug in every phase."""
+    host = make_host(src_stats={"mode": 600})
+    with pytest.raises(ValueError, match=r"dest directory /nowhere does not exist"):
+        await materialize(
+            host, planning=True, src=SRC, dest="/nowhere/renamed.txt"
+        )
 
 
 async def test_move_absent_dest_is_a_rename_target_gated_on_its_parent():
@@ -529,3 +566,41 @@ async def test_edit_then_move_in_one_deploy_raises_at_prepare():
 
     with pytest.raises(ValueError, match=r"src /tmp/hosts does not exist"):
         await run(INVENTORY, deploy, host_factory=factory)
+
+
+async def test_edit_then_move_in_one_deploy_previews_when_dry():
+    # Issue #73's other half: the same deploy is previewable. A dry run sends
+    # nothing, so the spool file the edit would create is absent when the move
+    # materializes -- and a materialization that can never send reports that as
+    # a plan line instead of raising.
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            files.edit,
+            name="Spool hosts",
+            path="/tmp/hosts",
+            transform=desired_hosts,
+        )
+        yield op(
+            files.move,
+            name="Install hosts",
+            src="/tmp/hosts",
+            dest="/etc",
+            overwrite=True,
+            sudo=True,
+        )
+
+    def factory(entry: dict) -> SimulatedHost:
+        host = SimulatedHost.from_inventory(entry)
+        host.directory_stats = {"/etc": {"mode": 755}}
+        return host
+
+    plans, report, hosts = await run(
+        INVENTORY, deploy, host_factory=factory, dry=True
+    )
+    assert report is None
+    _edit_plan, move_plan = plans["web1"]
+    assert move_plan.changed
+    assert move_plan.reason == (
+        "src /tmp/hosts absent at plan time; move planned once it is staged"
+    )
+    assert "/tmp/hosts" not in hosts[0].remote_files

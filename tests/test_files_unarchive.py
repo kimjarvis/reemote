@@ -23,7 +23,11 @@ elevation asymmetry), the format validation, the creates gate, the
 remote-path validation, the dest creation, the binary-safe URL fetch with
 checksum verification, the ownership and mode steps, the SimulatedHost seam
 (``archive_members`` -> extracted tree), and end-to-end ``run``/plan/log
-behaviour including the two-pass no-op and the dry run.
+behaviour including the two-pass no-op and the dry run. Issue #73 added the
+planning carve-out: an *absent* remote ``src`` read by a materialization that
+can never send (a dry ``run``, a dry ``run_waves`` step) reports a plan line
+instead of raising, so a spool-then-extract deploy previews in one wave, while
+a non-file ``src`` and every applying-phase absence check still raise.
 """
 
 import hashlib
@@ -32,7 +36,14 @@ from collections.abc import Generator
 import pytest
 
 from reemote.core import FactCache, OpContext, OperationRequest, op
-from reemote.drivers import command_shell, format_log, format_plan, run, send_command
+from reemote.drivers import (
+    command_shell,
+    format_log,
+    format_plan,
+    run,
+    run_waves,
+    send_command,
+)
 from reemote.hosts import Host
 from reemote.modules import files
 from reemote.modules.files import files as files_module
@@ -97,6 +108,13 @@ def make_host(**state) -> SimulatedHost:
 
 def make_ctx(host: SimulatedHost) -> OpContext:
     return OpContext(host=host, facts=FactCache(host, phase="prepare"))
+
+
+def make_planning_ctx(host: SimulatedHost) -> OpContext:
+    """A context marked as never-send -- what a dry step builds (issue #73)."""
+    return OpContext(
+        host=host, facts=FactCache(host, phase="wave"), planning=True
+    )
 
 
 # --- The format table and descriptor rendering --------------------------------
@@ -358,6 +376,7 @@ async def test_unarchive_remote_src_extracts_in_place():
 
 
 async def test_unarchive_rejects_an_absent_remote_src():
+    # A strict (applying) context: the archive has to be there already.
     host = SimulatedHost(name="h")
     with pytest.raises(ValueError, match="does not exist"):
         [cmd async for cmd in files.unarchive(make_ctx(host), REMOTE_SRC, DEST)]
@@ -807,3 +826,91 @@ async def test_unarchive_mode_end_to_end_converges_the_tree(canned_fetch):
     assert report is not None
     assert not report.log[0].changed
     assert not plans["web1"][0].changed
+
+
+# --- Planning mode (issue #73) ----------------------------------------------------
+
+
+async def test_unarchive_absent_remote_src_plans_when_planning():
+    """A never-send materialization trades the absence ``ValueError`` for a plan
+    line naming the ``src``, so an archive an earlier request of the same deploy
+    stages no longer makes the flow unpreviewable."""
+    host = SimulatedHost(name="h")
+    ctx = make_planning_ctx(host)
+    commands = [cmd async for cmd in files.unarchive(ctx, REMOTE_SRC, DEST)]
+
+    assert commands == []
+    assert ctx.changed
+    assert ctx.reason == (
+        f"src {REMOTE_SRC} absent at plan time; extraction planned once it is staged"
+    )
+
+
+async def test_unarchive_non_file_remote_src_raises_when_planning():
+    """Only *absence* degrades: a path that exists and is not a regular file
+    cannot become an archive, so that check stays phase-unaware."""
+    host = SimulatedHost(name="h", file_stats={REMOTE_SRC: False})
+    ctx = make_planning_ctx(host)
+    with pytest.raises(ValueError, match="is not a regular file"):
+        [cmd async for cmd in files.unarchive(ctx, REMOTE_SRC, DEST)]
+
+
+async def test_unarchive_creates_gate_outranks_the_plan_line():
+    """The ``creates`` gate is read before the ``src``, so a converged host still
+    reports no change while planning rather than a plan line."""
+    host = SimulatedHost(name="h", existing_files={CREATES})
+    ctx = make_planning_ctx(host)
+    commands = [
+        cmd
+        async for cmd in files.unarchive(ctx, REMOTE_SRC, DEST, creates=CREATES)
+    ]
+    assert commands == []
+    assert not ctx.changed
+    assert ctx.reason == f"archive already extracted ({CREATES} exists)"
+
+
+async def test_spool_then_extract_previews_and_applies_in_one_wave():
+    """Issue #73's acceptance proof, in the shape that found it (the minio
+    ``package_content`` route): ``files.install`` spools the tarball, then
+    ``files.unarchive`` extracts that remote path, in one deploy.
+    """
+
+    def deploy(host: Host) -> Generator[OperationRequest]:
+        yield op(
+            files.install,
+            name="Spool the tarball",
+            content=DATA,
+            dest=REMOTE_SRC,
+            mode="0644",
+            sudo=True,
+        )
+        yield op(
+            files.unarchive,
+            name="Unpack the tarball",
+            src=REMOTE_SRC,
+            dest=DEST,
+            creates=CREATES,
+            sudo=True,
+        )
+
+    def factory(entry: dict) -> SimulatedHost:
+        return SimulatedHost(name=entry["host"], archive_members={REMOTE_SRC: MEMBERS})
+
+    # The preview: no raise, the extract reports the plan line, nothing sent.
+    report, hosts = await run_waves(INVENTORY, deploy, host_factory=factory, dry=True)
+    _, extract_plan = (record.planned for record in report.records)
+    assert extract_plan.changed
+    assert extract_plan.reason == (
+        f"src {REMOTE_SRC} absent at plan time; extraction planned once it is staged"
+    )
+    assert hosts[0].remote_files == {}
+    assert hosts[0].existing_files == set()
+
+    # The apply: the same two requests, and the extract now reads the spool the
+    # previous step installed -- the strict read still works on the wave path.
+    report, hosts = await run_waves(INVENTORY, deploy, host_factory=factory)
+    host = hosts[0]
+    _, extract_record = report.records
+    assert f"will extract {REMOTE_SRC} into {DEST}" in extract_record.planned.reason
+    assert f"$ sudo tar -xz -f {REMOTE_SRC} -C {DEST}" in format_log(report.merged())
+    assert CREATES in host.existing_files

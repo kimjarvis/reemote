@@ -94,6 +94,17 @@ between *prepare* and *apply* entirely through the lifetime of the
 [`FactCache`][reemote.core.FactCache] it hands out, and through whether it
 forwards a command to [`send_command`][reemote.drivers.send_command].
 
+The one thing an operation may ask about is the `planning` field of
+[`OpContext`][reemote.core.OpContext] (issue #73) — a flag the driver
+sets for the two materializations that can never be sent, the prepare of
+`run(dry=True)` and a `dry=True` step of
+[`run_waves`][reemote.drivers.run_waves]. It exists so an operation whose
+*input* a later request of the same deploy stages can report a plan line instead
+of raising on state only the apply creates; `files.unarchive`, `files.move` and
+`files.copy` are the users. It defaults to `False` — every materialization
+followed by `send_command` keeps its strict missing-input check, and a
+hand-built context (a test, say) stays strict unless it says otherwise.
+
 ```text
 deploy(host) generator
       │  yield OperationRequest
@@ -191,6 +202,12 @@ closes every connection once in its own `finally`, so a barrier or a role must
 never close one. `dry=True` is a **one-wave** preview — no barrier runs, and the
 first parked barrier is recorded `unknown` and stops the loop, because a
 barrier's outcome may depend on requests that were planned but never applied.
+The same never-send reason is why a dry step materializes in planning mode: an
+operation whose input an earlier request of the deploy stages reports a plan line
+rather than raising, so a spool-then-extract deploy previews in one wave (see
+[`files.unarchive`](modules/files.md)). A `dry=False` step is strict, and needs
+to be — requests apply one per step, so on the wave path the spool has already
+landed when the extraction reads it.
 
 The result is a [`WaveReport`][reemote.drivers.WaveReport]: a flat list of
 [`StageRecord`][reemote.drivers.StageRecord]s (one per step or barrier, each

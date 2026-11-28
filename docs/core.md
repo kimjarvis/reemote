@@ -6,6 +6,14 @@ script yields; [`OpContext`][reemote.core.OpContext] is what the driver hands
 back to an operation; [`FactCache`][reemote.core.FactCache] is the boundary
 that gives generator-body fact reads their sequential semantics.
 
+Alongside the `changed`/`reason` an operation reports back, `OpContext` carries
+one input: `planning`, set by the driver for a materialization that can never be
+sent — the prepare of a `dry=True` `run`, a `dry=True` step of
+`run_waves` — so an operation whose input a later request of the same deploy
+stages can report a plan line instead of raising on state that only the apply
+creates (see
+[Phase awareness](drivers.md#phase-awareness)).
+
 [`sub_deploy`][reemote.core.sub_deploy] and [`compose`][reemote.core.compose]
 are the composition helpers: pure request-stream transforms that wrap
 sub-deploys with default meta-parameters (a name prefix, privilege elevation,

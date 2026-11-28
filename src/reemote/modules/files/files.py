@@ -4273,11 +4273,15 @@ async def unarchive(
     # ``dest`` is created when absent (a ``MkdirCommand``, the issue's
     # requirement -- pyinfra instead raises on a non-existing directory); a
     # ``dest`` held by a non-directory raises ``ValueError``. A remote ``src``
-    # that is absent or not a regular file raises in *both* phases, the
-    # phase-unaware strictness ``files.move``/``files.copy`` chose (pyinfra
-    # soft-logs while planning). The format is validated from the basename
-    # before any fetch or fact read, and the optional ``checksum`` (a reemote
-    # addition, the ``files.download`` contract) is parsed before the fetch
+    # that is not a regular file raises in every phase. An *absent* ``src``
+    # raises in an applying phase, and reports a plan line when the context is
+    # planning (issue #73): the same deploy may stage it first -- a spooled
+    # controller asset, the Ansible ``unarchive`` shape -- and a preview sends
+    # nothing, so strictness there only made the flow unpreviewable. The
+    # siblings ``files.move``/``files.copy`` degrade the same way. The format
+    # is validated from the basename before any fetch or fact read, and the
+    # optional ``checksum`` (a reemote addition, the ``files.download``
+    # contract) is parsed before the fetch
     # and verified against the raw bytes before anything is staged -- the
     # body runs once per phase, so the pin is what keeps both phases'
     # ``UnarchiveSpoolCommand`` bytes identical.
@@ -4334,6 +4338,13 @@ async def unarchive(
     else:
         info = await ctx.facts.get(File, src)
         if info is None:
+            if ctx.planning:
+                ctx.changed = True
+                ctx.reason = (
+                    f"src {src} absent at plan time; extraction planned "
+                    "once it is staged"
+                )
+                return
             raise ValueError(f"src {src} does not exist")
         if info is False:
             raise ValueError(f"src {src} is not a regular file")
@@ -4490,15 +4501,14 @@ async def move(
     #
     # Reads ``File(src)`` (a directory or symlink reads False, which the baseline
     # accepts -- only absence is rejected), ``Directory(dest)`` and
-    # ``File(full_dest)``. An absent ``src`` and an existing target without
-    # ``overwrite`` raise ``ValueError``. The baseline's phase-aware handling
-    # of the absence case (a soft log while planning, an error only
-    # while executing) is deliberately dropped because reemote operations
-    # are phase-unaware: they raise in *both* phases. A consequence is that
-    # a "create a file then move it" flow cannot share one deploy -- the
-    # prepare phase would raise on the not-yet-created source -- so it spans
-    # two runs (see the ``files.edit`` + ``files.move`` ``/etc/hosts``
-    # recipe example).
+    # ``File(full_dest)``. An existing target without ``overwrite`` raises
+    # ``ValueError`` in every phase. An absent ``src`` raises in an applying
+    # phase and reports a plan line when the context is planning, the
+    # baseline's phase-aware soft handling of that one case (issue #73), so a
+    # "create a file then move it" flow previews in one deploy; a full
+    # ``run()`` prepare stays strict, so such a flow still spans two runs when
+    # it might be applied (see the ``files.edit`` + ``files.move``
+    # ``/etc/hosts`` recipe example).
     #
     # ``mode``/``user``/``group`` (issue #22) yield a ``ChownCommand`` and/or
     # ``ChmodCommand`` on the moved path after the ``mv`` -- unconditionally,
@@ -4513,7 +4523,14 @@ async def move(
     # absorbs any further global arguments (``op()`` already strips
     # ``name``/``sudo``/``su``).
     mode = _ensure_mode_int(mode)
-    if await ctx.facts.get(File, src) is None:
+    src_info = await ctx.facts.get(File, src)
+    if src_info is None:
+        if ctx.planning:
+            ctx.changed = True
+            ctx.reason = (
+                f"src {src} absent at plan time; move planned once it is staged"
+            )
+            return
         raise ValueError(f"src {src} does not exist")
 
     dest_info = await ctx.facts.get(Directory, dest)
@@ -4702,15 +4719,14 @@ async def copy(
     # the fact's octal int, so its chmod re-runs every pass, the
     # ``files.file`` precedent) and the named account must already exist.
     #
-    # An absent ``src``, an absent/non-directory rename parent, and an
-    # existing *different* target without ``overwrite`` all raise
-    # ``ValueError``. The baseline's phase-aware handling of the absence
-    # cases (a soft log while planning, an error only while executing) is
-    # deliberately dropped because reemote operations are phase-unaware:
-    # they raise in *both* phases, the same strictness chosen for
-    # ``files.move``. A consequence is that a "create a file then copy
-    # it" flow cannot share one deploy -- the prepare phase would raise on
-    # the not-yet-created source -- so it spans two runs.
+    # An absent/non-directory rename parent and an existing *different* target
+    # without ``overwrite`` raise ``ValueError`` in every phase. An absent
+    # ``src`` raises in an applying phase and reports a plan line when the
+    # context is planning -- the baseline's phase-aware soft handling of that
+    # one case, the same trade made for ``files.move`` and
+    # ``files.unarchive`` (issue #73) -- so a "create a file then copy it"
+    # flow previews in one deploy. A full ``run()`` prepare stays strict, so
+    # such a flow still spans two runs when it might be applied.
     #
     # The commands are shell text, so flagging the request ``sudo=True``
     # elevates the whole copy. ``**kwargs`` absorbs any further global
@@ -4719,6 +4735,14 @@ async def copy(
     src_is_dir = await ctx.facts.get(Directory, src)
     src_is_file = await ctx.facts.get(File, src)
     if not src_is_file and not src_is_dir:
+        if ctx.planning and src_is_file is None and src_is_dir is None:
+            # Both reads say "no such path", the absence case (a symlink reads
+            # ``False`` for both and stays an error, upstream's asymmetry).
+            ctx.changed = True
+            ctx.reason = (
+                f"src {src} absent at plan time; copy planned once it is staged"
+            )
+            return
         raise ValueError(f"src {src} does not exist")
 
     dest_info = await ctx.facts.get(Directory, dest)
