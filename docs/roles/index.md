@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships twenty-five configuration roles as **library code**. Each one is the
+reemote ships twenty-six configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -30,7 +30,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The twenty-five roles group by what they configure. The [catalogue](#the-catalogue)
+The twenty-six roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -90,6 +90,7 @@ and outputs.
 | Role | Purpose |
 | --- | --- |
 | [security](security.md) | SSH and host hardening — the `sshd_config` directives and access lists, the sudoers loops, Fail2Ban and unattended-upgrades |
+| [firewall](firewall.md) | iptables firewall — the once-per-machine flush gate, the rendered `/etc/firewall.bash` script and its unit, service state, one restart handler |
 | [certbot](certbot.md) | Certbot — the release-dispatched package, the configured certificates (standalone or webroot) and the renewal cron entry |
 
 ### Accounts
@@ -133,6 +134,7 @@ and outputs.
 | [kubectl](kubectl.md) | [`andrewrothstein.kubectl`](https://github.com/andrewrothstein/ansible-kubectl) | Ubuntu | exactly 2 | none | no | 1 |
 | [systemd](systemd.md) | [`0x0I/systemd`](https://github.com/0x0I/ansible-role-systemd) | Ubuntu | 2 (3 with a per-user unit) | none | **yes** | 1 |
 | [glusterfs](glusterfs.md) | [`geerlingguy.glusterfs`](https://github.com/geerlingguy/ansible-role-glusterfs) | Ubuntu | 2 fresh / 2 converged | none | no | 1 |
+| [firewall](firewall.md) | [`geerlingguy.firewall`](https://github.com/geerlingguy/ansible-role-firewall) | Ubuntu | 4 first run / 2 converged | none | **yes** | 1 |
 
 ## Reading the columns
 
@@ -147,9 +149,9 @@ and outputs.
   `PhpOutputs` — the PHP version and extension paths it used to carry as a copied
   constant. Every other role returns `None`, and does so on its family-guard's
   early return too.
-- **`reemote[templates]`** is needed by the eight roles that render configuration
-  through Jinja2 or PyYAML — `apache`, `datadog`, `memcached`, `nginx`, `ntp`,
-  `postgresql`, `redis` and `systemd`, the list
+- **`reemote[templates]`** is needed by the nine roles that render configuration
+  through Jinja2 or PyYAML — `apache`, `datadog`, `firewall`, `memcached`,
+  `nginx`, `ntp`, `postgresql`, `redis` and `systemd`, the list
   [`reemote.roles._render`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/_render.py)
   exists to carry. The others render in plain Python — `json.dumps`, an f-string, a
   `str.join` — and need nothing beyond the library.
@@ -258,6 +260,13 @@ and outputs.
   running/enabled state. The single-gate, no-fact role: one `checkpoint` feeds
   the reinstall split, and the role has no handlers, so no second checkpoint
   exists to read.
+- **[firewall](firewall.md)** — the `iptables` package, the once-per-machine
+  flush, the rendered `/etc/firewall.bash` script and its `firewall.service`
+  unit, the unit's running/enabled state, one restart handler. The script role:
+  the rule set stays a rendered bash script rather than per-port `iptables`
+  operations, and its `creates=` gate is a `fact` barrier feeding an `act` whose
+  `Result` is data — the body checks the exit status and raises its own
+  `CommandError`.
 
 ## Running one
 

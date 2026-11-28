@@ -192,6 +192,7 @@ nav:
           - kubectl: roles/kubectl.md
           - systemd: roles/systemd.md
           - glusterfs: roles/glusterfs.md
+          - firewall: roles/firewall.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md
