@@ -6,9 +6,9 @@
 Covers the read-only state discovery in ``reemote.modules.dnf.dnf``:
 ``DnfRepositories``, ``DnfRepoList``, ``DnfEnabledModules``,
 ``DnfDisabledModules``, ``DnfInstalledModules``, ``DnfGroups``,
-``DnfAvailableGroups``, ``RpmPackage`` and ``RpmGpgKeys``. Each fact is
-exercised both over the real-transport path (parsing canned shell output) and
-through the ``SimulatedHost`` seam.
+``DnfAvailableGroups``, ``RpmPackage``, ``RpmProvides`` and ``RpmGpgKeys``.
+Each fact is exercised both over the real-transport path (parsing canned shell
+output) and through the ``SimulatedHost`` seam.
 
 Also covers the properties from the design document: request descriptor
 semantics (4.1), fact caching (4.4), sequential "act, then read"
@@ -79,6 +79,7 @@ from reemote.modules.dnf.dnf import (
     RpmGpgKeys,
     RpmInstallCommand,
     RpmPackage,
+    RpmProvides,
     _key_spool_path,
     _repo_spool_path,
 )
@@ -95,6 +96,28 @@ class CannedShellHost(Host):
 
     async def run_shell(self, shell: str) -> str:
         return self._stdout
+
+
+class ScriptedShellHost(Host):
+    """Answers ``run_shell`` by matching substrings of the shell, recording
+    every call.
+
+    Where ``CannedShellHost`` gives one fixed answer, an operation that reads
+    several facts needs a different reply per query -- and a test that asserts
+    which queries were issued and how often.
+    """
+
+    def __init__(self, script: dict[str, str]):
+        super().__init__(name="scripted")
+        self.script = script
+        self.shells: list[str] = []
+
+    async def run_shell(self, shell: str) -> str:
+        self.shells.append(shell)
+        for needle, stdout in self.script.items():
+            if needle in shell:
+                return stdout
+        return ""
 
 
 def _module_entries(modules: dict[str, str]) -> list[dict[str, str]]:
@@ -619,6 +642,162 @@ async def test_rpm_package_reads_the_simulated_seam():
 NGINX_DEFAULT_SITE = "/etc/nginx/sites-enabled/default"
 DEFAULT_TARGET = "/etc/nginx/sites-available/default"
 HTTPD_WELCOME_CONF = "/etc/httpd/conf.d/welcome.conf"
+
+
+# --- RpmProvides fact (reemote original) ---------------------------------------
+
+# EPEL9's ClamAV subpackages that survive only as a ``Provides:`` value, reused
+# across the fact and the ``dnf.packages`` tests below. ``EL9_CLAMAV_PACKAGES``
+# is what ``rpm -qa`` really reports (the *provider* names); ``EL9_CLAMAV_REQUEST``
+# is upstream's documented package list, two of whose names are virtual; and
+# ``EL9_CLAMAV_PROVIDES`` is what ``rpm -q --whatprovides`` answers for them.
+EL9_CLAMAV_VERSION = "1.4.6-1.el9"
+EL9_CLAMAV_PACKAGES = {
+    "clamav": [EL9_CLAMAV_VERSION],
+    "clamav-data": [EL9_CLAMAV_VERSION],
+    "clamav-filesystem": [EL9_CLAMAV_VERSION],
+    "clamav-freshclam": [EL9_CLAMAV_VERSION],
+    "clamd": [EL9_CLAMAV_VERSION],
+}
+EL9_CLAMAV_REQUEST = (
+    "clamav",
+    "clamav-update",
+    "clamav-scanner-systemd",
+    "clamav-data",
+)
+EL9_CLAMAV_PROVIDES = [
+    {
+        "capability": "clamav-scanner-systemd",
+        "name": "clamd",
+        "version": EL9_CLAMAV_VERSION,
+    },
+    {
+        "capability": "clamav-update",
+        "name": "clamav-freshclam",
+        "version": EL9_CLAMAV_VERSION,
+    },
+]
+
+
+def test_rpm_provides_command_batches_one_query_per_capability():
+    """A single shell answers the whole batch: a ``for`` loop over the requested
+    capabilities -- caller order preserved -- each iteration echoing the marker
+    line that lets ``parse`` attribute the provider row and then querying
+    ``--whatprovides``. ``2> /dev/null`` drops rpm's "no package provides"
+    complaint and the trailing ``|| true`` keeps the last such miss from
+    failing the gather."""
+    command = RpmProvides.command(("clamav-update", "clamav-scanner-systemd"))
+    assert command.startswith("for capability in clamav-update clamav-scanner-systemd; do")
+    assert f'{RpmProvides.CAPABILITY_MARKER} %s\\n" "$capability"' in command
+    assert "-q --whatprovides \"$capability\"" in command
+    assert "2> /dev/null" in command
+    assert command.endswith("done || true")
+
+
+def test_rpm_provides_command_quotes_a_capability_with_metacharacters():
+    """Like every other argument, a requested name reaches the remote shell
+    quoted, so a metacharacter cannot break out of the loop word."""
+    capability = "clamav;touch /tmp/pwned"
+    command = RpmProvides.command((capability,))
+    assert f"for capability in {shlex.quote(capability)}; do" in command
+
+
+def test_rpm_provides_parse_attributes_each_row_to_its_marker():
+    """Over the real-transport shape, marker lines name the capability every
+    following ``NAME VERSION-RELEASE`` row belongs to: blank lines and
+    duplicate rows collapse and the entries sort by capability."""
+    marker = RpmProvides.CAPABILITY_MARKER
+    rows = RpmProvides.parse(
+        [
+            f"{marker} clamav-update",
+            f"clamav-freshclam {EL9_CLAMAV_VERSION}",
+            "",
+            f"{marker} clamav-scanner-systemd",
+            f"clamd {EL9_CLAMAV_VERSION}",
+            f"clamd {EL9_CLAMAV_VERSION}",
+        ]
+    )
+    assert rows == [dict(row) for row in EL9_CLAMAV_PROVIDES]
+
+
+def test_rpm_provides_parse_drops_noise_and_unattributed_rows():
+    """rpm's multi-word error line and any row printed before the first marker
+    are dropped, so an unresolvable capability yields no entry instead of a
+    bogus provider."""
+    marker = RpmProvides.CAPABILITY_MARKER
+    rows = RpmProvides.parse(
+        [
+            f"clamav {EL9_CLAMAV_VERSION}",
+            f"{marker} clamav-update",
+            "error: no package provides clamav-update",
+            f"  clamav-freshclam {EL9_CLAMAV_VERSION}  ",
+        ]
+    )
+    assert rows == [EL9_CLAMAV_PROVIDES[1]]
+
+
+def test_rpm_provides_parse_empty_output_is_an_empty_list():
+    """A host nothing was queried for parses to an empty list, not None."""
+    assert RpmProvides.parse([]) == []
+
+
+async def test_rpm_provides_parses_canned_shell_output():
+    """Over the real-transport path the fact runs its own batched shell and
+    parses the marker-and-row output."""
+    marker = RpmProvides.CAPABILITY_MARKER
+    host = CannedShellHost(
+        f"{marker} clamav-update\nclamav-freshclam {EL9_CLAMAV_VERSION}\n"
+    )
+    assert await RpmProvides.process(host, ("clamav-update",)) == [
+        EL9_CLAMAV_PROVIDES[1]
+    ]
+
+
+async def test_rpm_provides_seam_answers_only_the_requested_capabilities():
+    """The seam projects the seeded rows down to the capabilities asked for,
+    so a test seeds the whole database and the fact reports just its query."""
+    host = SimulatedHost(
+        name="h",
+        packages=dict(EL9_CLAMAV_PACKAGES),
+        rpm_provides=[dict(row) for row in EL9_CLAMAV_PROVIDES],
+    )
+    assert await RpmProvides.process(host, ("clamav-update",)) == [EL9_CLAMAV_PROVIDES[1]]
+
+
+async def test_rpm_provides_seam_drops_a_row_whose_provider_is_not_installed():
+    """``rpm --whatprovides`` only reports an *installed* package, so the seam
+    ignores a seeded row whose provider has left ``packages`` -- the state a
+    simulated removal leaves behind, and what makes a virtual ``absent``
+    request converge on its second pass."""
+    host = SimulatedHost(
+        name="h",
+        packages={"clamav": [EL9_CLAMAV_VERSION]},
+        rpm_provides=[dict(row) for row in EL9_CLAMAV_PROVIDES],
+    )
+    assert await RpmProvides.process(host, ("clamav-update", "clamav-scanner-systemd")) == []
+
+
+async def test_rpm_provides_seam_read_is_a_sorted_copy():
+    """The seam answer is sorted by capability and copied: mutating the
+    returned rows never touches simulated state."""
+    seeded = [dict(row) for row in reversed(EL9_CLAMAV_PROVIDES)]
+    host = SimulatedHost(
+        name="h", packages=dict(EL9_CLAMAV_PACKAGES), rpm_provides=seeded
+    )
+    result = await RpmProvides.process(
+        host, ("clamav-update", "clamav-scanner-systemd")
+    )
+    assert result == [dict(row) for row in EL9_CLAMAV_PROVIDES]
+    result[0]["name"] = "mutated"
+    assert host.rpm_provides == seeded
+
+
+async def test_rpm_provides_empty_request_issues_no_shell():
+    """Nothing queried means nothing run: an empty ``for`` list would be a
+    shell syntax error, so the fact short-circuits."""
+    host = ScriptedShellHost({})
+    assert await RpmProvides.process(host, ()) == []
+    assert host.shells == []
 
 
 # --- Test setup: example inventory, deploy script and host factory ----------
@@ -2650,6 +2829,258 @@ async def test_dnf_version_pin_downgrade_simulates_and_converges():
     _runtimes, plans2 = await run_prepare([host], pinned_deploy)
     assert not plans2["h"][0].changed
     assert plans2["h"][0].reason == "all packages present"
+
+
+# --- dnf.packages virtual provides (issue #76) ----------------------------------
+
+
+async def test_dnf_packages_counts_a_virtual_provide_as_installed():
+    """The issue's repro: on an EPEL9 host carrying ``clamav-freshclam`` and
+    ``clamd``, upstream's four package names are all satisfied -- so the
+    operation yields no install command and reports no change instead of
+    reinstalling forever and re-firing its handlers."""
+    host = SimulatedHost(
+        name="h",
+        packages=dict(EL9_CLAMAV_PACKAGES),
+        rpm_provides=[dict(row) for row in EL9_CLAMAV_PROVIDES],
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.packages(ctx, packages=EL9_CLAMAV_REQUEST)]
+    assert not ctx.changed
+    assert ctx.reason == "all packages present"
+    assert commands == []
+
+
+async def test_dnf_packages_installs_virtual_names_verbatim_when_absent():
+    """On a host with none of them installed the request passes through to dnf
+    unchanged -- virtual names included, since dnf resolves a spec against
+    ``Provides:`` itself."""
+    host = SimulatedHost(name="h")
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.packages(ctx, packages=EL9_CLAMAV_REQUEST)]
+    assert ctx.changed
+    assert ctx.reason == "4 package(s) to install"
+    assert commands == [DnfInstallCommand(packages=EL9_CLAMAV_REQUEST)]
+    assert commands[0].shell() == (
+        "dnf install -y clamav clamav-update clamav-scanner-systemd clamav-data"
+    )
+
+
+async def test_dnf_packages_keeps_an_unresolvable_name_in_the_install():
+    """A name nothing provides stays in the install: the fallback must never
+    silently drop a spec, so dnf itself reports the error."""
+    host = SimulatedHost(
+        name="h",
+        packages=dict(EL9_CLAMAV_PACKAGES),
+        rpm_provides=[dict(row) for row in EL9_CLAMAV_PROVIDES],
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=("clamav", "clamav-update", "clamav-nonsense")
+        )
+    ]
+    assert ctx.changed
+    assert ctx.reason == "1 package(s) to install"
+    assert commands == [DnfInstallCommand(packages=("clamav-nonsense",))]
+
+
+async def test_dnf_packages_mixes_real_and_virtual_names_in_one_install():
+    """Only the names neither index settles are installed; a virtual name the
+    host already carries is dropped from the request."""
+    host = SimulatedHost(name="h", packages={"clamav": [EL9_CLAMAV_VERSION]})
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=("clamav", "clamav-update", "nginx")
+        )
+    ]
+    assert commands == [DnfInstallCommand(packages=("clamav-update", "nginx"))]
+
+
+async def test_dnf_packages_pinned_virtual_spec_matches_the_provider_version():
+    """A pin on a virtual name pins the capability's version, which rpm records
+    as the providing package's ``VERSION-RELEASE``: the exact version is
+    present, a different one is not."""
+    host = SimulatedHost(
+        name="h",
+        packages={"clamav-freshclam": [EL9_CLAMAV_VERSION]},
+        rpm_provides=[dict(EL9_CLAMAV_PROVIDES[1])],
+    )
+    ctx = OpContext(
+        host=host,
+        facts=FactCache(host, phase="prepare"),
+    )
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=(f"clamav-update={EL9_CLAMAV_VERSION}",)
+        )
+    ]
+    assert not ctx.changed
+    assert commands == []
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.packages(ctx, packages=("clamav-update=1.4.2-1.el9",))
+    ]
+    assert ctx.changed
+    assert ctx.reason == "1 package(s) to install"
+    assert commands == [DnfInstallCommand(packages=("clamav-update=1.4.2-1.el9",))]
+
+
+async def test_dnf_packages_absent_removes_the_providing_package_and_converges():
+    """``present=False`` on a virtual name removes the package that carries it,
+    reports the change once, and then reports no change -- because the
+    simulated removal takes the provider out of ``packages`` and with it the
+    provide."""
+    host = SimulatedHost(
+        name="h",
+        packages=dict(EL9_CLAMAV_PACKAGES),
+        rpm_provides=[dict(row) for row in EL9_CLAMAV_PROVIDES],
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.packages(ctx, packages=("clamav-update",), present=False)
+    ]
+    assert ctx.changed
+    assert ctx.reason == "1 package(s) to remove"
+    assert commands == [DnfRemoveCommand(packages=("clamav-freshclam",))]
+    assert commands[0].shell() == "dnf remove -y clamav-freshclam"
+    for command in commands:
+        host.execute_command(command)
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.packages(ctx, packages=("clamav-update",), present=False)
+    ]
+    assert not ctx.changed
+    assert ctx.reason == "no packages to remove"
+    assert commands == []
+
+
+async def test_dnf_packages_absent_pinned_virtual_removes_the_provider_pinned():
+    """A pin on a virtual removal carries through to the provider's name, which
+    the descriptor renders as dnf's ``name-version`` spec."""
+    host = SimulatedHost(
+        name="h",
+        packages={"clamav-freshclam": [EL9_CLAMAV_VERSION]},
+        rpm_provides=[dict(EL9_CLAMAV_PROVIDES[1])],
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx, packages=(f"clamav-update={EL9_CLAMAV_VERSION}",), present=False
+        )
+    ]
+    assert commands == [
+        DnfRemoveCommand(packages=(f"clamav-freshclam={EL9_CLAMAV_VERSION}",))
+    ]
+    assert commands[0].shell() == f"dnf remove -y clamav-freshclam-{EL9_CLAMAV_VERSION}"
+
+
+async def test_dnf_packages_absent_collapses_two_capabilities_one_provider():
+    """Two requested names carried by the same installed package yield one
+    removal, not a duplicated argument."""
+    host = SimulatedHost(
+        name="h",
+        packages={"clamav-freshclam": [EL9_CLAMAV_VERSION]},
+        rpm_provides=[
+            {
+                "capability": "clamav-scanner-systemd",
+                "name": "clamav-freshclam",
+                "version": EL9_CLAMAV_VERSION,
+            },
+            dict(EL9_CLAMAV_PROVIDES[1]),
+        ],
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c
+        async for c in dnf.packages(
+            ctx,
+            packages=("clamav-update", "clamav-scanner-systemd"),
+            present=False,
+        )
+    ]
+    assert commands == [DnfRemoveCommand(packages=("clamav-freshclam",))]
+
+
+async def test_dnf_packages_skips_the_provides_query_when_every_name_hits():
+    """The fallback costs nothing on the common path: when the names-only index
+    settles every request, no ``--whatprovides`` shell is issued at all."""
+    host = ScriptedShellHost(
+        {"rpm -qa": f"clamav {EL9_CLAMAV_VERSION}\nclamav-data {EL9_CLAMAV_VERSION}\n"}
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [
+        c async for c in dnf.packages(ctx, packages=("clamav", "clamav-data"))
+    ]
+    assert commands == []
+    assert not ctx.changed
+    assert len(host.shells) == 1
+    assert not any("--whatprovides" in shell for shell in host.shells)
+
+
+async def test_dnf_packages_queries_provides_once_for_only_the_missed_names():
+    """Over the real-transport path the residual misses are resolved in one
+    batched query naming only those capabilities, and the provider rows it
+    returns settle the request."""
+    marker = RpmProvides.CAPABILITY_MARKER
+    host = ScriptedShellHost(
+        {
+            "rpm -qa": (
+                f"clamav {EL9_CLAMAV_VERSION}\n"
+                f"clamav-data {EL9_CLAMAV_VERSION}\n"
+            ),
+            "--whatprovides": (
+                f"{marker} clamav-update\n"
+                f"clamav-freshclam {EL9_CLAMAV_VERSION}\n"
+                f"{marker} clamav-scanner-systemd\n"
+                f"clamd {EL9_CLAMAV_VERSION}\n"
+            ),
+        }
+    )
+    ctx = OpContext(host=host, facts=FactCache(host, phase="prepare"))
+    commands = [c async for c in dnf.packages(ctx, packages=EL9_CLAMAV_REQUEST)]
+    assert commands == []
+    assert not ctx.changed
+    queries = [shell for shell in host.shells if "--whatprovides" in shell]
+    assert len(queries) == 1
+    assert "for capability in clamav-update clamav-scanner-systemd; do" in queries[0]
+    assert "for capability in clamav " not in queries[0]
+
+
+async def test_dnf_packages_virtual_provides_converge_through_run():
+    """End-to-end through ``run``: on a host whose providers are already
+    installed the deploy plans no change and issues no command, so a handler
+    attached to the request never fires -- the issue's symptom."""
+
+    def clamav_deploy(host):
+        yield op(
+            dnf.packages,
+            name="Install ClamAV",
+            packages=EL9_CLAMAV_REQUEST,
+            sudo=True,
+        )
+
+    def factory(entry):
+        host = SimulatedHost.from_inventory(entry)
+        host.packages = dict(EL9_CLAMAV_PACKAGES)
+        host.rpm_provides = [dict(row) for row in EL9_CLAMAV_PROVIDES]
+        return host
+
+    _plans, report, (host,) = await run(
+        [{"host": "a", "family": "RedHat", "connection": {}}],
+        clamav_deploy,
+        host_factory=factory,
+    )
+    (entry,) = report.log
+    assert not entry.changed
+    assert entry.commands == ()
+    assert host.packages == EL9_CLAMAV_PACKAGES
+    assert "$ dnf install" not in format_log(report)
 
 
 # --- dnf.repo operation (baseline parity) --------------------------------------

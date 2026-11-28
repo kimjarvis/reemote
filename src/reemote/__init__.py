@@ -227,6 +227,8 @@ from .modules.dnf.dnf import (
     RpmInstallCommand,
     RpmPackage,
     RpmPackageInfo,
+    RpmProvide,
+    RpmProvides,
 )
 from .modules.files.files import (
     ChattrCommand,
@@ -1343,6 +1345,8 @@ __all__ = [
     "RpmInstallCommand",
     "RpmPackage",
     "RpmPackageInfo",
+    "RpmProvide",
+    "RpmProvides",
     "RunlevelCommand",
     "RustupComponentAddCommand",
     "RustupComponentRemoveCommand",

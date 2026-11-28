@@ -7,10 +7,10 @@ every script follows.
 
 The read-only fact-gathering examples (`DnfRepositories`, `DnfRepoList`,
 `DnfEnabledModules`, `DnfDisabledModules`, `DnfInstalledModules`, `DnfGroups`,
-`DnfAvailableGroups` and `RpmGpgKeys` over `gather_fact`) live alongside the
-operation examples in `examples/modules/dnf/`. They are not rendered here —
-each reads a single fact, and the facts themselves are documented on the
-[`dnf` module page](../../modules/dnf.md).
+`DnfAvailableGroups`, `RpmGpgKeys` and `RpmProvides` over `gather_fact`) live
+alongside the operation examples in `examples/modules/dnf/`. They are not
+rendered here — each reads a single fact, and the facts themselves are
+documented on the [`dnf` module page](../../modules/dnf.md).
 
 Every script reads the shared project-root `inventory.json` (validated up
 front with `validate_inventory`) and guards on the `"RedHat"` family with a
@@ -43,8 +43,15 @@ already installed at a *different* version, since `dnf install` alone refuses
 to cross from a newer installed version to an older requested one and has no
 equivalent flag (unlike apt's `--allow-downgrades`); without it, a mismatch is
 treated exactly like a missing name and left for dnf's own default behavior to
-reject (the example leaves it unset, since httpd is installed unpinned).
-Repo scoping has two first-class spellings: `repos=(<id>, ...)` means
+`reject` (the example leaves it unset, since httpd is installed unpinned).
+The names-only `DnfPackages` index is widened by a virtual-provides fallback
+(issue #76): a requested name that is not itself an installed package still
+counts as present when an installed package *provides* it — resolved with
+`rpm -q --whatprovides` through
+[`RpmProvides`][reemote.modules.dnf.dnf.RpmProvides], and only for the names the
+index misses — so EPEL9's `clamav-update` (carried by `clamav-freshclam`)
+converges instead of being reinstalled on every run, and `present=False` removes
+the provider. Repo scoping has two first-class spellings: `repos=(<id>, ...)` means
 *enable-only-named* (`--disablerepo='*' --enablerepo=<id>...`), while
 `disable_repos=(<id>, ...)` means *every repo except these* (a bare
 `--disablerepo=<id>` per name) — Ansible's `disablerepo: appstream` shape,

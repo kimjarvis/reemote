@@ -17,7 +17,10 @@
 # ``DnfGroups``/``DnfAvailableGroups``, the installed and available package
 # groups (shared ``DnfGroup`` entries), ``RpmPackage``, the
 # name/version (``RpmPackageInfo``) of a ``.rpm`` file or an
-# installed package that ``dnf.rpm`` reads to decide idempotence, and
+# installed package that ``dnf.rpm`` reads to decide idempotence,
+# ``RpmProvides``, the installed package behind each requested capability
+# (``RpmProvide`` rows) that ``dnf.packages`` consults for a name the
+# installed-names index misses, and
 # ``RpmGpgKeys``, the GPG keys imported into the rpm keyring (``RpmGpgKey``
 # entries) that both ``dnf.key`` directions read. Like every
 # fact they are phase-unaware: each ``process`` coroutine just gathers the raw
@@ -60,7 +63,12 @@
 # is version-aware rather than name-only), and ``allow_downgrade`` renders
 # ``dnf downgrade --allowerasing`` for a pinned package whose name is already
 # installed at a different version, since ``dnf install`` alone will not cross
-# from a newer installed version to an older requested one. ``dnf.repo``
+# from a newer installed version to an older requested one. A requested name
+# the installed-packages index does not carry is still present when an
+# installed package *provides* it (the ``RpmProvides`` read, resolved only for
+# the residual misses), so a RedHat package list inherited from a distro that
+# renamed subpackages converges rather than reinstalling on every run -- and
+# ``present=False`` removes such a name through its provider. ``dnf.repo``
 # constructs a repo file for the manual-construction case (``present``,
 # ``baseurl``, ``description``, ``enabled``, ``gpgcheck``, ``gpgkey``) and
 # extends it with the ansible-datadog role's ``yum_repository`` fields
@@ -1047,6 +1055,169 @@ class RpmPackage:
         return cls.parse(stdout.splitlines())
 
 
+class RpmProvide(TypedDict):
+    """
+    Attributes:
+        capability: The capability that was queried, verbatim -- the
+            *requested* name (``clamav-update``), which is not necessarily a
+            package name.
+        name: The installed package carrying that capability, as rpm's real
+            ``NAME`` (``clamav-freshclam``).
+        version: The providing package's ``VERSION-RELEASE`` -- the same
+            version string ``RpmPackageInfo`` reports.
+    """
+
+    # One provider row of ``RpmProvides``. A TypedDict rather than a class
+    # instance, like ``RpmPackageInfo``: rows are ordinary dicts, so equality
+    # against a literal dict works and ``json.dumps`` serializes them
+    # directly. The singular of the plural fact (``RpmGpgKeys`` ->
+    # ``RpmGpgKey``) leaves the bare slot free, so no ``Info`` suffix is
+    # needed.
+
+    capability: str
+    name: str
+    version: str
+
+
+class RpmProvides:
+    """The installed package behind each queried capability, as ``RpmProvide`` dicts.
+
+    **Commands:**
+
+    ```bash
+    for capability in <name> ...; do printf "#reemote-capability: %s\\n" "$capability"; rpm --queryformat '%{NAME} %{VERSION}-%{RELEASE}\\n' -q --whatprovides "$capability" 2> /dev/null; done || true
+    ```
+
+    **Returns:**
+
+    ```python
+    list[RpmProvide]
+    ```
+
+    **Raises:**
+
+    ```python
+    HostConnectionError
+    ```
+
+    Examples:
+        Examples can be found in ``examples/modules/dnf/rpm_provides.py``.
+    """
+
+    # The provides-side companion to the names-only ``DnfPackages`` read
+    # (issue #76). ``rpm -qa`` lists real RPM names, so a distro subpackage
+    # that was renamed and survives only as a ``Provides:`` value -- on EPEL9,
+    # ``clamav-update`` carried by ``clamav-freshclam`` and
+    # ``clamav-scanner-systemd`` carried by ``clamd`` -- is invisible to it
+    # even though ``dnf install`` accepts the spec. This fact asks rpm the
+    # same question dnf asks it and reports the provider's name and
+    # ``VERSION-RELEASE``, so an operation can settle a virtual spec (pinned
+    # or not) against the package that actually carries it. ``--whatprovides``
+    # matches an installed *name* too, so one query answers both spellings.
+    #
+    # One shell answers the whole batch, each capability echoed behind a
+    # marker line (``DnfRepositories``' filename-marker precedent): the query
+    # prints only the provider, so a package carrying two requested
+    # capabilities cannot otherwise be attributed to both. A
+    # list-everything-in-one-query rewrite is deliberately unavailable --
+    # ``%{NAMES}`` is not an rpm tag on EL9, and mixing the single-value
+    # ``%{NAME}`` with the multivalue ``%{PROVIDES}`` in one array iterator
+    # fails with "array iterator used with different sized arrays".
+    # ``2> /dev/null`` drops rpm's ``no package provides <name>`` complaint
+    # and the trailing ``|| true`` keeps the last query's non-zero exit from
+    # failing the gather, so an unresolvable capability simply yields no row.
+
+    #: Marker prefixing each capability in ``command``'s output, so ``parse``
+    #: attributes every provider row to the capability it was queried for.
+    CAPABILITY_MARKER = "#reemote-capability:"
+
+    #: rpm query format printing ``NAME VERSION-RELEASE`` per provider -- the
+    #: same two fields and spelling ``RpmPackage`` queries.
+    QUERY_FORMAT = "%{NAME} %{VERSION}-%{RELEASE}\\n"
+
+    @classmethod
+    def command(cls, capabilities: Iterable[str]) -> str:
+        """Shell reporting the installed provider of each capability.
+
+        One loop iteration per capability so the marker line can name it; every
+        capability is shell-quoted, so a metacharacter in a name never reaches
+        the remote shell unescaped. Caller order is preserved, so the rendered
+        string is a deterministic function of the requested capabilities.
+        """
+        query_format = shlex.quote(cls.QUERY_FORMAT)
+        names = " ".join(shlex.quote(capability) for capability in capabilities)
+        return (
+            f"for capability in {names}; do "
+            f'printf "{cls.CAPABILITY_MARKER} %s\\n" "$capability"; '
+            f"rpm --queryformat {query_format} -q --whatprovides \"$capability\" "
+            "2> /dev/null; "
+            "done || true"
+        )
+
+    @classmethod
+    def parse(cls, output: Iterable[str]) -> list[RpmProvide]:
+        """Parse the marker-and-row listing into sorted, unique entries.
+
+        A marker line names the capability every following ``NAME
+        VERSION-RELEASE`` row belongs to; blank lines, rpm noise and rows
+        appearing before the first marker are dropped, duplicate rows
+        collapse, and the entries sort by capability, then provider name, then
+        version. Pure and testable.
+        """
+        rows: set[tuple[str, str, str]] = set()
+        capability = ""
+        for line in output:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped.startswith(cls.CAPABILITY_MARKER):
+                capability = stripped[len(cls.CAPABILITY_MARKER) :].strip()
+                continue
+            tokens = stripped.split()
+            if len(tokens) != 2 or not capability:
+                continue
+            rows.add((capability, tokens[0], tokens[1]))
+        return [
+            {"capability": cap, "name": name, "version": version}
+            for cap, name, version in sorted(rows)
+        ]
+
+    @classmethod
+    async def process(
+        cls, host: Host, capabilities: Iterable[str]
+    ) -> list[RpmProvide]:
+        # Order-stable de-duplication: the shell lists each capability once, and
+        # the read must be a deterministic function of the request.
+        names = tuple(dict.fromkeys(capabilities))
+        if not names:
+            # Nothing to resolve. ``dnf.packages`` only reads this fact for its
+            # residual misses, and an empty ``for`` list would be a shell
+            # syntax error.
+            return []
+        rpm_provides = getattr(host, "rpm_provides", None)
+        if rpm_provides is not None:
+            # SimulatedHost seam: the capability -> provider rows a test
+            # seeds, sorted and copied so callers never mutate simulated
+            # state. Only the requested capabilities answer, and
+            # ``rpm --whatprovides`` reports an *installed* package, so a row
+            # whose provider has left ``packages`` (a simulated removal) is
+            # dropped -- that is what makes a virtual ``absent`` request
+            # converge on its second pass.
+            wanted = set(names)
+            installed = host.packages
+            return [
+                dict(row)
+                for row in sorted(
+                    rpm_provides,
+                    key=lambda row: (row["capability"], row["name"], row["version"]),
+                )
+                if row["capability"] in wanted and row["name"] in installed
+            ]
+        # Real transport: query the rpm database over asyncssh.
+        stdout = await host.run_shell(cls.command(names))
+        return cls.parse(stdout.splitlines())
+
+
 class RpmGpgKey(TypedDict):
     """
     Attributes:
@@ -1369,7 +1540,13 @@ async def packages(
         packages (str | list[str] | tuple[str, ...] | None, optional): Packages
             to ensure. Prefer tuples when building requests via ``op()``, since
             ``OperationRequest`` kwargs must stay hashable. Versions can be
-            pinned as ``<pkg>=<version>``. Defaults to None.
+            pinned as ``<pkg>=<version>``. A name that is not itself an
+            installed package still counts as present when an installed package
+            *provides* it (resolved with ``rpm -q --whatprovides``), so a
+            distro's renamed subpackage kept alive as a virtual name -- EPEL9's
+            ``clamav-update``, carried by ``clamav-freshclam`` -- converges
+            instead of being reinstalled on every run, and ``present=False``
+            removes it via that provider. Defaults to None.
         present (bool, optional): Whether the packages should be installed.
             Defaults to True.
         latest (bool, optional): Whether to upgrade installed packages without
@@ -1509,6 +1686,21 @@ async def packages(
             exclude=("python-unversioned-command",),
             sudo=True,
         )
+
+        # A virtual provide counts as installed: on EPEL9 ``clamav-update`` and
+        # ``clamav-scanner-systemd`` are carried by ``clamav-freshclam`` and
+        # ``clamd``, so this reports no change once those packages are installed
+        yield op(
+            dnf.packages,
+            name="Install ClamAV (upstream's EL package names)",
+            packages=(
+                "clamav",
+                "clamav-update",
+                "clamav-scanner-systemd",
+                "clamav-data",
+            ),
+            sudo=True,
+        )
         ```
 
         Examples can be found in ``examples/modules/dnf/dnf_packages.py``.
@@ -1556,6 +1748,13 @@ async def packages(
     # only, never forcing a change on an already-present package. ``kwargs``
     # absorbs any further keyword arguments (any further global arguments
     # are meta-parameters handled by ``op()`` here).
+    #
+    # Presence is a names-only test against ``DnfPackages``, while dnf itself
+    # resolves an install spec against ``Provides:`` -- so a requested name that
+    # survives only as a virtual provide used to be invisible to the gate (issue
+    # #76). Such a spec is now settled by the ``RpmProvides`` read, issued only
+    # for the names the index misses, and the removal direction hands dnf the
+    # provider's real name.
     reasons: list[str] = []
 
     if clean:
@@ -1595,12 +1794,65 @@ async def packages(
         installed = await ctx.facts.get(DnfPackages)
         versions_by_name = {entry["name"]: entry["versions"] for entry in installed}
 
-        def is_installed(package: str) -> bool:
+        def name_hit(package: str) -> bool:
+            """Whether the names-only ``DnfPackages`` index settles ``package``."""
             name, version = _split_version(package)
             versions = versions_by_name.get(name)
-            if versions is None:
-                return False
-            return version is None or version in versions
+            return versions is not None and (version is None or version in versions)
+
+        # Virtual-provides fallback (issue #76): ``rpm -qa`` reports real RPM
+        # names only, while dnf resolves an install spec against ``Provides:``.
+        # A renamed distro subpackage that survives only as a provide --
+        # EPEL9's ``clamav-update`` (carried by ``clamav-freshclam``) and
+        # ``clamav-scanner-systemd`` (carried by ``clamd``) -- is therefore
+        # absent from that index although the host satisfies it, which kept
+        # ``present`` requests from ever converging (and re-fired their
+        # handlers) and made ``absent`` a silent no-op. Only the residual
+        # misses are resolved, so a host that already carries every requested
+        # name costs no extra query; a capability nothing provides stays
+        # unresolved, leaving the spec in the request for dnf itself to
+        # report rather than silently dropping it.
+        missed = tuple(
+            dict.fromkeys(
+                _split_version(package)[0]
+                for package in requested
+                if not name_hit(package)
+            )
+        )
+        providers_by_capability: dict[str, list[RpmProvide]] = {}
+        if missed:
+            for row in await ctx.facts.get(RpmProvides, missed):
+                providers_by_capability.setdefault(row["capability"], []).append(row)
+
+        def is_installed(package: str) -> bool:
+            name, version = _split_version(package)
+            if name in versions_by_name:
+                return version is None or version in versions_by_name[name]
+            providers = providers_by_capability.get(name, ())
+            if version is None:
+                return bool(providers)
+            # A pinned virtual spec pins the *capability's* version, which rpm
+            # records as the providing package's ``VERSION-RELEASE`` (the
+            # ``RpmPackage`` spelling).
+            return any(entry["version"] == version for entry in providers)
+
+        def removal_specs(package: str) -> tuple[str, ...]:
+            """The names to hand ``dnf remove`` for a settled package.
+
+            A real name is removed under the requested spelling (pin
+            included); a virtual one under its provider's real name, since the
+            provider is the package dnf would erase. Order-stable and
+            de-duplicated by the caller, so two capabilities carried by one
+            package yield one removal.
+            """
+            name, version = _split_version(package)
+            if name in versions_by_name:
+                return (package,)
+            return tuple(
+                f"{entry['name']}={version}" if version is not None else entry["name"]
+                for entry in providers_by_capability.get(name, ())
+                if version is None or entry["version"] == version
+            )
 
         if present:
             to_install = tuple(pkg for pkg in requested if not is_installed(pkg))
@@ -1664,7 +1916,14 @@ async def packages(
             if not to_install and not to_upgrade:
                 reasons.append("all packages present")
         else:
-            to_remove = tuple(pkg for pkg in requested if is_installed(pkg))
+            to_remove = tuple(
+                dict.fromkeys(
+                    spec
+                    for package in requested
+                    if is_installed(package)
+                    for spec in removal_specs(package)
+                )
+            )
             if to_remove:
                 ctx.changed = True
                 reasons.append(f"{len(to_remove)} package(s) to remove")
@@ -2861,6 +3120,8 @@ __all__ = [
     "RpmInstallCommand",
     "RpmPackage",
     "RpmPackageInfo",
+    "RpmProvide",
+    "RpmProvides",
     "clean",
     "key",
     "makecache",

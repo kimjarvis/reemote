@@ -33,7 +33,7 @@ a real asyncssh transport is missing:
   ``remote_files`` / ``archive_members`` /
   ``repositories`` / ``repo_list`` / ``enabled_modules`` / ``disabled_modules``
   / ``installed_modules`` / ``installed_groups`` / ``available_groups``
-  / ``rpm_files`` / ``rpm_packages`` / ``rpm_gpg_keys`` / ``services`` / ``enabled_services``
+  / ``rpm_files`` / ``rpm_packages`` / ``rpm_provides`` / ``rpm_gpg_keys`` / ``services`` / ``enabled_services``
   / ``apk_autoremovable`` / ``apk_explicit_packages`` / ``apk_held_packages`` / ``apk_package_info`` / ``apk_packages`` / ``apk_repositories`` / ``apt_autoremovable`` / ``apt_held_packages`` / ``apt_keys`` / ``apt_packages`` / ``apt_policy`` / ``apt_simulations`` / ``apt_sources`` / ``apt_update_stamp`` / ``apt_upgradable`` / ``arch`` / ``authorized_keys`` / ``block_devices`` / ``cargo_config`` / ``cargo_packages`` / ``cpu_info`` / ``cpus`` / ``crontab_text`` / ``deb_files``
   / ``date`` / ``default_ipv4_addr`` / ``disk_stats`` / ``dmi_info`` / ``os_env``
   / ``firewall_reads_denied`` / ``firewalld_default_zone``
@@ -105,7 +105,7 @@ a real asyncssh transport is missing:
   ``Sha384File``, ``Md5File``, ``FileContents``, ``DnfRepoFile``, ``DnfRepositories``,
   ``DnfRepoList``,
   ``DnfEnabledModules``, ``DnfDisabledModules``, ``DnfInstalledModules``,
-  ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``, ``RpmGpgKeys``,
+  ``DnfGroups``, ``DnfAvailableGroups``, ``RpmPackage``, ``RpmProvides``, ``RpmGpgKeys``,
   ``SystemdServiceState``, ``SystemdServiceEnabled``, ``SystemdNeedDaemonReload``, ``SystemdStatus``, ``SystemdEnabled``, ``SystemdUnitProperties``, ``SystemdFailedUnits``, ``SystemdTimers``, ``SystemdUnitFiles``, ``SystemdVersion``, ``SystemdSystemState``, ``SystemdDependencies``, ``ApkAutoremovablePackages``, ``ApkExplicitPackages``, ``ApkHeldPackages``, ``ApkInstalledPackages``, ``ApkPackage``, ``ApkRepositories``, ``ApkRepositoriesFile``, ``AptAutoremovable``, ``AptHeldPackages``, ``AptKeys``, ``AptPackages``, ``AptPolicy``, ``AptSources``, ``AptSourcesFile``, ``AptUpdateStamp``, ``AptUpgradable``, ``Arch``,
   ``AuthorizedKeys``, ``AuthorizedKeysFile``, ``BlockDevices``, ``CargoConfig``, ``CargoPackages``, ``CpuInfo``, ``Cpus``, ``Crontab`` (reads the whole-table ``crontab_text`` seam), ``Date``, ``DebPackage``,
   ``DefaultIpv4Address``, ``DiskStats``, ``DmiInfo``, ``Env``, ``EtcHosts`` (parses the shared
@@ -281,6 +281,7 @@ from reemote.modules.dnf.dnf import (
     RpmGpgKey,
     RpmInstallCommand,
     RpmPackageInfo,
+    RpmProvide,
 )
 from reemote.modules.files.files import (
     ChattrCommand,
@@ -825,6 +826,19 @@ class SimulatedHost(Host):
     # clears both.
     rpm_files: dict[str, RpmPackageInfo] = field(default_factory=dict)
     rpm_packages: dict[str, str] = field(default_factory=dict)
+    # Capability rows (the ``RpmProvide`` dicts -- capability, provider name
+    # and ``VERSION-RELEASE`` -- that ``RpmProvides`` projects), backing
+    # ``dnf.packages``' virtual-provides fallback (issue #76): a distro
+    # subpackage that was renamed and survives only as a ``Provides:`` value
+    # (EPEL9's ``clamav-update``, carried by ``clamav-freshclam``) never
+    # appears in ``packages``, so only this store can settle such a request.
+    # Defaults to [] -- nothing resolves, which keeps every existing test's
+    # names-only behaviour. A test seeds rows whose provider IS in
+    # ``packages``, because the fact drops a row whose provider is not
+    # installed (``rpm --whatprovides`` only ever answers with an installed
+    # package) -- the same rule that makes a virtual ``absent`` request
+    # converge once ``remove_packages`` drops the provider.
+    rpm_provides: list[RpmProvide] = field(default_factory=list)
     # GPG key content imported via ``dnf.key`` (the raw bytes of each imported
     # key). The import direction is non-idempotent and reads no fact, so
     # nothing in the library reads this back; it exists so a test can observe

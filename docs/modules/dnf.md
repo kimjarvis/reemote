@@ -22,6 +22,8 @@
         - RpmGpgKeys
         - RpmPackage
         - RpmPackageInfo
+        - RpmProvide
+        - RpmProvides
         - clean
         - key
         - makecache
@@ -44,7 +46,19 @@ when that *exact* version is installed (the `apt.packages` precedent, not a
 name-only match), and `allow_downgrade=True` renders `dnf downgrade
 --allowerasing` for a pinned package whose name is already installed at a
 different version — dnf's dedicated verb for crossing that boundary, since
-`dnf install` will not do it and has no equivalent flag. Beyond `repos=`
+`dnf install` will not do it and has no equivalent flag. Presence is a
+names-only test against `DnfPackages`, while dnf itself resolves a spec against
+`Provides:` — so a requested name that survives on the host only as a virtual
+provide used to be invisible to the gate (issue #76): EPEL9's `clamav-update`,
+carried by `clamav-freshclam`, and `clamav-scanner-systemd`, carried by `clamd`,
+kept a `present=True` request from ever converging (and re-fired its handler on
+every run) while `present=False` silently no-opped. The operation now settles
+those residual misses against the `RpmProvides` read — issued only for the names
+`DnfPackages` misses, so a host that already carries every requested name costs
+no extra query — which means a requested name may be satisfied by an installed
+package that *provides* it, and a removal hands dnf the provider's real name. A
+capability nothing provides stays unresolved, leaving the spec verbatim in the
+request for dnf itself to report. Beyond `repos=`
 (enable-only-named scoping, `--disablerepo='*' --enablerepo=<id>`),
 `dnf.packages` also takes a bare `disable_repos=` (one `--disablerepo=<id>`
 per name, no `--disablerepo='*'`) so Ansible's `disablerepo: appstream` —
@@ -105,6 +119,12 @@ returns a single `RpmPackageInfo` (or None when the file is absent).
 `RpmGpgKeys` enumerates the `gpg-pubkey-<keyid>-<release>` pseudo-packages
 `rpm --import` records in the rpm database (→ `RpmGpgKey`) — the keys are
 invisible to `DnfPackages` and to the `gpg` namespace's keyring facts.
+`RpmProvides` is the provides-side companion to the names-only `DnfPackages`
+read (→ `RpmProvide`): it takes the capabilities to resolve, asks
+`rpm -q --whatprovides` once per capability in a single shell, and reports each
+installed provider's real name and `VERSION-RELEASE` beside the capability it
+was queried for, so a virtual name can be attributed even when the same package
+carries two of them.
 
 ## Operations
 
