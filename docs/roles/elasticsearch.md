@@ -5,23 +5,25 @@
 | Role | [`geerlingguy.elasticsearch`](https://github.com/geerlingguy/ansible-role-elasticsearch) |
 | Module | [`reemote.roles.elasticsearch`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/elasticsearch.py) |
 | Runner | [`examples/roles/elasticsearch.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/elasticsearch.py) |
-| Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
+| Target | **Ubuntu, RedHat** — hosts in the `"Ubuntu"` or `"RedHat"` OS family |
 | Variables | the entry's `elasticsearch` role mapping → `ElasticsearchVars` |
 
 <!---
-| Waves | `2` on **both** passes — one checkpoint, no facts; the post-flush tail (restart, service, wait) always follows it |
+| Waves | `2` on **both** Ubuntu passes — one checkpoint, no facts; `3` on RedHat — a leading `control` key fetch closes an empty wave 0 and the same checkpoint tail follows |
 | Outputs | none — the deploy returns `None`; no other role reads elasticsearch's results |
 | Extra deps | **`reemote[templates]`** (jinja2 renders `elasticsearch.yml.j2` and the two heap templates) |
 | Offline test | [`tests/roles/test_elasticsearch.py`](https://github.com/kimjarvis/reemote/blob/main/tests/roles/test_elasticsearch.py) |
 | Factory | plain (non-`async`) — the runner calls `elasticsearch(v)`; the renders and the version branch are control-side Python inside the body, not barriers |
 
-`elasticsearch` installs Elasticsearch on Ubuntu hosts: the
-`apt-transport-https`/`gnupg2` dependencies, the Elastic signing key downloaded
-into `/etc/apt/trusted.gpg.d/elasticsearch.asc`, the `artifacts.elastic.co`
-apt repository (appended to `/etc/apt/sources.list`, with its change-gated
-index refresh), the `elasticsearch` package, the rendered
-`/etc/elasticsearch/elasticsearch.yml` and the version-appropriate JVM file —
-the `jvm.options.d/heap.options` drop-in from major 7 on, the full
+`elasticsearch` installs Elasticsearch on Ubuntu and RedHat hosts: on Debian
+the `apt-transport-https`/`gnupg2` dependencies, the Elastic signing key
+downloaded into `/etc/apt/trusted.gpg.d/elasticsearch.asc`, and the
+`artifacts.elastic.co` apt repository (appended to `/etc/apt/sources.list`,
+with its change-gated index refresh); on RedHat the `rpm_key` import into the
+rpm keyring and `setup-RedHat.yml`'s repository file through `dnf.repo`.
+Family-neutral from there: the `elasticsearch` package (apt or dnf), the
+rendered `/etc/elasticsearch/elasticsearch.yml` and the version-appropriate JVM
+file — the `jvm.options.d/heap.options` drop-in from major 7 on, the full
 `jvm.options` below it (both `root:elasticsearch`, mode `0660`, each with its
 metadata companion) — then the started/enabled service and a TCP wait for the
 HTTP port; a config change queues the role's one handler, `restart
@@ -33,11 +35,11 @@ deploy, so a program composes it with
 `run_waves` pass. The Ansible role's whole task list *and* its handler are
 that single deploy, and its `defaults/main.yml` is `ElasticsearchVars`.
 
-Also like memcached and redis, this is a **checkpoint-only role** (design doc
-§18.13) — with a tail the kibana role does not have: the play's
+Also like memcached and redis, this is a **checkpoint-only role on Ubuntu**
+(design doc §18.13) — with a tail the kibana role does not have: the play's
 `meta: flush_handlers` sat *between* the template tasks and the service task,
 so the restart, the state enforcement and the port wait all live after the
-checkpoint, in one post-checkpoint wave. The stream is:
+checkpoint, in one post-checkpoint wave. The Ubuntu stream is:
 
 ```python
 yield from install(plan)(host)               # wave 0 — deps, key, repo, package
@@ -48,17 +50,31 @@ yield from handler(notified)(host)           # wave 1 — restart (notified host
 yield from start(plan)(host)                 #         … then service, then the wait
 ```
 
+On RedHat, `install` opens with the migration's single control barrier (D9) —
+the key fetch feeding `dnf.key`, closing an empty wave 0 (the repo_epel
+shape) — and the identical checkpoint/tail follow one wave later:
+
+```python
+yield from install(plan)(host)   # wave 0 — control(files.fetch_url) …
+                                 # wave 1 — … then dnf.key, dnf.repo, dnf.packages
+yield from configure(plan)(host) #         + two install/companion pairs
+wave_report = yield checkpoint("configure done")
+# wave 2 — restart (notified hosts), service, wait — the Ubuntu tail
+```
+
 ## 1. What it is, and where it came from
 
 The role's tasks — and its handler — map onto reemote requests and one barrier:
 
 | Ansible task | reemote stage | Status |
 | --- | --- | --- |
-| `include_tasks: setup-{{ ansible_os_family }}.yml` | the `Ubuntu`-only family guard and `setup-Debian.yml`'s requests; the RedHat `yum` repo task is scoped out (D7) — no `LinuxDistribution` read survives the single-OS scope | recipe |
+| `include_tasks: setup-{{ ansible_os_family }}.yml` | the `TARGET_FAMILIES` guard and the family branch inside `install`: `setup-Debian.yml`'s requests on Ubuntu, `setup-RedHat.yml`'s on RedHat (D7) — no `LinuxDistribution` read, the inventory `family` declaration dispatches | recipe |
 | `apt: name=[apt-transport-https, gnupg2]` | `apt.packages(packages=DEPENDENCIES, sudo=True)` — one request, the role's own order | covered |
 | `get_url: url=…/GPG-KEY-elasticsearch dest=/etc/apt/trusted.gpg.d/elasticsearch.asc force=yes` | `files.download(url=KEY_URL, dest=KEY_PATH, mode="0644")` — control-side fetch, content-idempotent install (D1) | recipe |
 | `apt_repository: repo="deb …/{{ version }}/apt stable main" update_cache=true` (no `name`) | `apt.repo(src=…, update_cache=True)` with **no `filename`** — the same `/etc/apt/sources.list` the unnamed task appended to; the refresh rides the change (issue #14) (D2) | covered |
-| `package: name={{ elasticsearch_package }} state={{ elasticsearch_package_state }}` | `apt.packages(packages=(plan.package,), latest=plan.package_state == "latest")` | covered |
+| `rpm_key: key=…/GPG-KEY-elasticsearch state=present` | `control(files.fetch_url)` → `dnf.key(src=BytesIO, keyid="d88e42b4", sudo=True)` — a stream, not a URL the target reads, and a pinned short id so the import converges through `RpmGpgKeys` (D9) | recipe |
+| `template: elasticsearch.repo.j2 → /etc/yum.repos.d/elasticsearch.repo` | `dnf.repo(src=f"elasticsearch-{version}", baseurl=…, description=…, gpgkey=KEY_URL)` — the constructed file keeps the section id and the still-honoured lines, drops the two inert ones (D10) | recipe |
+| `package: name={{ elasticsearch_package }} state={{ elasticsearch_package_state }}` | `apt.packages(packages=(plan.package,), latest=…)` on Debian, `dnf.packages(...)` with the same flags on RedHat — the pin rides the package string on both | covered |
 | `template: elasticsearch.yml.j2 … owner=root group=elasticsearch mode=0660` `notify: restart elasticsearch` | control-side Jinja2 render → `files.install` ("Configure Elasticsearch") + `files.file` metadata companion ("Set Elasticsearch configuration attributes"); both names notify (D4) | recipe |
 | the two `when=`-gated JVM `template` tasks (`elasticsearch_version[0] \| int` < 7 / >= 7) | `version_major(hv.version)` decides `plan.jvm_path` (`jvm.options` vs `jvm.options.d/heap.options`) and which template renders — a plain control-side `if` inside the plan (D5) | recipe |
 | `meta: flush_handlers` | `wave_report = yield checkpoint("configure done")` → `changed_hosts(…, NOTIFY_RESTART)` → `restart_handler(notified, "elasticsearch")` | barrier |
@@ -203,14 +219,21 @@ service, wait — is a second wave *even once converged*, because Ansible ran
 | 0 | `install`: `apt.packages(DEPENDENCIES)`, `files.download(key)`, `apt.repo(src, update_cache=True)`, `apt.packages((package,))` — then `configure`: two `files.install` + `files.file` companion pairs — then `checkpoint("configure done")` | every input is a resolved variable or a frozen constant, so the whole task list is one pure request wave, in the role's own order; the checkpoint reads its outcome |
 | 1 | `handler`: `restart_handler(notified, "elasticsearch")` (request only on notified hosts), then `start`: `systemd.service(running=…, enabled=…)`, `server.wait(host=…, port=…, timeout=300.0)` | the post-`flush_handlers` tail: restart first, then state enforcement, then the readiness check — in yield order within the wave |
 
+On RedHat, `install` opens with the `control(files.fetch_url)` barrier, so the
+numbering shifts by one wave: wave 0 is that fetch alone, wave 1 the dnf setup
+plus the identical configure requests and checkpoint, wave 2 the identical
+tail — the table's rows, one wave later.
+
 Five rules are load-bearing:
 
-* **The checkpoint is the only barrier — and there are no facts at all.** The
+* **No facts at all; on Ubuntu the checkpoint is the only barrier.** The
   version branch is decided by the `version` *string* alone, and the
-  `get_url`/`apt_repository` pair are operations whose own fact gates (content
-  equality, repository identity) live inside their commands. A `fact` or `act`
-  barrier here would be speculatively added.
-* **Two waves on both passes.** Unlike redis — where a converged pass has no
+  `get_url`/`apt_repository` pair — like the `rpm_key`/repo pair — are
+  operations whose own fact gates (content equality, repository identity,
+  keyring membership) live inside their commands. The RedHat barrier surface
+  grows by exactly the leading `control` key fetch; a `fact` or `act` barrier
+  would be speculative on either family.
+* **Two waves on both Ubuntu passes.** Unlike redis — where a converged pass has no
   handler and the second wave disappears — the service task and the wait
   follow the checkpoint unconditionally, because `flush_handlers` preceded
   them. On the converged pass the only *changed* entry is the wait.
@@ -230,15 +253,16 @@ Five rules are load-bearing:
   repository, package and service tasks carry no `notify` in the role, so
   their changes never restart the daemon.
 
-A host whose `family` is not `"Ubuntu"` returns before its first `yield`: no
-requests, no barriers, no report lines — RedHat entries in a shared inventory
-are never contacted.
+A host whose `family` is in neither `TARGET_FAMILIES` returns before its first
+`yield`: no requests, no barriers, no report lines — upstream ships no
+`setup-Alpine.yml`, so an Alpine entry in a shared inventory is never
+contacted.
 
 ## 7. Transcript
 
-From `tests/roles/test_elasticsearch.py`, against the simulated Ubuntu host
-(`network_host` overridden to `127.0.0.1`, `heap_size_min` to `2g`, exactly
-the runner's pair) plus a RedHat host the role never touches. The key fetch is
+From `tests/roles/test_elasticsearch.py`, against the simulated Ubuntu host at
+the role's defaults — the same one-host shape the RedHat transcripts below run
+against — plus an Alpine host the role never touches. The key fetch is
 stubbed at the control-side seam and the port/endpoint wait seams are seeded
 — the simulation never starts a daemon. Dry preview first: all eight
 configure requests are planned, the checkpoint is unknown, nothing is
@@ -269,6 +293,8 @@ Fresh host, real apply (commands abbreviated):
         $ scp <files install> -> /tmp/reemote-install-68d37fbe5569c77c/content
         $ sudo sh -c 'mkdir -p /etc/apt/trusted.gpg.d && cp …/content /etc/apt/trusted.gpg.d/elasticsearch.asc && chmod 644 … && rm -rf …'
     ubuntu: Add Elasticsearch repository [changed: apt repo "deb https://artifacts.elastic.co/packages/7.x/apt stable main" missing, will be added to /etc/apt/sources.list; apt update]
+        $ scp <apt sources> -> /tmp/reemote-apt-repo-…/repo
+        $ sudo sh -c 'mkdir -p /etc/apt && cp …/repo /etc/apt/sources.list && chmod 0644 … && rm -rf …'
         $ sudo apt-get update
     ubuntu: Install Elasticsearch    [changed: 1 package(s) to install]
         $ sudo DEBIAN_FRONTEND=noninteractive apt-get -y … install elasticsearch
@@ -284,7 +310,7 @@ Fresh host, real apply (commands abbreviated):
         $ sudo systemctl start elasticsearch.service
     ubuntu: Start Elasticsearch      [changed: elasticsearch.service already running; elasticsearch.service not enabled, will enable]
         $ sudo systemctl enable elasticsearch.service
-    ubuntu: Wait for Elasticsearch to accept connections [changed: wait for tcp endpoint 127.0.0.1:9200 to accept connections]
+    ubuntu: Wait for Elasticsearch to accept connections [changed: wait for tcp port 9200 to be listening]
 ```
 
 The rerun — every *state* request is a no-op, the checkpoint notifies nobody,
@@ -306,8 +332,68 @@ the checkpoint:
     barrier: configure done → 0 hosts notified
   wave 1
     ubuntu: Start Elasticsearch      [no change: elasticsearch.service already running; elasticsearch.service already enabled]
-    ubuntu: Wait for Elasticsearch to accept connections [changed: wait for tcp endpoint 127.0.0.1:9200 to accept connections]
+    ubuntu: Wait for Elasticsearch to accept connections [changed: wait for tcp port 9200 to be listening]
+        $ sudo wait for Port(9200, 'tcp') <is_listening> every 1.0s up to 300.0s
 ```
+
+The same pair on the simulated RedHat host — commands abbreviated as above.
+The `control` fetch closes an empty wave 0, wave 1 carries the dnf setup and
+the *identical* configure tail, and wave 2 is the same post-checkpoint trio:
+
+```text
+(root)
+  wave 0
+    barrier: fetch_url → -----BEGIN PGP PUBLIC KEY BLOCK-----…
+  wave 1
+    rocky1: Add Elasticsearch GPG key [changed: import GPG key from <stream>]
+        $ scp <stream> -> /tmp/reemote-dnf-key-…/key.gpg
+        $ sudo sh -c 'rpm --import …/key.gpg && rm -rf …'
+    rocky1: Add Elasticsearch repository [changed: repo file /etc/yum.repos.d/elasticsearch-7.x.repo missing or differs from the desired content]
+        $ scp <repo file> -> /tmp/reemote-dnf-repo-…/repo
+        $ sudo sh -c 'mkdir -p /etc/yum.repos.d && cp …/repo /etc/yum.repos.d/elasticsearch-7.x.repo && chmod 0644 … && rm -rf …'
+    rocky1: Install Elasticsearch    [changed: 1 package(s) to install]
+        $ sudo dnf install -y elasticsearch
+    rocky1: Configure Elasticsearch  [changed: content /etc/elasticsearch/elasticsearch.yml is absent, will install]
+    rocky1: Set Elasticsearch configuration attributes [no change: file /etc/elasticsearch/elasticsearch.yml already exists]
+    rocky1: Configure Elasticsearch JVM options [changed: content /etc/elasticsearch/jvm.options.d/heap.options is absent, will install]
+    rocky1: Set Elasticsearch JVM options attributes [no change: file /etc/elasticsearch/jvm.options.d/heap.options already exists]
+    barrier: configure done → 1 host notified
+  wave 2
+    rocky1: Restart elasticsearch (handler) [changed: elasticsearch.service not running (None), will start]
+        $ sudo systemctl start elasticsearch.service
+    rocky1: Start Elasticsearch      [changed: elasticsearch.service already running; elasticsearch.service not enabled, will enable]
+        $ sudo systemctl enable elasticsearch.service
+    rocky1: Wait for Elasticsearch to accept connections [changed: wait for tcp port 9200 to be listening]
+        $ sudo wait for Port(9200, 'tcp') <is_listening> every 1.0s up to 300.0s
+```
+
+And the RedHat rerun — the same convergence, with every wave-1 state request
+short-circuited by its own fact gate (the keyring read is the `dnf.key`
+gate, D9):
+
+```text
+(root)
+  wave 0
+    barrier: fetch_url → -----BEGIN PGP PUBLIC KEY BLOCK-----…
+  wave 1
+    rocky1: Add Elasticsearch GPG key [no change: GPG key d88e42b4 already in the rpm keyring]
+    rocky1: Add Elasticsearch repository [no change: repo file already up to date (/etc/yum.repos.d/elasticsearch-7.x.repo)]
+    rocky1: Install Elasticsearch    [no change: all packages present]
+    rocky1: Configure Elasticsearch  [no change: content already up to date (/etc/elasticsearch/elasticsearch.yml)]
+    rocky1: Set Elasticsearch configuration attributes [no change: file /etc/elasticsearch/elasticsearch.yml already exists]
+    rocky1: Configure Elasticsearch JVM options [no change: content already up to date (/etc/elasticsearch/jvm.options.d/heap.options)]
+    rocky1: Set Elasticsearch JVM options attributes [no change: file /etc/elasticsearch/jvm.options.d/heap.options already exists]
+    barrier: configure done → 0 hosts notified
+  wave 2
+    rocky1: Start Elasticsearch      [no change: elasticsearch.service already running; elasticsearch.service already enabled]
+    rocky1: Wait for Elasticsearch to accept connections [changed: wait for tcp port 9200 to be listening]
+        $ sudo wait for Port(9200, 'tcp') <is_listening> every 1.0s up to 300.0s
+```
+
+(The simulated `rpm --import` stub keys its `rpm_gpg_keys` entry by content
+hash rather than parsing the OpenPGP packet, so the offline rerun bridges the
+entry to the pinned `d88e42b4` first — what a real rpmdb records; the test
+names this seam.)
 
 Note the handler's rendering on the fresh host: `restart_handler`'s
 `restarted=True` starts a *stopped* unit (Ansible's `state: restarted`), so on
@@ -328,15 +414,18 @@ notifies the handler.
 | D4 | `files.file` metadata companions are **added**, and their names **notify** | `files.install`'s idempotence is content-only, so a `root:elasticsearch` `0660` drift on unchanged content would never converge, while Ansible's template module reports a change on owner/group/mode drift too (the java/redis/kibana companion precedent). The elevated install's own `mkdir -p` creates `jvm.options.d`, so no directory task exists in either role |
 | D5 | The `elasticsearch_version[0] \| int` branch becomes a control-side `if` over a parsed major | `ElasticsearchVars` rejects a version whose first character is not a digit at `resolve_vars` time — where Ansible's `\| int` coerced such a string to `0` and silently took the `< 7` branch — and the parse stays faithful to the `[0]` index: `"10.x"` reads as major `1` and still selects the `< 7` branch, preserving the role's own quirk |
 | D6 | `wait_for host=… port=… delay=3 timeout=300` becomes `server.wait(host=…, port=…, timeout=300.0)`, and the wait's name never notifies | there is no initial-`delay` knob — the poll starts immediately at `interval` spacing, which only makes the converged check earlier, never later — and because a wait is stateless (always `changed`), admitting its name into `NOTIFY_RESTART` would restart the service forever |
-| D7 | The RedHat path is scoped out | a Phase 0 single-OS decision; `setup-RedHat.yml`'s `yum` repository task simply has no place in the Ubuntu request set |
+| D7 | `setup-RedHat.yml` is migrated as the family branch inside `install` | upstream dispatched it with `include_tasks: setup-{{ ansible_os_family }}.yml`; the inventory `family` declaration picks the branch, so there is no `LinuxDistribution` read — the `rpm_key`/repo pair and the `dnf.packages` twin of the generic `package` task replace `setup-Debian.yml`'s trio, and the configure/service/wait tasks stay branchless (they were family-neutral upstream too) |
 | D8 | The Java prerequisite stays with the caller | the Ansible README defers it to `geerlingguy.java` and the role itself never installed Java — the migrated answer is to compose the shipped `java` role in the parent deploy |
+| D9 | `rpm_key: key=<URL>` becomes a `control` fetch plus `dnf.key(src=stream, keyid="d88e42b4")` | reemote's `dnf.key` takes a control-side stream, not a URL the target reads — the `repo_epel` recipe. The pinned short id is the *first* key of the published file (which carries two, and `rpm --import` records both); it makes the import idempotent through the `RpmGpgKeys` fact. Re-pinning is on the operator if Elastic rotates the signing key — the artifact is never checksum-pinned (D1) |
+| D10 | `template: elasticsearch.repo.j2` becomes `dnf.repo`'s constructed file | `dnf.repo` couples the section id and the filename, so the file is `elasticsearch-<version>.repo` where upstream wrote `elasticsearch.repo` with an `[elasticsearch-<version>]` section — the section id, what `dnf repolist` shows, is preserved. The template's `type=rpm-md` is dnf's default repo type and `autorefresh=1` a yum-era option dnf ignores, so neither line is written; and no metadata refresh is issued because the role's RedHat path ran none |
 
 ## 9. Scoped out
 
-* **RedHat branch** (`tasks/setup-RedHat.yml`: the `yum` repository task with
-  its `gpgcheck`/`enabled` INI keys, `logstash`-adjacent package naming): a
-  Phase 0 single-OS decision — the target is Ubuntu. reemote's `dnf` module
-  covers the operations that path uses; it is simply outside the agreed target.
+* **Alpine / other families** (upstream ships no `setup-Alpine.yml` or other
+  per-family file): the `TARGET_FAMILIES` guard skips any host outside
+  `("Ubuntu", "RedHat")` — reemote's `apk` module could carry a third branch,
+  but there is no upstream task list to migrate, and inventing one is outside
+  the mapping's faithfulness rule.
 * **`elasticsearch_package: elasticsearch-oss`** and version pinning through
   the package name: both ride `ElasticsearchVars.package` verbatim — the
   README documents them — so nothing is excluded, but no offline test changes:

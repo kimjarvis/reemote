@@ -3,46 +3,62 @@
 
 # """The Docker role (migrated from ``geerlingguy.docker``).
 #
-# Installs and configures Docker CE from the official Docker apt repository: the
-# legacy key/source/package cleanup, the repository dependencies, the signing key
-# and deb822 ``.sources`` file, the Docker packages (with the compose and buildx
-# plugins), the optional ``/etc/docker/daemon.json`` and ``docker.service``
-# ExecStart override, the service's running/enabled state, the ``restart docker``
-# handler, and the ``docker_users`` group memberships. :func:`docker` is the whole
-# task list and :class:`DockerVars` is ``defaults/main.yml``, bound from the
-# inventory entry's ``docker`` role mapping by
-# :func:`~reemote.rolevars.resolve_vars`.
+# Installs and configures Docker CE from the official vendor repository: on
+# Ubuntu the legacy key/source/package cleanup, the repository dependencies and
+# the signing key with its deb822 ``.sources`` file; on RedHat the obsolete-
+# package purge, the GPG key and ``.repo`` file fetched control-side, the
+# nightly/test section management, and the RHEL 8 containerd block. Both
+# families then share the rest of the task list: the Docker packages (with the
+# compose and buildx plugins), the optional ``/etc/docker/daemon.json`` and
+# ``docker.service`` ExecStart override, the service's running/enabled state,
+# the ``restart docker`` handler, and the ``docker_users`` group memberships.
+# :func:`docker` is the whole task list and :class:`DockerVars` is
+# ``defaults/main.yml``, bound from the inventory entry's ``docker`` role
+# mapping by :func:`~reemote.rolevars.resolve_vars`.
 #
-# Target: hosts in the ``"Ubuntu"`` OS family. A host outside the family returns
-# before its first ``yield`` and emits no requests, no barriers and no log lines
-# at all -- so the Alpine and CentOS hosts in a shared inventory are never
-# contacted. The role's RedHat and Suse branches are out of scope, so its
-# ``include_vars`` OS dispatch collapses to the frozen Debian constants below,
-# and the opt-in standalone docker-compose binary install is scoped out: a
-# truthy :attr:`DockerVars.install_compose` raises instead of silently dropping
-# the feature.
+# Target: hosts in the ``"Ubuntu"`` and ``"RedHat"`` OS families -- the two
+# setup branches the upstream role ships (the certbot precedent). A host
+# outside both families returns before its first ``yield`` and emits no
+# requests, no barriers and no log lines at all -- so the Alpine host in a
+# shared inventory is never contacted. The role's Suse branch stays out of
+# scope, so its ``include_vars`` OS dispatch collapses to the per-family
+# branches of :func:`docker_plan`,
+# and the legacy standalone docker-compose binary install is scoped out: it is
+# an opt-in path the upstream defaults turn off and the compose plugin package
+# supersedes, so a truthy :attr:`DockerVars.install_compose` raises instead of
+# silently dropping the feature.
 #
-# The stream is up to five waves -- two checkpoints, one conditional ``fact``
-# barrier, and the request waves they close (design doc section 18.11):
+# The stream is up to six waves on Ubuntu, seven on a fresh RedHat host -- two
+# checkpoints, the conditional barriers, and the request waves they close
+# (design doc section 18.11):
 #
-# 0. ``fact(LinuxDistribution)`` -- ``release_meta.VERSION_CODENAME`` feeds the
-#    repository's ``Suites``, so the setup wave is a pure function of it.
-# 1. :func:`setup` then :func:`packages` -- the legacy cleanup, dependencies,
-#    key and deb822 repository, then the Docker packages -- closed by
-#    ``checkpoint("packages done")``. The role ran these as two separate plays'
-#    tasks; no read sits between them, so the driver simply applies each request
-#    before pulling the next and they share one wave.
-# 2. :func:`configure` -- daemon.json, the ExecStart drop-in, the service state
-#    -- closed by ``checkpoint("configure done")``.
-# 3. :func:`handler`-gated restart -- ``restart docker``, only where this host
+# 0. ``fact(LinuxDistribution)`` -- on Ubuntu ``release_meta.VERSION_CODENAME``
+#    feeds the repository's ``Suites``; on RedHat ``name`` picks the
+#    ``fedora``/``rhel``/``centos`` URL segment and ``major`` gates the RHEL 8
+#    containerd block (the ``include_vars`` dispatch, frozen). Either way the
+#    setup wave is a pure function of this one read.
+# 1. RedHat only, and only with ``add_repo``: ``fact(FileExists)`` on the
+#    managed ``/etc/yum.repos.d/docker-<edition>.repo`` -- the ``stat``
+#    register that guards the key and repo install (the repo_epel shape) --
+#    then, when the file is absent, ``control(files.fetch_url)`` for the
+#    ASCII-armored GPG key. An Ubuntu stream skips this wave and numbers the
+#    rest one lower.
+# 2. :func:`setup` (the family's branch: :func:`redhat_setup` or the Debian
+#    cleanup, dependencies and deb822 repository) then :func:`packages` --
+#    closed by ``checkpoint("packages done")``. The role ran these as two
+#    separate plays' tasks; no read sits between them, so the driver simply
+#    applies each request before pulling the next and they share one wave.
+# 3. :func:`configure` -- daemon.json, the ExecStart drop-in, the service state
+#    (all family-agnostic) -- closed by ``checkpoint("configure done")``.
+# 4. :func:`handler`-gated restart -- ``restart docker``, only where this host
 #    sits in the union of the *packages* and *configure* reports and
 #    ``service_manage`` is on (the role's second ``flush_handlers``, which runs
 #    *before* the user tasks).
-# 4. ``fact(Groups)`` (conditional, only with users) -- the role's ``getent``
+# 5. ``fact(Groups)`` (conditional, only with users) -- the role's ``getent``
 #    gate: the docker group must exist after the install, and a missing group
 #    raises, because the getent task fails the play the same way. A barrier
 #    result is data; the raise is the role's, not the driver's.
-# 5. :func:`users` -- one ``server.user(append=True)`` membership per listed
+# 6. :func:`users` -- one ``server.user(append=True)`` membership per listed
 #    user (only when the group gate passed).
 #
 # **Two checkpoints, unioned.** The handler's notification set spans the
@@ -92,8 +108,23 @@
 #   membership append; reemote's default would also converge home-directory
 #   ownership, which the role's task does not ask for.
 # * D6: Ansible's ``allow_downgrade`` (singular) is reemote's
-#   ``allow_downgrades`` -- same ``--allow-downgrades`` semantics -- and the
-#   role's two version-split install tasks collapse to the modern (>= 2.12) one.
+#   ``allow_downgrades`` on apt -- same ``--allow-downgrades`` semantics --
+#   while ``dnf.packages`` keeps the singular spelling; the role's two
+#   version-split install tasks collapse to the modern (>= 2.12) one on both
+#   families.
+# * D9: RedHat's ``rpm_key`` and ``get_url`` read **control-side** --
+#   ``files.fetch_url`` feeds the armored key to ``dnf.key`` as a stream (with
+#   its :data:`DOCKER_KEY_ID` gate on ``RpmGpgKeys``) and ``files.download``
+#   installs the ``.repo`` file, the repo_epel shape; the pair is guarded by
+#   ``fact(FileExists, repofile)``, so a converged host fetches nothing where
+#   upstream re-downloads on every pass. ``add_repo`` false installs no repo on
+#   RedHat -- and removes nothing, because upstream's RedHat branch has no
+#   repo-removal task at all, unlike the Debian one.
+# * D10: the ``ini_file`` nightly-section removal (``state: absent`` without an
+#   ``option``) becomes a ``files.transform`` carrying the pure
+#   :func:`drop_ini_section` callable -- ``files.ini_option`` deliberately
+#   ships no section removal; the test-section toggle is the faithful
+#   ``files.ini_option(no_extra_spaces=True)``.
 # * the host-family guard is the body's opening ``if``, not a ``when=`` on every
 #   request: an off-target host emits no requests and no ``[skipped]`` lines.
 # * variable validation becomes pydantic validation: the three enums are
@@ -101,12 +132,13 @@
 #   value raises ``ValidationError`` -- a ``ValueError``, so the runner maps it
 #   -- before any host is contacted (the old example's ``TypeError`` gates
 #   included).
-# * the repository and package deploys share one wave (see wave 1 above): the
+# * the repository and package deploys share one wave (see wave 2 above): the
 #   split the example needed was a two-phase artifact, not a dependency.
 # """
 
+import io
 import json
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -115,16 +147,22 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from ..core import op
 from ..handlers import changed_hosts, service_handler
 from ..hosts import Host
-from ..modules import apt, files, server, systemd
+from ..modules import apt, dnf, files, server, systemd
+from ..modules.files import FileExists
 from ..modules.server import Groups, LinuxDistribution
 from ..rolevars import VarsSet
-from ..stages import Deploy, StageItem, checkpoint, fact
+from ..stages import Deploy, StageItem, checkpoint, control, fact
 
-# --- role constants (defaults/main.yml + vars/Debian.yml, Ubuntu path only) ---
+# --- role constants (defaults/main.yml + vars/*.yml, both target families) ---
 
-#: The OS dispatch frozen to the single Ubuntu target: the role derives the
-#: repo URL segment from ``ansible_facts.distribution`` (lower-cased), with a
-#: Pop!_OS / Linux Mint workaround that also resolves to ``ubuntu``.
+#: The families the role runs on; anything else returns before its first
+#: ``yield`` and emits no requests, no barriers and no log lines. Upstream
+#: ships a dedicated setup file for exactly these two (Suse is out of scope).
+TARGET_FAMILIES = ("Ubuntu", "RedHat")
+
+#: The OS dispatch's Ubuntu arm: the role derives the repo URL segment from
+#: ``ansible_facts.distribution`` (lower-cased), with a Pop!_OS / Linux Mint
+#: workaround that also resolves to ``ubuntu``.
 UBUNTU_DISTRIBUTION = "ubuntu"
 
 #: ``setup-Debian.yml``'s three legacy artifacts, removed before the repo is
@@ -154,6 +192,35 @@ DEBIAN_OBSOLETE_PACKAGES = (
     "containerd",
     "runc",
 )
+
+#: ``vars/RedHat.yml``'s ``docker_obsolete_packages``: the distro- and
+#: project-packaged Docker bits the official yum repo replaces (the list
+#: covers Fedora/Rocky as well as CentOS, per the file's own comments).
+REDHAT_OBSOLETE_PACKAGES = (
+    "docker",
+    "docker-client",
+    "docker-client-latest",
+    "docker-common",
+    "docker-latest",
+    "docker-latest-logrotate",
+    "docker-logrotate",
+    "docker-engine",
+)
+
+#: The RedHat URL segment table: upstream's ``docker_yum_repo_url`` conditional
+#: chain over ``ansible_facts.distribution`` -- ``fedora`` for Fedora, ``rhel``
+#: for RedHat, and ``centos`` for everything else (CentOS, Rocky and AlmaLinux
+#: all read the ``centos`` repo tree).
+YUM_URL_SEGMENTS = {"Fedora": "fedora", "RedHat": "rhel"}
+YUM_DEFAULT_SEGMENT = "centos"
+
+#: The rpm short id of the Docker Release (CE rpm) signing key published at
+#: ``<repo_url>/<segment>/gpg`` -- the last 8 hex digits of fingerprint
+#: ``060A61C51B558A7F742B77AAC52FEB6B621E9F35``, verified from the live key in
+#: ``examples/modules/dnf/dnf_key.py``. Pinned so :func:`redhat_setup`'s
+#: ``dnf.key`` gates the import on the ``RpmGpgKeys`` fact (D9), the
+#: ``EPEL_KEY_IDS`` precedent from repo_epel.
+DOCKER_KEY_ID = "621E9F35"
 
 DOCKER_CONF_DIR = "/etc/docker"
 DAEMON_JSON_PATH = f"{DOCKER_CONF_DIR}/daemon.json"
@@ -185,11 +252,13 @@ class DockerVars(BaseModel):
 
     Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
     inventory entry's ``docker`` role mapping, so ``users`` there sets
-    :attr:`users`. Every Ubuntu-path default is carried over; the RedHat-only
-    ``docker_yum_*`` variables are deliberately absent. :attr:`packages`,
-    :attr:`apt_repo_url` and :attr:`apt_gpg_key`` default to ``None`` -- the
-    role derives them from :attr:`edition` / :attr:`repo_url` when they are not
-    overridden (:func:`docker_plan` reproduces the derivations).
+    :attr:`users`. Every default from both setup paths is carried over:
+    :attr:`packages` and the ``apt_*``/``yum_*`` URL pair default to ``None``
+    -- the role derives them from :attr:`edition` / :attr:`repo_url` (and, on
+    RedHat, from the gathered distribution) when they are not overridden
+    (:func:`docker_plan` reproduces the derivations) -- and
+    :attr:`obsolete_packages` is ``None`` so each family falls back to its own
+    ``vars/<OS>.yml`` list.
 
     The model is frozen and every value that reaches
     :func:`~reemote.core.op` is hashable, so sequences are ``tuple`` (never a
@@ -205,7 +274,9 @@ class DockerVars(BaseModel):
     #: ``docker_packages``: ``None`` derives the edition's five-package list.
     packages: tuple[str, ...] | None = None
     packages_state: Literal["present", "latest", "absent"] = "present"
-    obsolete_packages: tuple[str, ...] = DEBIAN_OBSOLETE_PACKAGES
+    #: ``docker_obsolete_packages``: ``None`` picks the family's own list --
+    #: :data:`DEBIAN_OBSOLETE_PACKAGES` or :data:`REDHAT_OBSOLETE_PACKAGES`.
+    obsolete_packages: tuple[str, ...] | None = None
 
     # --- the service and its handler --------------------------------------
     #: Gates the service task *and* the ``restart docker`` handler, as the
@@ -222,9 +293,10 @@ class DockerVars(BaseModel):
     install_compose_plugin: bool = True
     compose_package: str = "docker-compose-plugin"
     compose_package_state: Literal["present", "latest", "absent"] = "present"
-    #: The standalone docker-compose *binary* install: scoped out (its get_url
-    #: downloads a binary release artifact, outside the text-only transfer
-    #: family). A truthy value raises rather than silently dropping the feature.
+    #: The legacy standalone docker-compose *binary* install: scoped out -- an
+    #: opt-in path the upstream defaults turn off and the compose plugin
+    #: package supersedes. A truthy value raises rather than silently dropping
+    #: the feature.
     install_compose: bool = False
 
     # --- repository ----------------------------------------------------------
@@ -242,6 +314,17 @@ class DockerVars(BaseModel):
     apt_gpg_key: str | None = None
     #: Base name of both the ``.sources`` file and the managed keyring.
     apt_filename: str = "docker"
+    #: ``docker_yum_repo_url``: ``None`` derives
+    #: ``<repo_url>/<segment>/docker-<edition>.repo``, the segment
+    #: ``fedora``/``rhel``/``centos`` picked from the gathered distribution.
+    yum_repo_url: str | None = None
+    #: ``docker_yum_gpg_key``: ``None`` derives ``<repo_url>/<segment>/gpg`` --
+    #: the key URL follows the *upstream* repo, not a mirror override, exactly
+    #: as the role's defaults template it.
+    yum_gpg_key: str | None = None
+    #: ``docker_yum_repo_enable_test``: the ``enabled`` value written into the
+    #: ``docker-<edition>-test`` section of the repo file.
+    yum_repo_enable_test: str = "0"
 
     # --- users and daemon options --------------------------------------------
     #: ``docker_users``: appended to the ``docker`` group (the getent gate
@@ -257,10 +340,11 @@ class DockerVars(BaseModel):
         """``docker_install_compose`` is scoped out; requesting it raises."""
         if value:
             raise ValueError(
-                "docker_install_compose (the standalone binary install) is "
-                "scoped out of this migration -- it downloads a binary release "
-                "artifact, which the text-only transfer family does not cover. "
-                "Use docker_install_compose_plugin (the default) instead."
+                "docker_install_compose (the legacy standalone docker-compose "
+                "binary install) is scoped out of this migration -- an opt-in "
+                "path the upstream defaults turn off and the compose plugin "
+                "package supersedes. Use docker_install_compose_plugin (the "
+                "default) instead."
             )
         return value
 
@@ -282,7 +366,10 @@ class DockerVars(BaseModel):
             raise ValueError("must hold non-empty strings")
         return value
 
-    @field_validator("edition", "compose_package", "apt_filename", "apt_release_channel")
+    @field_validator(
+        "edition", "compose_package", "apt_filename", "apt_release_channel",
+        "yum_repo_enable_test",
+    )
     @classmethod
     def _non_empty(cls, value: str) -> str:
         """An empty name is a typo, not "unset"."""
@@ -306,18 +393,24 @@ class DockerVars(BaseModel):
 class DockerPlan:
     """One host's resolved setup/packages/configure targets, built by :func:`docker_plan`.
 
-    Everything except the release codename is decided from the resolved
-    variables; the codename arrives from the ``LinuxDistribution`` barrier, and
-    the plan is frozen right after it -- so every deploy below is a pure
-    function of this one object. It replaces the example's ``settings`` dict
-    keyed by host name and its whole-inventory ``names`` union: under a
-    per-host body, the plan is a local.
+    Everything is decided from the resolved variables plus the single
+    ``LinuxDistribution`` read -- the Ubuntu release codename, the RedHat URL
+    segment and major version -- and the plan is frozen right after that
+    barrier, so every deploy below is a pure function of this one object. It
+    replaces the example's ``settings`` dict keyed by host name and its
+    whole-inventory ``names`` union: under a per-host body, the plan is a
+    local.
 
     ``notify_names`` lists this host's notifying request names (the channel the
     two checkpoints are read against), and ``handler_action`` is the already
     mapped ``service_handler`` verb for :attr:`DockerVars.restart_handler_state`.
+    The ``repofile``/``test_section``/``test_enabled``/``nightly_transform``/
+    ``rhel8`` entries and the RedHat meanings of ``repo_url``/``gpg_key_url``
+    (the ``.repo`` *file* URL and the RPM key) serve the RedHat arm only; the
+    ``codename`` is the Ubuntu arm's (empty on RedHat, which needs no Suites).
     """
 
+    family: str
     codename: str
     packages: tuple[str, ...]
     packages_present: bool
@@ -338,6 +431,11 @@ class DockerPlan:
     gpg_key_url: str
     apt_filename: str
     release_channel: str
+    repofile: str
+    test_section: str
+    test_enabled: str
+    nightly_transform: Callable[[str | None], str]
+    rhel8: bool
     users: tuple[str, ...]
     daemon_json: str | None
     start_command: str
@@ -395,7 +493,8 @@ def notifying_names(plan_fields: dict[str, Any]) -> tuple[str, ...]:
 
     Enumerated from the same frozen inputs the deploys were built from. The
     directory, service-state and user tasks carry no ``notify`` in the role, so
-    their names are deliberately absent.
+    their names are deliberately absent. Neither setup arm notifies on either
+    family, so the names are family-agnostic.
     """
     names = [NOTIFY_PACKAGE]
     if plan_fields["install_compose_plugin"]:
@@ -407,24 +506,91 @@ def notifying_names(plan_fields: dict[str, Any]) -> tuple[str, ...]:
     return tuple(names)
 
 
-def docker_plan(hv: DockerVars, info: dict[str, Any]) -> DockerPlan:
+def drop_ini_section(section: str) -> Callable[[str | None], str]:
+    """Ansible's ``ini_file {section, state: absent}`` (no option) as a pure transform.
+
+    ``files.ini_option`` deliberately ships no section removal (D10), so the
+    nightly-section drop is this factory's closure: it drops the ``[section]``
+    header and every following line up to the next section header, returning
+    the rest verbatim -- no other section, option, comment or blank line is
+    touched, and no line endings are rewritten. An absent file (``None``)
+    yields empty text, the same file an ``ini_file`` with the role's default
+    ``create: yes`` would leave behind; when the section is not present the
+    content passes through byte-identically, so the transform is a fixpoint.
+    Built once per host in :func:`docker_plan`, as the request callables in
+    security's :func:`resolve_plan` are, so it stays stable for the whole run.
+    """
+    header = f"[{section}]"
+
+    def transform(current: str | None) -> str:
+        if current is None:
+            return ""
+        kept: list[str] = []
+        skipping = False
+        for line in current.splitlines(keepends=True):
+            stripped = line.strip()
+            if stripped == header:
+                skipping = True
+                continue
+            if skipping:
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    skipping = False
+                else:
+                    continue
+            kept.append(line)
+        return "".join(kept)
+
+    return transform
+
+
+def docker_plan(hv: DockerVars, info: dict[str, Any], family: str) -> DockerPlan:
     """Freeze the per-host targets from the resolved vars and the gathered distribution.
 
-    Reproduces the role's variable derivations: ``packages`` from ``edition``,
-    the repo/key URLs from ``repo_url`` (the key URL follows the *upstream*
-    repo, not a mirror override), and the ``to_nice_json`` render of
-    ``daemon_options``. The state enums split into the operation's
-    ``present``/``latest`` booleans.
+    Reproduces the role's variable derivations, per family: ``packages`` from
+    ``edition``, the obsolete list from ``vars/<OS>.yml`` when not overridden,
+    and the repo/key URLs from ``repo_url`` through the ``include_vars``
+    dispatch frozen as Python -- the apt pair under ``/ubuntu``, the yum pair
+    under :data:`YUM_URL_SEGMENTS`' segment for the gathered distribution (the
+    key URL still follows the *upstream* repo, not a mirror override) -- plus
+    the ``to_nice_json`` render of ``daemon_options``. The state enums split
+    into the operation's ``present``/``latest`` booleans.
     """
-    codename = distribution_codename(info)
-    packages = hv.packages if hv.packages is not None else derive_packages(hv.edition)
+    is_redhat = family == "RedHat"
     daemon_json = render_daemon_json(hv.daemon_options)
-    repo_url = hv.apt_repo_url if hv.apt_repo_url is not None else (
-        f"{hv.repo_url}/{UBUNTU_DISTRIBUTION}"
-    )
-    gpg_key_url = hv.apt_gpg_key if hv.apt_gpg_key is not None else (
-        f"{hv.repo_url}/{UBUNTU_DISTRIBUTION}/gpg"
-    )
+    packages = hv.packages if hv.packages is not None else derive_packages(hv.edition)
+    if is_redhat:
+        # No Suites to feed: the codename is unused, while the distribution
+        # picks the URL segment and the major version gates the RHEL 8
+        # containerd block (upstream's ``| int == 8`` -- the fact parses
+        # ``major`` to an int or int-string, so compare on its text).
+        codename = ""
+        segment = YUM_URL_SEGMENTS.get(str(info.get("name") or ""), YUM_DEFAULT_SEGMENT)
+        repo_url = hv.yum_repo_url if hv.yum_repo_url is not None else (
+            f"{hv.repo_url}/{segment}/docker-{hv.edition}.repo"
+        )
+        gpg_key_url = hv.yum_gpg_key if hv.yum_gpg_key is not None else (
+            f"{hv.repo_url}/{segment}/gpg"
+        )
+        obsolete = (
+            hv.obsolete_packages
+            if hv.obsolete_packages is not None
+            else REDHAT_OBSOLETE_PACKAGES
+        )
+        rhel8 = str(info.get("major", "")) == "8"
+    else:
+        codename = distribution_codename(info)
+        repo_url = hv.apt_repo_url if hv.apt_repo_url is not None else (
+            f"{hv.repo_url}/{UBUNTU_DISTRIBUTION}"
+        )
+        gpg_key_url = hv.apt_gpg_key if hv.apt_gpg_key is not None else (
+            f"{hv.repo_url}/{UBUNTU_DISTRIBUTION}/gpg"
+        )
+        obsolete = (
+            hv.obsolete_packages
+            if hv.obsolete_packages is not None
+            else DEBIAN_OBSOLETE_PACKAGES
+        )
+        rhel8 = False
     state = hv.packages_state
     compose_state = hv.compose_package_state
     service_state = hv.service_state
@@ -434,11 +600,12 @@ def docker_plan(hv: DockerVars, info: dict[str, Any]) -> DockerPlan:
         "start_command": hv.service_start_command,
     }
     return DockerPlan(
+        family=family,
         codename=codename,
         packages=tuple(packages),
         packages_present=state != "absent",
         packages_latest=state == "latest",
-        obsolete_packages=hv.obsolete_packages,
+        obsolete_packages=obsolete,
         install_compose_plugin=hv.install_compose_plugin,
         compose_package=(hv.compose_package,),
         compose_present=compose_state != "absent",
@@ -454,6 +621,11 @@ def docker_plan(hv: DockerVars, info: dict[str, Any]) -> DockerPlan:
         gpg_key_url=gpg_key_url,
         apt_filename=hv.apt_filename,
         release_channel=hv.apt_release_channel,
+        repofile=f"/etc/yum.repos.d/docker-{hv.edition}.repo",
+        test_section=f"docker-{hv.edition}-test",
+        test_enabled=hv.yum_repo_enable_test,
+        nightly_transform=drop_ini_section(f"docker-{hv.edition}-nightly"),
+        rhel8=rhel8,
         users=tuple(hv.users),
         daemon_json=daemon_json,
         start_command=hv.service_start_command,
@@ -467,7 +639,8 @@ def docker_plan(hv: DockerVars, info: dict[str, Any]) -> DockerPlan:
 def setup(plan: DockerPlan) -> Deploy:
     """``tasks/setup-Debian.yml``: cleanup, dependencies, key and repository.
 
-    The role's ``notify: apt update`` + ``meta: flush_handlers`` pair is
+    The Ubuntu arm; the body dispatches a RedHat host to :func:`redhat_setup`
+    instead. The role's ``notify: apt update`` + ``meta: flush_handlers`` pair is
     ``update_cache=True`` on the sources request: the ``AptUpdatable`` refresh
     is yielded only after a real sources change (write *or* removal, issue #14)
     -- D1. The URL ``signed_by`` form (issue #17) fetches the ASCII-armored key
@@ -528,16 +701,124 @@ def setup(plan: DockerPlan) -> Deploy:
     return deploy
 
 
+def redhat_setup(plan: DockerPlan, key_stream: io.BytesIO | None) -> Deploy:
+    """``tasks/setup-RedHat.yml``: purge, key, repo file, ini sections, RHEL 8 block.
+
+    Task-for-task, in the file's own order. The obsolete purge is unconditional
+    (upstream ``package`` task, no ``when``). The ``rpm_key``/``get_url`` pair
+    runs only when the body's ``FileExists`` guard found no repo file
+    (``key_stream`` is then the stream the ``control`` barrier built): the key
+    is imported with the :data:`DOCKER_KEY_ID` gate and the ``.repo`` file is
+    laid down by ``files.download``, both fetched control-side (D9). With
+    ``add_repo`` the ini pair then runs on every pass, idempotent by content:
+    the nightly-section drop is ``files.transform`` over
+    :func:`drop_ini_section` (D10), the test toggle a
+    ``files.ini_option(no_extra_spaces=True)`` -- upstream's ``create`` default
+    is ``yes``, so the operation's is left in place. The RHEL 8 containerd
+    block is the plan's ``rhel8`` gate, three plain ``dnf.packages`` requests.
+    No request notifies ``restart docker``: none of these tasks carries a
+    ``notify`` upstream either.
+    """
+
+    def deploy(host: Host) -> Generator[StageItem, Any]:
+        yield op(
+            dnf.packages,
+            name="Ensure old versions of Docker are not installed.",
+            packages=plan.obsolete_packages,
+            present=False,
+            sudo=True,
+        )
+        if key_stream is not None:
+            yield op(
+                dnf.key,
+                name="Add Docker GPG key.",
+                src=key_stream,
+                keyid=DOCKER_KEY_ID,
+                sudo=True,
+            )
+            yield op(
+                files.download,
+                name="Add Docker repository.",
+                url=plan.repo_url,
+                dest=plan.repofile,
+                mode="0644",
+                sudo=True,
+            )
+        if plan.add_repo:
+            yield op(
+                files.transform,
+                name="Remove Docker Nightly repo.",
+                path=plan.repofile,
+                transform=plan.nightly_transform,
+                mode="0644",
+                sudo=True,
+            )
+            yield op(
+                files.ini_option,
+                name="Configure Docker Test repo.",
+                path=plan.repofile,
+                section=plan.test_section,
+                option="enabled",
+                value=plan.test_enabled,
+                no_extra_spaces=True,
+                mode="0644",
+                sudo=True,
+            )
+        if plan.rhel8:
+            yield op(
+                dnf.packages,
+                name="Ensure runc is not installed.",
+                packages=("runc",),
+                present=False,
+                sudo=True,
+            )
+            yield op(
+                dnf.packages,
+                name="Ensure container-selinux is installed.",
+                packages=("container-selinux",),
+                sudo=True,
+            )
+            yield op(
+                dnf.packages,
+                name="Ensure containerd.io is installed.",
+                packages=("containerd.io",),
+                sudo=True,
+            )
+
+    return deploy
+
+
 def packages(plan: DockerPlan) -> Deploy:
     """The Docker packages and the compose plugin (both notify ``restart docker``).
 
     The role carries two mutually exclusive install tasks per package set,
-    split on the Ansible version; on modern Ansible (>= 2.12) the Debian path
-    is the ``allow_downgrade: true`` one, so each set is a single
-    ``apt.packages`` request (D6).
+    split on the Ansible version; on modern Ansible (>= 2.12) both the Debian
+    and the RedHat path are the ``allow_downgrade: true`` one, so each set is a
+    single request through the family's own manager (D6).
     """
 
     def deploy(host: Host) -> Generator[StageItem, Any]:
+        if plan.family == "RedHat":
+            yield op(
+                dnf.packages,
+                name=NOTIFY_PACKAGE,
+                packages=plan.packages,
+                present=plan.packages_present,
+                latest=plan.packages_latest,
+                allow_downgrade=True,
+                sudo=True,
+            )
+            if plan.install_compose_plugin:
+                yield op(
+                    dnf.packages,
+                    name=NOTIFY_COMPOSE_PLUGIN,
+                    packages=plan.compose_package,
+                    present=plan.compose_present,
+                    latest=plan.compose_latest,
+                    allow_downgrade=True,
+                    sudo=True,
+                )
+            return
         yield op(
             apt.packages,
             name=NOTIFY_PACKAGE,
@@ -649,7 +930,7 @@ def users(plan: DockerPlan) -> Deploy:
 
 
 def docker(v: VarsSet[DockerVars]) -> Deploy:
-    """Install and configure Docker CE on Ubuntu hosts, and run the role's handler.
+    """Install and configure Docker CE on Ubuntu and RedHat hosts, and run the role's handler.
 
     Args:
         v: The role's resolved variables, one :class:`DockerVars` per host
@@ -661,7 +942,9 @@ def docker(v: VarsSet[DockerVars]) -> Deploy:
         including the family guard's early return.
 
     Raises:
-        ValueError: The distribution read carries no ``VERSION_CODENAME``, or
+        ValueError: The distribution read carries no ``VERSION_CODENAME`` (an
+            Ubuntu host), or a host declared into the RedHat family gathers a
+            distribution outside it (the certbot/repo_epel re-check), or
             ``docker_users`` is set while the ``docker`` group does not exist
             after the install (the role's getent task fails the same way). Each
             is raised inside the body, after the relevant barrier and before the
@@ -672,27 +955,55 @@ def docker(v: VarsSet[DockerVars]) -> Deploy:
 
     def deploy(host: Host) -> Generator[StageItem, Any]:
         hv = v.for_host(host)
-        if host.family != "Ubuntu":
+        if host.family not in TARGET_FAMILIES:
             return
 
-        # Wave 0: the release codename for the repository's Suites. Its
-        # barrier closes before the setup wave is built, so every request
-        # below is a pure function of the frozen plan.
+        # Wave 0: the Ubuntu release codename for the repository's Suites, and
+        # on RedHat the URL segment and RHEL-8 gate (the frozen include_vars
+        # dispatch). Its barrier closes before any setup wave is built, so
+        # every request below is a pure function of the frozen plan. A
+        # declared-RedHat host is re-checked against the gathered distribution
+        # here -- the only proof the family matches the machine, and the raise
+        # runs before a single request.
         info = yield fact(LinuxDistribution)
-        plan = docker_plan(hv, info)
+        if host.family == "RedHat" and info.get("family") != "RedHat":
+            raise ValueError(
+                f"{host.name}: declared RedHat family but the distribution is "
+                f"{info.get('name')!r} (family {info.get('family')!r}) -- "
+                "check the inventory family"
+            )
+        plan = docker_plan(hv, info, host.family)
 
-        # Wave 1: the repository setup, then the packages -- no barrier
+        key_stream = None
+        if plan.family == "RedHat" and plan.add_repo:
+            # The ``stat`` register guarding the key/repo pair (the repo_epel
+            # shape): a host that already has the repo file fetches nothing.
+            repo_exists = bool((yield fact(FileExists, path=plan.repofile)))
+            if not repo_exists:
+                # Control-side read whose URL came from a per-host fact, so it
+                # cannot move into an ``async def`` factory. The barrier returns
+                # the armored key's text, never a stream, so a journal could
+                # serialise it; the stream is built here, once, in this single
+                # pass.
+                key_text = yield control(files.fetch_url, plan.gpg_key_url)
+                key_stream = io.BytesIO(key_text.encode("utf-8"))
+
+        # The setup wave, family's own branch, then the packages -- no barrier
         # between them; the driver applies each request before pulling the
         # next (the example's two-deploy split was a two-phase artifact).
-        yield from setup(plan)(host)
+        if plan.family == "RedHat":
+            yield from redhat_setup(plan, key_stream)(host)
+        else:
+            yield from setup(plan)(host)
         yield from packages(plan)(host)
         packages_report = yield checkpoint("packages done")
 
-        # Wave 2: the daemon configuration, closed by its own checkpoint.
+        # The configure wave: the daemon configuration, closed by its own
+        # checkpoint.
         yield from configure(plan)(host)
         configure_report = yield checkpoint("configure done")
 
-        # Wave 3: the restart docker handler -- the role's second
+        # The handler wave: the restart docker handler -- the role's second
         # flush_handlers, before the user tasks. The notification set spans
         # both reports, so the two reads are unioned (the php shape, §18.6);
         # the handler's own gate is service_manage, and the verb is this
@@ -705,10 +1016,10 @@ def docker(v: VarsSet[DockerVars]) -> Deploy:
                 frozenset({host.name}), ("docker",), action=plan.handler_action
             )(host)
 
-        # Wave 4: the getent gate, then the memberships -- only for a host
-        # that lists users. The role fails the play when the group is absent
-        # (the docker packages were removed, say), and a barrier result is
-        # data, so the raise is the role's, not the driver's.
+        # The gate wave: the getent gate, then the memberships -- only for a
+        # host that lists users. The role fails the play when the group is
+        # absent (the docker packages were removed, say), and a barrier result
+        # is data, so the raise is the role's, not the driver's.
         if plan.users:
             groups = yield fact(Groups)
             if "docker" not in groups:
@@ -717,7 +1028,7 @@ def docker(v: VarsSet[DockerVars]) -> Deploy:
                     "Docker packages before listing docker_users (the role's "
                     "getent task fails the same way)"
                 )
-            # Wave 5: the group memberships.
+            # The memberships wave.
             yield from users(plan)(host)
 
     return deploy

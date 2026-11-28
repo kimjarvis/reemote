@@ -24,7 +24,9 @@ no framework:
 3. Build the deploy -- ``docker(vars_set)`` is the role's whole task list, one
    per-host generator -- and drive it with ``run_waves``, the barrier-aware
    driver a role needs: its ``fact`` barriers (the ``LinuxDistribution``
-   release read, and the ``Groups`` getent gate before the user memberships),
+   release read, the RedHat repo-file ``FileExists`` guard and the
+   ``control`` key fetch behind it, and the ``Groups`` getent gate before the
+   user memberships),
    its two checkpoints and the ``restart docker`` handler sit *inside* the
    body, not in separate ``run()`` calls. ``run_waves`` owns the host
    connections and closes them itself.
@@ -38,9 +40,10 @@ machines.
 
 ``run_waves`` is a coroutine, so ``main`` is async and driven by ``asyncio.run``.
 The factory itself is a plain (non-``async``) function -- the distribution and
-group reads are ``fact`` barriers, not factory IO, and the signing key is fetched
-by ``apt.sources_file`` itself -- so ``docker(vars_set)`` is *called*, not
-awaited.
+group reads are ``fact`` barriers, not factory IO, the Ubuntu signing key is
+fetched by ``apt.sources_file`` itself, and the RedHat key/repo pair rides the
+body's ``FileExists`` guard plus a ``control`` fetch -- so ``docker(vars_set)``
+is *called*, not awaited.
 
 The call-site ``overrides`` channel
 -----------------------------------
@@ -78,11 +81,13 @@ program a second time and it reports no change and queues no restart, because
 the repository and packages are in place, the daemon.json is byte-identical,
 the service is running and enabled, and the user is already in the group -- so
 neither ``Install Docker packages.`` nor ``Configure Docker daemon options.``
-changes, and with no notification the handler wave is empty.
+changes, and with no notification the handler wave is empty. On a RedHat host
+the converged rerun additionally fetches nothing: the ``FileExists`` guard on
+the managed ``.repo`` file skips the key and repo downloads entirely.
 
-Hosts outside the ``"Ubuntu"`` family emit nothing at all -- the role's family
-guard is its body's opening ``if``, so such a host returns before its first
-``yield`` and appears in no wave.
+Hosts outside the ``"Ubuntu"`` and ``"RedHat"`` families emit nothing at all --
+the role's family guard is its body's opening ``if``, so such a host returns
+before its first ``yield`` and appears in no wave.
 """
 
 import asyncio
@@ -163,10 +168,11 @@ async def main() -> None:
     except (ValueError, TypeError) as exc:
         # A rejected role variable (pydantic's ValidationError is a ValueError),
         # or the role body's own hard error: the gathered distribution carries
-        # no VERSION_CODENAME for the repository's Suites, or a non-empty users
-        # list while the docker group does not exist after the install. Each
-        # is raised at its barrier, before the requests it gates are built, so
-        # nothing is half-applied.
+        # no VERSION_CODENAME for the repository's Suites, a host declared into
+        # the RedHat family gathers a distribution outside it, or a non-empty
+        # users list runs while the docker group does not exist after the
+        # install. Each is raised at its barrier, before the requests it gates
+        # are built, so nothing is half-applied.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
     except (CommandError, HostConnectionError, PrivilegeError) as exc:

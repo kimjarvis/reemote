@@ -5,7 +5,7 @@
 | Role | [`geerlingguy.firewall`](https://github.com/geerlingguy/ansible-role-firewall) |
 | Module | [`reemote.roles.firewall`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/firewall.py) |
 | Example | [`examples/roles/firewall.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/firewall.py) |
-| Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
+| Target | **Ubuntu** and **RedHat** — hosts in those two OS families |
 | Variables | the entry's `firewall` role mapping → `FirewallVars` |
 
 <!---
@@ -43,7 +43,7 @@ rendered control-side from the variables alone: the per-host body *is* the plan.
 
 | Ansible task | reemote request | Status |
 | --- | --- | --- |
-| `package: name=iptables state=present` | `apt.packages(packages=("iptables",), sudo=True)` | covered |
+| `package: name=iptables state=present` | per family: `apt.packages(packages=("iptables",), sudo=True)` / `dnf.packages(...)` | covered |
 | `command: iptables -F` + `creates=/etc/firewall.bash` | `yield fact(FileExists, path=…)` gate → `yield act(Shell, "iptables -F", sudo=True)` | barrier (D4) |
 | `template: firewall.bash.j2 dest=/etc/firewall.bash mode=0744` + `notify` | control-side render → `files.install(content=…)` + `files.file(mode=…)` | covered |
 | `template: firewall.init.j2` (`when: service_mgr != systemd`) | — | scoped out (D2) |
@@ -74,7 +74,7 @@ that module *inside* `render_firewall_script`, so `import reemote.roles` stays
 clean without the extra and a missing `jinja2` surfaces as an `ImportError` at
 render time rather than at import time.
 
-SSH access to each Ubuntu host with the key named in its `connection`, and
+SSH access to each target host with the key named in its `connection`, and
 passwordless sudo (or a `privilege` section in the inventory): every request
 carries `sudo=True`, because reemote has no play-level `become` — the role's
 README runs the whole play with it.
@@ -210,7 +210,7 @@ barrier model:
 
 | Wave | Item | Why |
 | --- | --- | --- |
-| 0 | `install`: `apt.packages(("iptables",))` — closed by `fact(FileExists, path=/etc/firewall.bash)` | the gate is the role's `creates=` stat; as a barrier it reads the *previous* converge's file, never one this wave is about to write |
+| 0 | `install`: `apt.packages(("iptables",))` on Ubuntu, `dnf.packages(("iptables",))` on RedHat — closed by `fact(FileExists, path=/etc/firewall.bash)` | the gate is the role's `creates=` stat; as a barrier it reads the *previous* converge's file, never one this wave is about to write |
 | 1 | the flush: `act(Shell, "iptables -F", sudo=True)` — **first run only** | the gate answered `False`; a converged host parks on nothing here, so its stream skips the wave entirely |
 | 2 | `configure`: the rendered script and its chmod companion, the unit file, the service state — closed by `checkpoint("configure done")` | the checkpoint **is** the role's `notify`: it reads the wave it just closed and names the hosts whose notifying requests changed |
 | 3 | `handler`: `service_handler(notified, ("firewall",), action="restarted", daemon_reload=True)` | only on the hosts that checkpoint selected |
@@ -227,14 +227,15 @@ Three ordering rules are load-bearing:
   Ansible's service module, and why a converged host that *did* change the
   script still shows a handler change.
 
-A host whose `host.family` is not `"Ubuntu"` returns before its first `yield`,
-so it emits no requests, no barriers and no report lines at all.
+A host whose `host.family` is neither `"Ubuntu"` nor `"RedHat"` returns before
+its first `yield`, so it emits no requests, no barriers and no report lines at
+all.
 
 ## 7. Transcript
 
 From `tests/roles/test_firewall.py::test_tree_snapshot`, against a simulated
-Ubuntu host with the role's default variables plus a RedHat host the role never
-touches. Fresh host, first pass:
+Ubuntu host with the role's default variables plus an Alpine host the role
+never touches. Fresh host, first pass:
 
 ```text
 (root)
@@ -284,14 +285,14 @@ and **the handler wave disappears too**: two waves, no change:
     barrier: configure done → 0 hosts notified
 ```
 
-The RedHat host appears in no tree: no barrier record, no request line.
+The Alpine host appears in no tree: no barrier record, no request line.
 
 ## 8. Deliberate deviations from the Ansible role
 
 | # | Deviation | Why |
 | --- | --- | --- |
-| D1 | Ubuntu only, guard-first | the role's generic `package:`/`service:` and its RedHat/firewalld and Arch branches collapse to apt and systemd, which is what they resolve to on the target. A host outside the family returns before its first `yield` and emits no records |
-| D2 | The init-script fork (`/etc/init.d/firewall`) is dropped | the target family ships systemd, so the unit-file task is unconditional. A multi-init target would select between the two with `fact(server.InitSystem)` |
+| D1 | Ubuntu and RedHat, guard-first | the role's generic `package:` becomes the family's own operation (`apt.packages` / `dnf.packages`, the same `iptables` name) and `service:` collapses to systemd, which is what it resolves to on both targets. A host outside the two families returns before its first `yield` and emits no records. Upstream CI tests the RedHat family (molecule default `rockylinux9`) |
+| D2 | The init-script fork (`/etc/init.d/firewall`) is dropped | both target families ship systemd, so the unit-file task is unconditional. A multi-init target would select between the two with `fact(server.InitSystem)` |
 | D3 | `disable_firewalld`/`disable_ufw` are **carried and inert** | the opt-in `disable-other-firewalls.yml` import was scoped out by agreement with the operator before the migration started. Kept so such a key still binds |
 | D4 | `creates=` is an in-stream **`fact(FileExists)` barrier**, the flush an **`act` barrier** | the role's command task and its gate are exactly the reads the barrier model exists for. A barrier's `Result` is data, so the body checks `exit_status` itself and raises `CommandError` — the role ran the play with `become:`, hence `sudo=True` |
 | D5 | `daemon_reload=True` is **explicit** on the service request and the handler | Ansible's systemd module reloads the daemon implicitly when unit files changed; reemote asks. The flag is state-gated (issue #50), so a converged run issues no reload and the pass stays a no-op |
@@ -301,12 +302,13 @@ The RedHat host appears in no tree: no barrier record, no request line.
 
 ## 9. Scoped out
 
-* **Non-Ubuntu families.** The role's RedHat (firewalld-adjacent) and Arch
-  branches are not migrated; `package:`/`service:` become apt and systemd.
+* **Non-target families.** Alpine and Archlinux (never supported upstream —
+  absent from `meta`, the CI matrix and every task file) are guarded out;
+  `service:` becomes systemd, which both target families run.
 * **The opt-in software disable.** `firewall_disable_firewalld` and
   `firewall_disable_ufw` would be `apt.packages(present=False, purge=True)` (or
-  `dnf`, off-target) requests behind an `if` — deliberately excluded from this
-  migration's scope, not expressible as a gap.
+  `dnf` on the RedHat target) requests behind an `if` — deliberately excluded
+  from this migration's scope, not expressible as a gap.
 * **Sysctl tuning.** The role's README shows a companion `sysctl` play
   (`net.ipv4.ip_forward`); it was never part of `tasks/main.yml`. reemote ships
   `sysctl.sysctl` for it in a caller's own program.

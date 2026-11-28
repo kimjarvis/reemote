@@ -77,10 +77,10 @@ Sharing the demo host
 ---------------------
 
 The ``ubuntu`` demo host also runs the other role examples. This role leaves a
-compiled ``/usr/bin/daemonize`` (plus the source tree under ``/root``) on the
+compiled ``/usr/sbin/daemonize`` (plus the source tree under ``/root``) on the
 host, which no other role reads. To undo a real run::
 
-    ssh <user>@<ubuntu-host> 'sudo rm -f /usr/bin/daemonize && sudo rm -rf /root/daemonize-release-*'
+    ssh <user>@<ubuntu-host> 'sudo rm -f /usr/sbin/daemonize && sudo rm -rf /root/daemonize-release-*'
 """
 
 import asyncio

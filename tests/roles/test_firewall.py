@@ -77,10 +77,12 @@ HANDLER_NAME = "Restart firewall (handler)"
 
 
 def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
-    """A two-host inventory: one Ubuntu target, one CentOS host to be skipped.
+    """A two-host inventory: one Ubuntu target, one Alpine host to be skipped.
 
-    The role variables ride on the entry's ``roles`` mapping under
-    ``"firewall"``, written with the model's bare field names, which is what
+    Since the RedHat extension, ``"RedHat"`` is a target family (the RedHat
+    section below runs one), so only a third family proves the guard. The role
+    variables ride on the entry's ``roles`` mapping under ``"firewall"``,
+    written with the model's bare field names, which is what
     ``resolve_vars(FirewallVars, "firewall", inventory)`` binds, so a test
     changes a variable exactly the way an operator does. The base entry keeps
     the role's defaults so the pinned trees below hold; parametrized overrides
@@ -102,9 +104,9 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
         entry,
         {
             "host": "web1",
-            "family": "RedHat",
+            "family": "Alpine",
             "connection": {"address": "192.0.2.11", "username": "admin"},
-            "group": "centos",
+            "group": "alpine",
         },
     ]
 
@@ -136,7 +138,7 @@ def make_hosts(
 ) -> dict[str, SimulatedHost]:
     """Materialize the inventory into persistent simulated hosts, seeded target.
 
-    Only the Ubuntu entry is seeded, so the RedHat host keeps its stock empty
+    Only the Ubuntu entry is seeded, so the Alpine host keeps its stock empty
     stores and an accidental request on it is caught by the untouched-store
     assertions. The two flush arguments steer the ``act`` barrier the first-run
     path takes -- its exit status is the body's gate (D4).
@@ -364,11 +366,12 @@ async def test_flush_failure_raises_before_configuring():
 # --- the family guard ---------------------------------------------------------
 
 
-async def test_non_ubuntu_host_emits_nothing():
+async def test_alpine_host_emits_nothing():
     """The family guard is the body's opening ``if``, not a ``when`` on each op.
 
-    A host outside the ``"Ubuntu"`` family returns before it yields anything,
-    so it records no request and no barrier at all.
+    A host outside the target families (Ubuntu and RedHat -- the RedHat
+    section below proves the family *is* a target) returns before it yields
+    anything, so it records no request and no barrier at all.
     """
     inventory = make_inventory()
     hosts = make_hosts(inventory)
@@ -381,6 +384,102 @@ async def test_non_ubuntu_host_emits_nothing():
     assert skipped.apt_packages == {}
     assert skipped.services == {}
     assert skipped.ran_shells == []
+
+
+# --- the RedHat family --------------------------------------------------------
+
+
+def make_redhat_inventory(**overrides: Any) -> list[dict[str, Any]]:
+    """A one-host RedHat inventory mirroring the Ubuntu entry's branches.
+
+    Upstream tests this family (molecule's default instance is rockylinux9
+    and the CI matrix runs it), and only the generic ``package:`` task
+    differs: it becomes ``dnf.packages``, every other request is
+    family-agnostic.
+    """
+    entry: dict[str, Any] = {
+        "host": "rocky",
+        "family": "RedHat",
+        "connection": {
+            "address": "192.0.2.12",
+            "username": "supervisor",
+            "key_path": "~/.ssh/id_ed25519",
+        },
+        "group": "rhel",
+        "roles": {"firewall": {}},
+    }
+    entry["roles"]["firewall"].update(overrides)
+    return [entry]
+
+
+def make_redhat_hosts(inventory: list[dict[str, Any]]) -> dict[str, SimulatedHost]:
+    """Materialize the RedHat entry as a stock RHEL 9 machine, iptables absent.
+
+    The same seeding as the Ubuntu host plus the dnf-side store (``packages``;
+    the apt-side ``apt_packages`` stays empty and is asserted so -- the family
+    switch must not leak between the two package managers).
+    """
+    hosts: dict[str, SimulatedHost] = {}
+    for entry in inventory:
+        host = SimulatedHost.from_inventory(entry)
+        seed(host)
+        host.packages = {}
+        hosts[host.name] = host
+    return hosts
+
+
+async def test_redhat_first_pass_installs_the_package_with_dnf():
+    """The same stream and request names -- only the package module differs."""
+    inventory = make_redhat_inventory()
+    hosts = make_redhat_hosts(inventory)
+    report = await run_role(inventory, hosts)
+    host = hosts["rocky"]
+
+    # The package lands in the dnf store; the apt store is never touched.
+    assert "iptables" in host.packages
+    assert host.apt_packages == {}
+    assert host.ran_shells == [FLUSH]
+    assert request_kwargs(report, "Ensure iptables is present")["packages"] == (
+        "iptables",
+    )
+
+    # Script, unit and service state converge exactly as on Ubuntu.
+    content = script_text(host)
+    assert content.startswith("#!/bin/bash\n")
+    assert host.file_stats[FIREWALL_SCRIPT]["mode"] == 744
+    assert host.remote_files[FIREWALL_UNIT].decode("utf-8") == UNIT_FILE
+    assert host.services["firewall.service"] == "active"
+    assert "firewall.service" in host.enabled_services
+    assert entry_named(report, HANDLER_NAME, "rocky").changed
+
+    ordered = [entry.name for entry in report.merged().log if entry.host == "rocky"]
+    assert ordered == [*INSTALL_NAMES, *CONFIGURE_NAMES, HANDLER_NAME]
+
+
+async def test_redhat_wave_shape_matches_the_ubuntu_stream():
+    """Gate, flush, configure, checkpoint: the same four waves as on Ubuntu."""
+    inventory = make_redhat_inventory()
+    hosts = make_redhat_hosts(inventory)
+    report = await run_role(inventory, hosts)
+
+    assert [type(b).__name__ for b in barriers(report, "rocky")] == [
+        "FactRequest",
+        "ActionRequest",
+        "CheckpointRequest",
+    ]
+    assert waves(report, "rocky") == [0, 1, 2, 3]
+
+
+async def test_redhat_second_pass_changes_nothing():
+    """Convergence rides the dnf package store, and the flush stays once-only."""
+    inventory = make_redhat_inventory()
+    hosts = make_redhat_hosts(inventory)
+    first = await run_role(inventory, hosts)
+    assert changed_entries(first), "the RedHat first pass must deploy something too"
+
+    second = await run_role(inventory, hosts)
+    assert changed_entries(second) == []
+    assert hosts["rocky"].ran_shells == [FLUSH]
 
 
 # --- the handler --------------------------------------------------------------

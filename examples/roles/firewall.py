@@ -74,9 +74,12 @@ On a host that has never run it, the first pass flushes the current rules and
 installs one that drops everything except the ports you opened -- keep your SSH
 port (``22`` by default) in ``allowed_tcp_ports``.
 
-Hosts outside the ``"Ubuntu"`` family emit nothing at all -- the role's family
-guard is its body's opening ``if``, so such a host returns before its first
-``yield`` and appears in no wave.
+Hosts outside the ``"Ubuntu"`` and ``"RedHat"`` families emit nothing at all --
+the role's family guard is its body's opening ``if``, so such a host returns
+before its first ``yield`` and appears in no wave. On a RedHat host every task
+is the same request except the package one, which ``dnf.packages`` carries in
+place of ``apt.packages`` -- exactly what Ansible's generic ``package:`` module
+resolved to there.
 """
 
 import asyncio

@@ -32,11 +32,13 @@ and never touches the network -- this example uses the *default* factory
 (``Host.from_inventory``): each plain ``Host`` lazily opens an asyncssh
 connection from its ``connection`` data, gathers facts and runs commands for
 real. Edit ``inventory.json`` in the current working directory to target your
-machines. The Elasticsearch signing key is fetched *control-side* (the
-controller needs egress to ``artifacts.elastic.co``; the host downloads
-nothing), and the Elastic apt repository brings in the ``elasticsearch``
-package, so the apply pass transfers a few hundred megabytes on a fresh host.
-Elasticsearch also needs a Java runtime on the target -- the README's
+machines. The Elasticsearch signing key is fetched *control-side* on both
+families -- inside ``files.download`` on Ubuntu, as the ``RedHat`` stream's
+leading ``control`` barrier on RedHat, where it closes an empty wave 0 -- and
+the Elastic repository (apt on Ubuntu, ``dnf.repo`` on RedHat) brings in the
+``elasticsearch`` package, so the apply pass transfers a few hundred
+megabytes on a fresh host. Elasticsearch also needs a Java runtime on the
+target -- the README's
 ``geerlingguy.java`` prerequisite; compose the shipped ``java`` role or install
 a JDK before running this.
 
@@ -66,26 +68,32 @@ service and port ``9200``.
 
 ``run_waves`` is a coroutine, so ``main`` is async and driven by
 ``asyncio.run``. The factory itself is a plain (non-``async``) function -- the
-role reads no facts, its only barrier is the checkpoint -- so
+role's barriers are the checkpoint (plus the RedHat key fetch), all built
+inside the body -- so
 ``elasticsearch(vars_set)`` is *called*, not awaited.
 
 ``main`` drives the deploy twice, exactly like an operation example: a
 ``dry=True`` preview first, then the real apply. The dry pass plans the request
 wave and parks on the ``checkpoint`` barrier (``run_waves`` stops there: the
 notification read needs a real apply report), so nothing is applied and the
-service/wait tail stays unplanned. Convergence is what the offline pytest suite
+service/wait tail stays unplanned. (On RedHat the first barrier is the key
+fetch instead, so the dry pass parks there and plans nothing at all.)
+Convergence is what the offline pytest suite
 pins: on a rerun against a converged host every *state* request reports no
 change -- the dependencies and the package are installed, the key and the
-repository line are in place (so the change-gated ``apt-get update`` never
-runs), both config files are byte-identical with root:elasticsearch ``0660``
+repository are in place (on Ubuntu the repo line, so the change-gated
+``apt-get update`` never runs; on RedHat the keyring entry and the
+``/etc/yum.repos.d`` file), both config files are byte-identical with
+root:elasticsearch ``0660``
 metadata, the service is running and enabled, and the notification set is
 empty so the restart handler never appears. (The port wait is the one line
 that still reports changed: it is a poll, not a state gate -- see deviation D6
 on the role page.)
 
-Hosts outside the ``"Ubuntu"`` family emit nothing at all -- the role's family
-guard is its body's opening ``if``, so such a host returns before its first
-``yield`` and appears in no wave. The role's RedHat branch is out of scope.
+Hosts whose family is neither ``"Ubuntu"`` nor ``"RedHat"`` emit nothing at all
+-- the role's family guard is its body's opening ``if``, so such a host returns
+before its first ``yield`` and appears in no wave; with this repo's own
+``inventory.json``, the ``alpine`` entry is the one skipped host.
 """
 
 import asyncio

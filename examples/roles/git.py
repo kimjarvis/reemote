@@ -15,16 +15,17 @@ no framework:
    ``InventoryError`` naming the offending entry before any host is materialized
    or connected.
 2. Resolve the role's variables with ``resolve_vars``: the inventory entry's
-   ``git`` role mapping (``packages`` and the scoped-out ``install_from_source``
-   of :class:`~reemote.roles.git.GitVars`) is bound under the bare field names,
-   the call-site ``GIT_OVERRIDES`` below wins over them, and a bad value raises
-   before any host is contacted.
+   ``git`` role mapping (``packages``, ``enablerepo`` and the scoped-out
+   ``install_from_source`` of :class:`~reemote.roles.git.GitVars`) is bound
+   under the bare field names, the call-site ``GIT_OVERRIDES`` below wins over
+   them, and a bad value raises before any host is contacted.
 3. Build the deploy -- ``git(vars_set)`` is the role's whole task list, one
    per-host generator -- and drive it with ``run_waves``, the barrier-aware
    driver a role needs. This role yields no barrier at all (no version probe,
-   no ``register``/``when`` read, no handler), so the single install request
-   lands in one wave; ``run_waves`` still owns the host connections and closes
-   them itself.
+   no ``register``/``when`` read, no handler), so each host's single install
+   request -- ``apt.packages`` on Ubuntu, ``dnf.packages`` on RedHat -- lands
+   in one wave; ``run_waves`` still owns the host connections and closes them
+   itself.
 
 Unlike the pytest suite -- which injects the test framework's ``SimulatedHost``
 and never touches the network -- this example uses the *default* factory
@@ -64,13 +65,17 @@ barrier, the dry pass does not park early the way ``java``/``docker``/
 wave*, reading the installed-package and cache-stamp facts, and applies nothing
 (deviation D1's dry shape). A converged rerun is the honest preview: run the
 whole program a second time and it reports no change, because the packages are
-installed and the apt cache stamp is fresh (the folded refresh is gated on it).
+installed (apt on Ubuntu, dnf on RedHat) and the apt cache stamp is fresh (the
+folded refresh is gated on it).
 
-Hosts outside the ``"Ubuntu"`` family emit nothing at all -- the role's family
-guard is its body's opening ``if``, so such a host returns before its first
-``yield`` and appears in no wave. The role's RedHat branch (the ``package`` task
-with its ``enablerepo``) is out of scope, so the CentOS hosts in the sample
-inventory are skipped rather than served by a second path.
+Hosts outside the ``"Ubuntu"`` and ``"RedHat"`` families emit nothing at all --
+the role's family guard is its body's opening ``if``, so such a host returns
+before its first ``yield`` and appears in no wave. The Ansible role has no
+Alpine path (no apk task, no ``vars/Alpine.yml``, no Alpine platform in
+``meta``), so the Alpine host in the sample inventory is skipped; the CentOS
+(RedHat-family) hosts are served by the ``dnf.packages`` request, whose
+additive ``enable_repos`` carries the optional ``enablerepo`` knob (deviation
+D3).
 """
 
 import asyncio

@@ -3,8 +3,9 @@
 
 # """The firewall role (migrated from ``geerlingguy.firewall``).
 #
-# Installs and configures an iptables firewall on Ubuntu hosts: the ``iptables``
-# package, the once-per-machine flush the role gated on ``creates=``, the
+# Installs and configures an iptables firewall on Ubuntu and RedHat hosts: the
+# ``iptables`` package (apt or dnf, by the host's family), the
+# once-per-machine flush the role gated on ``creates=``, the
 # rendered ``/etc/firewall.bash`` script and its ``0744`` ownership, the
 # ``firewall.service`` systemd unit, the service's running/enabled state, and
 # the role's single ``restart firewall`` handler. :func:`firewall` is the whole
@@ -12,10 +13,13 @@
 # inventory entry's ``firewall`` role mapping by
 # :func:`~reemote.rolevars.resolve_vars`.
 #
-# Target: hosts in the ``"Ubuntu"`` OS family. The role's RedHat/firewalld and
-# Arch branches and its init-script fork are out of scope, so its
-# ``ansible_facts`` dispatch collapses to apt, systemd and the two frozen
-# templates below.
+# Target: hosts in the ``"Ubuntu"`` and ``"RedHat"`` OS families -- what the
+# upstream role supports: ``meta`` declares Debian and Ubuntu, and its molecule
+# suite defaults to and CI-tests ``rockylinux9`` (the RedHat entry mirrors the
+# drush/certbot/apache extension precedent). The Arch branch and the init-script
+# fork are out of scope, so the role's generic ``package:`` task resolves per
+# family and its ``ansible_facts`` dispatch collapses to the apt/dnf switch,
+# systemd (both target families ship it) and the two frozen templates below.
 #
 # The stream carries three waves on a converged host, four on a first run,
 # five when the handler fires (design doc section 5.7 -- the wave count is
@@ -48,14 +52,16 @@
 # Deviations from the Ansible role, all deliberate:
 #
 # * **D1** the host-family guard is the body's opening ``if``, not a ``when=``
-#   on every request: a host outside the ``"Ubuntu"`` family returns before it
+#   on every request: a host outside the two target families returns before it
 #   yields anything, so it emits no requests and no log entries at all. The
-#   role's generic ``package:``/``service:`` modules collapse to apt and
-#   systemd, which is what they resolve to on the target anyway.
+#   role's generic ``package:`` module becomes the family's own operation
+#   (``apt.packages`` on Ubuntu, ``dnf.packages`` on RedHat, the same package
+#   name) and ``service:`` collapses to systemd, which is what they resolve to
+#   on each target anyway.
 # * **D2** the init-script fork (``when: ansible_facts.service_mgr !=
-#   'systemd'``) is dropped: the target family ships systemd, so the unit-file
-#   task is unconditional here. A multi-init target would select between the
-#   two with ``fact(server.InitSystem)``.
+#   'systemd'``) is dropped: both target families ship systemd, so the
+#   unit-file task is unconditional here. A multi-init target would select
+#   between the two with ``fact(server.InitSystem)``.
 # * **D3** the opt-in ``disable-other-firewalls.yml`` import is out of scope by
 #   agreement with the operator: :attr:`FirewallVars.disable_firewalld` and
 #   :attr:`FirewallVars.disable_ufw` are carried as variables and do nothing
@@ -100,15 +106,23 @@ from ..actions import Shell
 from ..core import op
 from ..handlers import changed_hosts, service_handler
 from ..hosts import CommandError, Host
-from ..modules import apt, files, systemd
+from ..modules import apt, dnf, files, systemd
 from ..modules.files import FileExists
 from ..rolevars import VarsSet
 from ..stages import Deploy, StageItem, act, checkpoint, fact
 
-# --- role constants (defaults/main.yml + tasks/main.yml, Ubuntu path only) ---
+# --- role constants (defaults/main.yml + tasks/main.yml, target families) ----
+
+#: The families the role runs on; anything else returns before its first
+#: ``yield`` and emits no requests, no barriers and no log lines. The RedHat
+#: entry mirrors the upstream role, whose molecule default instance is
+#: ``rockylinux9`` and whose CI matrix tests it; only the generic ``package:``
+#: task differs between the families.
+TARGET_FAMILIES = ("Ubuntu", "RedHat")
 
 #: ``tasks/main.yml``'s one package. The role's generic ``package:`` resolves
-#: to apt on the target family.
+#: to apt on Ubuntu and dnf on RedHat -- the package name is ``iptables`` on
+#: both.
 IPTABLES_PACKAGES = ("iptables",)
 
 #: The script the role renders and the unit that runs it -- ``dest:`` values,
@@ -438,17 +452,20 @@ def render_firewall_script(v: FirewallVars) -> str:
 # --- helper deploys ----------------------------------------------------------
 
 
-def install() -> Deploy:
+def install(family: str) -> Deploy:
     """``tasks/main.yml``'s first task: ``package: name=iptables state=present``.
 
-    Branch-free: the one package name is frozen with the target family, and the
-    task notifies nothing in the role. No cache refresh -- the role does not
-    run ``apt-get update`` either.
+    Branch-free beyond the family switch: the one package name is frozen and
+    Ansible's generic ``package:`` module simply resolves to apt on Ubuntu and
+    dnf on RedHat, so the request keeps the task's name on both paths. No
+    cache refresh -- the role does not run ``apt-get update``/``dnf makecache``
+    either.
     """
+    operation = dnf.packages if family == "RedHat" else apt.packages
 
     def deploy(host: Host) -> Generator[StageItem, Any]:
         yield op(
-            apt.packages,
+            operation,
             name="Ensure iptables is present",
             packages=IPTABLES_PACKAGES,
             sudo=True,
@@ -536,7 +553,7 @@ def handler(notified: frozenset[str]) -> Deploy:
 
 
 def firewall(v: VarsSet[FirewallVars]) -> Deploy:
-    """Install and configure an iptables firewall on Ubuntu hosts, and run its handler.
+    """Install and configure an iptables firewall on Ubuntu and RedHat hosts, and run its handler.
 
     Args:
         v: The role's resolved variables, one :class:`FirewallVars` per host
@@ -556,12 +573,13 @@ def firewall(v: VarsSet[FirewallVars]) -> Deploy:
 
     def deploy(host: Host) -> Generator[StageItem, Any]:
         hv = v.for_host(host)
-        if host.family != "Ubuntu":
+        if host.family not in TARGET_FAMILIES:
             return
 
-        # Wave 0: the package. The FileExists barrier below closes the wave,
-        # which is what makes the gate read the previous converge's file.
-        yield from install()(host)
+        # Wave 0: the package (apt or dnf, by family). The FileExists barrier
+        # below closes the wave, which is what makes the gate read the
+        # previous converge's file.
+        yield from install(host.family)(host)
 
         # The role's `creates=/etc/firewall.bash`, as an in-stream fact (D4).
         script_present = bool((yield fact(FileExists, path=FIREWALL_SCRIPT)))

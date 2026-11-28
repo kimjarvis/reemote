@@ -5,20 +5,24 @@
 | Role | [`geerlingguy.docker`](https://github.com/geerlingguy/ansible-role-docker) |
 | Module | [`reemote.roles.docker`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/docker.py) |
 | Runner | [`examples/roles/docker.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/docker.py) |
-| Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
+| Target | **Ubuntu, RedHat** — hosts in the `"Ubuntu"` or `"RedHat"` OS family |
 | Variables | the entry's `docker` role mapping → `DockerVars` |
 
 <!---
-| Waves | `5` on a changed host with users (0–4); one less without `users`; the handler wave disappears once converged |
+| Waves | `5` on a changed Ubuntu host with users (0–4), `7` on a fresh RedHat host (0–6, the two repo-guard barriers); one less without `users`; the handler wave disappears once converged |
 | Outputs | none — the deploy returns `None`; no other role reads docker's results |
 | Extra deps | **none** — `daemon.json` renders with `json.dumps`, no template engine |
 | Offline test | [`tests/roles/test_docker.py`](https://github.com/kimjarvis/reemote/blob/main/tests/roles/test_docker.py) |
-| Factory | plain (non-`async`) — the runner calls `docker(v)`; the distribution and group reads are `fact` barriers, and the signing-key fetch is `apt.sources_file`'s own control-side step |
+| Factory | plain (non-`async`) — the runner calls `docker(v)`; the distribution and group reads are `fact` barriers, the Ubuntu signing-key fetch is `apt.sources_file`'s own control-side step, and the RedHat key/repo pair rides the body's `FileExists` guard plus a `control` barrier |
 
-`docker` installs and configures Docker CE on Ubuntu hosts from the official
-Docker apt repository: the legacy key/source/package cleanup, the repository
-dependencies, the deb822 `.sources` file with its URL-signed keyring, the
-edition-derived packages plus the compose plugin, the optional
+`docker` installs and configures Docker CE on Ubuntu and RedHat hosts from the
+official Docker vendor repository. On Ubuntu: the legacy key/source/package
+cleanup, the repository dependencies, the deb822 `.sources` file with its
+URL-signed keyring, and the packages. On RedHat (the `setup-RedHat.yml`
+migration): the obsolete-package purge, the GPG key and `.repo` file fetched
+control-side, the nightly/test section management, and the RHEL 8 containerd
+block. Both families then share the rest of the task list: the edition-derived
+packages plus the compose plugin (through `apt` or `dnf`), the optional
 `/etc/docker/daemon.json` and `docker.service` ExecStart override, the service's
 running/enabled state, the `restart docker` handler, and the `docker_users`
 group memberships.
@@ -33,19 +37,23 @@ the role where one Ansible behaviour changes *meaning* rather than shape:
 `meta: reset_connection`. The stream is:
 
 ```python
-info = yield fact(LinuxDistribution)              # wave 0 — the repo's Suites
-plan = docker_plan(hv, info)
-yield from setup(plan)(host)                      # wave 1 — cleanup, deps, repo,
-yield from packages(plan)(host)                   #          packages, plugin
+info = yield fact(LinuxDistribution)              # wave 0 — the repo's Suites / the yum segment
+plan = docker_plan(hv, info, host.family)
+if plan.family == "RedHat" and plan.add_repo:     # RedHat waves 1–2 — the repo_epel guard
+    if not (yield fact(FileExists, path=plan.repofile)):
+        key = yield control(files.fetch_url, plan.gpg_key_url)  # the armored key's text
+yield from setup(plan)(host) if plan.family != "RedHat" else redhat_setup(plan, key)(host)
+                                                  # wave — cleanup/deps/repo, or
+yield from packages(plan)(host)                   #        purge/key/repo/ini; then packages
 packages_report = yield checkpoint("packages done")
-yield from configure(plan)(host)                  # wave 2 — daemon.json, dropin, service
+yield from configure(plan)(host)                  # daemon.json, dropin, service (family-agnostic)
 configure_report = yield checkpoint("configure done")
 notified = changed_hosts(packages_report, names) | changed_hosts(configure_report, names)
-if host.name in notified and plan.service_manage:  # wave 3 — restart docker
+if host.name in notified and plan.service_manage:  # restart docker
     yield from service_handler(frozenset({host.name}), ("docker",), action=...)(host)
 if plan.users:
     groups = yield fact(Groups)                   # the getent gate, the role's own raise
-    yield from users(plan)(host)                  # wave 4 — memberships (append, ensure_home=False)
+    yield from users(plan)(host)                  # memberships (append, ensure_home=False)
 ```
 
 The single handler's notification set **spans both reports** — the package
@@ -67,6 +75,12 @@ The role's tasks map onto reemote operations and barriers:
 | `apt: update_cache` + `notify: apt update` + `meta: flush_handlers` | `apt.sources_file(update_cache=True)` chains the refresh on a real sources change | deviation (D1) |
 | `apt: name={{ docker_packages }} allow_downgrade: true` (two version-split arms) | one `apt.packages(packages, allow_downgrades=True)` (modern arm only) | covered (D6) |
 | `apt: name=docker-compose-plugin` | second `apt.packages`, both notify the handler | covered |
+| `include_tasks setup-RedHat.yml`: `package: name={{ docker_obsolete_packages }} state=absent` (unconditional) | `dnf.packages(present=False)` in `redhat_setup`, purging `vars/RedHat.yml`'s eight names | covered |
+| `rpm_key: url={{ docker_yum_gpg_key }}` | `control(files.fetch_url)` streams the armored key into `dnf.key(src=…, keyid="621E9F35")` — gated on `RpmGpgKeys`, and the pair is skipped when the repo file exists | deviation (D9) |
+| `get_url: url={{ docker_yum_repo_url }} dest=/etc/yum.repos.d/docker-<edition>.repo` | `files.download(url, dest, mode="0644")` — the same control-side fetch, spool-installed | covered (D9) |
+| `ini_file: [docker-ce-nightly] state=absent` (whole section) | `files.transform(drop_ini_section(...))` — `files.ini_option` ships no section removal | deviation (D10) |
+| `ini_file: [docker-ce-test] option=enabled no_extra_spaces=yes` | `files.ini_option(section, option="enabled", value=…, no_extra_spaces=True)` | covered |
+| RHEL 8 block (`when: distribution_major_version \| int == 8`): runc absent, container-selinux, containerd.io | three `dnf.packages` requests gated on the plan's `rhel8`, read from the gathered distribution | covered |
 | `copy: content={{ docker_daemon_options \| to_nice_json }} dest=/etc/docker/daemon.json` | `render_daemon_json` (stdlib `json.dumps(indent=4, sort_keys=True)`) → `files.install` | covered |
 | `replace`/`lineinfile` ExecStart patch of the packaged unit | `systemd.dropin(unit="docker", filename="reemote-exec-start", daemon_reload=True)` | deviation (D2) |
 | `systemd: name=docker state={{...}} enabled={{...}}` | `systemd.service(running/restarted/reloaded, enabled)` | covered |
@@ -75,7 +89,7 @@ The role's tasks map onto reemote operations and barriers:
 | `user: name={{ item }} groups=docker append=yes` (`loop: docker_users`) | one `server.user(groups=("docker",), append=True, ensure_home=False)` per user | covered (D5) |
 | `meta: reset_connection` (so new group members apply mid-play) | **meaning changes** — see §6; the one unreachable behaviour | deviation |
 | `ignore_errors: ansible_check_mode` | **dropped** — `dry` never applies | deviation (D3) |
-| the standalone `docker-compose` binary (`get_url` + `mode=0755`) | **scoped out** — a truthy `install_compose` raises | out of scope |
+| the legacy standalone `docker-compose` binary (`get_url` + `mode=0755`) | **scoped out** — the opt-in legacy path the compose plugin package supersedes; a truthy `install_compose` raises | out of scope |
 
 No library gap blocked this migration, so none was filed: issues #14
 (`update_cache` chains on removals too) and #17 (the URL `signed_by` form) were
@@ -100,9 +114,11 @@ passwordless sudo (or a `privilege` section): every request carries `sudo=True`.
 `DockerVars` is a frozen pydantic model (`extra="forbid"`) whose fields carry
 bare names; the role name passed to `resolve_vars` binds the entry's `docker`
 role mapping, so an inventory written for the role needs no key gymnastics.
-The three derived fields (`packages`, `apt_repo_url`, `apt_gpg_key`) default to
-`None` — "compute it from `edition` / `repo_url`", exactly as the role's own
-`defaults/main.yml` templates them. Precedence is
+The derived fields (`packages`, `obsolete_packages`, the `apt_repo_url` /
+`apt_gpg_key` and `yum_repo_url` / `yum_gpg_key` pairs) default to `None` —
+"compute it from `edition` / `repo_url` (and, on RedHat, the gathered
+distribution)", exactly as the role's own `defaults/main.yml` templates them.
+Precedence is
 `model defaults < inventory role mapping < overrides`.
 
 --->
@@ -120,12 +136,15 @@ The three derived fields (`packages`, `apt_repo_url`, `apt_gpg_key`) default to
 
 | Field | Type | Default | Upstream var |
 | --- | --- | --- | --- |
-| `add_repo` | `bool` | `true` — when false, the sources file and keyring are **removed** | `docker_add_repo` |
-| `repo_url` | `str` | `https://download.docker.com/linux` — base for both derived URLs | `docker_repo_url` |
+| `add_repo` | `bool` | `true` — when false, Ubuntu removes the sources file and keyring; RedHat **installs nothing and removes nothing** (upstream has no RedHat repo-removal task, D9) | `docker_add_repo` |
+| `repo_url` | `str` | `https://download.docker.com/linux` — base for both derived URL pairs | `docker_repo_url` |
 | `apt_repo_url` | `str \| None` | `null` → `{repo_url}/ubuntu`; a mirror changes the URI only | `docker_apt_repo_url` |
 | `apt_gpg_key` | `str \| None` | `null` → `{repo_url}/ubuntu/gpg` — follows the **upstream**, not a mirror | `docker_apt_gpg_key` |
 | `apt_release_channel` | `str` | `stable` | `docker_apt_release_channel` |
 | `apt_filename` | `str` | `docker` — names both the `.sources` file and the keyring | `docker_apt_filename` |
+| `yum_repo_url` | `str \| None` | `null` → `{repo_url}/{segment}/docker-{edition}.repo`; the segment is `fedora` / `rhel` / `centos` by the gathered distribution (Rocky/Alma read `centos`) | `docker_yum_repo_url` |
+| `yum_gpg_key` | `str \| None` | `null` → `{repo_url}/{segment}/gpg` — follows the **upstream**, not a mirror | `docker_yum_gpg_key` |
+| `yum_repo_enable_test` | `str` | `"0"` — the `enabled=` value written into the test section | `docker_yum_repo_enable_test` |
 
 ### Packages and compose
 
@@ -134,7 +153,7 @@ The three derived fields (`packages`, `apt_repo_url`, `apt_gpg_key`) default to
 | `edition` | `str` | `ce` — the package-name prefix | `docker_edition` |
 | `packages` | `tuple[str, …] \| None` | `null` → the edition's five packages | `docker_packages` |
 | `packages_state` | `Literal["present","latest","absent"]` | `present` | `docker_packages_state` |
-| `obsolete_packages` | `tuple[str, …]` | the nine distro Docker packages the repo replaces | `docker_obsolete_packages` |
+| `obsolete_packages` | `tuple[str, …] \| None` | `null` → the family's `vars/<OS>.yml` list: nine Debian names, eight RedHat ones | `docker_obsolete_packages` |
 | `install_compose_plugin` | `bool` | `true` | `docker_install_compose_plugin` |
 | `compose_package` / `compose_package_state` | `str` / `Literal[…]` | `docker-compose-plugin` / `present` | `docker_compose_package[_state]` |
 | `install_compose` | `bool` | `false` — a truthy value **raises** (scoped out) | `docker_install_compose` |
@@ -230,6 +249,16 @@ appended — so the shape below is what the test pins:
 | 3 | `service_handler("Restart docker (handler)")` — only where **this host** sits in the union of the two reports and `service_manage` is on; then `fact(Groups)` (only with users) | the role's second `flush_handlers`, which runs *before* the user tasks; the getent gate closes the handler wave |
 | 4 | `users`: one `server.user(append=True, ensure_home=False)` per listed user | only after the gate passed; a missing `docker` group raises instead |
 
+A RedHat host inserts two barriers before the setup wave — `fact(FileExists)` on
+the managed `/etc/yum.repos.d/docker-<edition>.repo`, and, only when it is
+absent, `control(files.fetch_url)` for the ASCII-armored key (the repo_epel
+guard, D9) — so its fresh stream runs 0–6 and every later wave number shifts up
+by one. Inside the shared wave 3 (fresh host), `redhat_setup` replaces
+`setup`: purge, key, repo file, the nightly/test ini pair — which re-runs every
+pass and no-ops by content — and the RHEL 8 containerd block when the gathered
+major version is 8; `packages` then flows through `dnf.packages` instead of
+`apt.packages` (D6). Waves 4 onward are the Ubuntu ones unchanged.
+
 Four rules are load-bearing:
 
 * **Two checkpoints, unioned.** One handler, two notifying stages: the
@@ -259,15 +288,17 @@ Four rules are load-bearing:
   `ValueError` when `docker` is missing while `docker_users` is set — the
   faithful analogue of the role's `getent.docker` failure mid-play.
 
-A host whose `family` is not `"Ubuntu"` returns before its first `yield`: no
-requests, no barriers, no report lines — Alpine and CentOS entries in a shared
-inventory are never contacted.
+A host whose `family` is outside **both** target families returns before its
+first `yield`: no requests, no barriers, no report lines — an Alpine entry in a
+shared inventory is never contacted. A host *declared* RedHat whose gathered
+distribution says otherwise is a mislabelled inventory, and the body raises
+before its first request (the certbot/repo_epel re-check).
 
 ## 7. Transcript
 
 From `tests/roles/test_docker.py`, against the simulated Ubuntu 24.04 host
-(`users: ["alice"]`, `daemon_options` set in the `docker` role mapping) plus a
-RedHat host the role never touches. `os_groups` is seeded to the intended
+(`users: ["alice"]`, `daemon_options` set in the `docker` role mapping) plus an
+Alpine host the widened guard never touches. `os_groups` is seeded to the intended
 post-install state (the simulated apt install records package names only, never the group the
 real postinst creates) and the key fetch is patched offline. Fresh host, first
 pass:
@@ -318,7 +349,45 @@ while the `Groups` gate and the already-satisfied membership stay:
     ubuntu: Add alice to the docker group [no change: already in docker]
 ```
 
-The RedHat host appears in neither tree: no barrier record, no request line.
+The Alpine host appears in neither tree: no barrier record, no request line.
+
+The same suite's fresh Rocky 9 host, first pass — the guard's two extra
+barriers, then the `setup-RedHat.yml` tasks in the file's own order (the key
+import and every write spool through `/tmp`, the test section already
+`enabled=0` so the ini toggle no-ops on the spot):
+
+```text
+(root)
+  wave 0
+    barrier: LinuxDistribution → {'name': 'Rocky', 'family': 'RedHat', 'major': 9, ...}
+  wave 1
+    barrier: FileExists → False
+  wave 2
+    barrier: fetch_url → -----BEGIN PGP PUBLIC KEY BLOCK-----
+  wave 3
+    rocky: Ensure old versions of Docker are not installed. [changed: 8 package(s) to remove]
+    rocky: Add Docker GPG key. [changed: import GPG key from <stream>]
+    rocky: Add Docker repository. [changed: content /etc/yum.repos.d/docker-ce.repo is absent, will install]
+    rocky: Remove Docker Nightly repo. [changed: content /etc/yum.repos.d/docker-ce.repo differs, will install]
+    rocky: Configure Docker Test repo. [no change: content already up to date (/etc/yum.repos.d/docker-ce.repo)]
+    rocky: Install Docker packages [changed: 5 package(s) to install]
+    rocky: Install docker-compose-plugin [changed: 1 package(s) to install]
+    barrier: packages done → 1 host notified
+  wave 4
+    rocky: Ensure /etc/docker directory exists [changed: /etc/docker missing, will create]
+    rocky: Configure Docker daemon options [changed: content /etc/docker/daemon.json is absent, will install]
+    rocky: Ensure Docker is started and enabled at boot [changed: docker.service not running (None), will start; docker.service not enabled, will enable]
+    barrier: configure done → 1 host notified
+  wave 5
+    rocky: Restart docker (handler) [changed: docker.service already running; docker.service will restart]
+    barrier: Groups → ['wheel', 'docker']
+  wave 6
+    rocky: Add alice to the docker group [changed: user alice differs, will update]
+```
+
+On the rerun `FileExists → True` and **wave 2's fetch is gone** — neither the
+key nor the repo file is downloaded again (D9) — leaving the ini pair and the
+package installs to no-op by content, exactly like the Ubuntu rerun above.
 
 ## 8. Deliberate deviations from the Ansible role
 
@@ -329,19 +398,21 @@ The RedHat host appears in neither tree: no barrier record, no request line.
 | D3 | `ignore_errors: ansible_check_mode` is **dropped** | reemote's `dry` never applies, so there is no check-mode failure to tolerate |
 | D4 | The `at_least_one_user_to_modify` pre-check is **subsumed**, the getent failure **kept** | `server.user(append=True)` reports no change for an existing membership; the missing-group case still raises, at the `fact(Groups)` barrier |
 | D5 | `ensure_home=False` on the user requests | reemote's default also converges home-directory ownership; the role's task is a pure membership append |
-| D6 | The two version-split install arms collapse to the modern (`allow_downgrade`) one | reemote's `allow_downgrades` carries the same `--allow-downgrades` semantics |
+| D6 | The two version-split install arms collapse to the modern (`allow_downgrade`) one | reemote's `allow_downgrades` on apt — same `--allow-downgrades` semantics — while `dnf.packages` keeps the singular spelling |
 | D7 | `meta: reset_connection` becomes **next-pass semantics** | the driver owns connections for the whole run; this is the corpus's one behaviour that is unreachable rather than merely different — see §6 |
 | D8 | The family guard is the **body's opening `if`**; variable gates become **pydantic validation** | off-target hosts emit nothing at all (the old example logged every request as skipped); bad values — including the old `TypeError` gates — all raise `ValidationError` before any host is contacted |
+| D9 | RedHat's `rpm_key`/`get_url` read **control-side**, guarded by `fact(FileExists)` | `files.fetch_url` feeds the armored key to `dnf.key` as a stream (with the `621E9F35` gate on `RpmGpgKeys`) and `files.download` installs the `.repo`; a converged host fetches nothing where upstream re-downloads every pass. `add_repo: false` installs nothing **and removes nothing** — upstream's RedHat branch has no repo-removal task, unlike Debian's |
+| D10 | The `ini_file` nightly-section removal becomes `files.transform(drop_ini_section(...))` | `files.ini_option` deliberately ships no section removal; the pure closure drops the header and its lines byte-for-byte and is a fixpoint once the section is gone. The test-section toggle stays faithful: `files.ini_option(no_extra_spaces=True)` |
 
 ## 9. Scoped out
 
-* **Non-Ubuntu families.** The role's RedHat/Suse branches (yum vars, the
-  `docker-ce-stable` repo file) are not migrated; `include_vars` dispatch
-  freezes to the Debian constants.
-* **The standalone `docker-compose` binary.** `docker_install_compose: true`
-  downloads a *binary* release artifact, outside the text-only transfer
-  family; a truthy value raises rather than being silently dropped. Use the
-  compose **plugin** package (the default).
+* **The Suse family.** The role's Suse/openrc branch is not migrated; the
+  `include_vars` dispatch freezes to the Ubuntu and RedHat constants (the
+  certbot precedent — the two families upstream ships setup files for).
+* **The legacy standalone `docker-compose` binary.** `docker_install_compose: true`
+  is the opt-in standalone-binary path the upstream defaults turn off and the
+  compose **plugin** package (the default) supersedes; this migration scopes it
+  out, and a truthy value raises rather than being silently dropped.
 * **Rootless Docker and docker.socket management.** The role's defaults do not
   manage them; neither does this migration.
 * **Mid-run group membership.** No `reset_connection` analogue exists under one

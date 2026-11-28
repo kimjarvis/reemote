@@ -7,33 +7,40 @@ The role is library code now, so it is imported (``from reemote.roles import
 ...``) and replayed against ``SimulatedHost`` through the real wave driver:
 ``run_waves(inventory, elasticsearch(v), host_factory=...)``. The factory is
 plain (non-``async``) -- every input is a resolved variable or a frozen
-constant -- so it is called, not awaited. The key download is stubbed at the
-``files.download`` control-side seam (``_fetch_url_bytes``), the same fixture
-the kubectl tests use.
+constant -- so it is called, not awaited. Both key paths -- the Ubuntu
+``files.download`` fetch and the RedHat ``control(files.fetch_url)`` barrier --
+ride the same ``_fetch_url_bytes`` stub the kubectl tests use.
 
-The load-bearing assertion is the migration's shape claim: the stream is
-**two waves on both passes** and the checkpoint is the **only barrier**. The
-configure requests, then ``checkpoint("configure done")``, then the handler
-(the restart, notified hosts only), the service task and the port wait.
-Unlike the redis role, the converged rerun still has *two* request waves --
-``meta: flush_handlers`` sat between the template tasks and the service task,
-so the service and wait follow the checkpoint even when nobody notified.
-And unlike a state request, the wait always reports changed (it is a poll,
-not a gate), which is exactly why its name is absent from ``NOTIFY_RESTART``
-(D6): the second pass's only changed entry is the wait.
+The load-bearing assertion is the migration's shape claim per family: the
+Ubuntu stream is **two waves on both passes** with the checkpoint as the
+**only barrier** -- the configure requests, then ``checkpoint("configure
+done")``, then the handler (the restart, notified hosts only), the service
+task and the port wait. The RedHat stream leads with one **control barrier**
+closing an empty wave 0 (the repo_epel shape), then runs the same
+checkpoint/tail structure one wave later. Unlike the redis role, the
+converged rerun still has *two* request waves -- ``meta: flush_handlers`` sat
+between the template tasks and the service task, so the service and wait
+follow the checkpoint even when nobody notified. And unlike a state request,
+the wait always reports changed (it is a poll, not a gate), which is exactly
+why its name is absent from ``NOTIFY_RESTART`` (D6): the second pass's only
+changed entry is the wait.
 
-**No between-pass bridge beyond two seeds**: the simulation's own mutators
-maintain every seam the second pass reads -- ``install_apt_packages`` the
-package rows, ``install_apt_repo_file`` the sources.list bytes and the
-``apt_sources`` entries (so the change-gated refresh never re-runs),
-``install_file`` the key and config content with full stat rows, the
-``SystemctlCommand`` arms the service state and enablement. The two seeded
-bridges are what no command can create offline: the ``listening_ports``/
+**What the second pass reads is maintained by the simulation itself**, with
+one documented bridge per family: ``install_apt_packages``/``install_packages``
+keep the package rows, ``install_apt_repo_file``/``install_repo_file`` the
+sources.list bytes and the ``.repo`` file (the same store ``DnfRepoFile``
+reads back), the ``SystemctlCommand`` arms the service state and enablement,
+and the files mutators the key and config content with full stat rows. The
+bridges are what no simulated command can create: the ``listening_ports``/
 ``tcp_endpoints`` rows the final ``server.wait`` reads (the simulation never
 starts a daemon -- the minio precedent) and the canned key bytes behind the
-fetch stub. The ``0660 root:elasticsearch`` configs are unreadable to the
-login user, so the second pass rides ``FileContents``' two-tier elevated
-read-back (shipped #12) and the traversal gate (#70), exercised here offline.
+fetch stub; on RedHat also the ``rpm_gpg_keys`` entry's *keyid* -- the
+``rpm --import`` stub keys itself by content hash (no OpenPGP parsing), so the
+convergence test rewrites the entry to the pinned ``ELASTIC_KEY_ID`` between
+passes, which is what a real rpmdb records (D9). The ``0660
+root:elasticsearch`` configs are unreadable to the login user, so the second
+pass rides ``FileContents``' two-tier elevated read-back (shipped #12) and the
+traversal gate (#70), exercised here offline.
 
 The config files need no pre-seed: ``files.install``'s spool-and-install
 lands the render *and* the ``mkdir -p`` of the ``jvm.options.d`` parent (D4),
@@ -59,6 +66,7 @@ from reemote.roles.elasticsearch import (
     CONF_PATH,
     CONF_USER,
     DEPENDENCIES,
+    ELASTIC_KEY_ID,
     HEAP_PATH,
     JVM_LEGACY_PATH,
     KEY_MODE,
@@ -68,6 +76,7 @@ from reemote.roles.elasticsearch import (
     REPO_URL_BASE,
     SERVICE,
     SOURCES_PATH,
+    TARGET_FAMILIES,
     WAIT_TIMEOUT,
     ElasticsearchPlan,
     elasticsearch_plan,
@@ -76,7 +85,7 @@ from reemote.roles.elasticsearch import (
     version_major,
 )
 from reemote.rolevars import RoleVarsError, resolve_vars
-from reemote.stages import CheckpointRequest, FactRequest
+from reemote.stages import CheckpointRequest, ControlRequest, FactRequest
 from tests.simulated_host import SimulatedHost
 
 #: The handler request keeps ``restart_handler``'s default label, not a name of
@@ -119,6 +128,27 @@ FAKE_KEY = (
 #: The repo line the default ``7.x`` channel renders, and the file an
 #: unnamed ``apt_repository`` appends to -- sources.list, faithfully (D2).
 REPO_LINE = f"deb {REPO_URL_BASE}/7.x/apt stable main"
+
+#: The RedHat install names in yield order: ``setup-RedHat.yml``'s ``rpm_key``
+#: and repo-template pair, then the shared ``Install Elasticsearch`` task.
+REDHAT_INSTALL_NAMES = (
+    "Add Elasticsearch GPG key",
+    "Add Elasticsearch repository",
+    "Install Elasticsearch",
+)
+
+#: ``dnf.repo``'s constructed file for the default ``7.x`` channel (D10): the
+#: upstream template's ``[elasticsearch-{{ version }}]`` section id doubles as
+#: the filename, and the line order is the operation's fixed construction.
+REPO_FILE_PATH = "/etc/yum.repos.d/elasticsearch-7.x.repo"
+EXPECTED_REPO_TEXT = (
+    "[elasticsearch-7.x]\n"
+    "name=Elasticsearch repository for 7.x packages\n"
+    f"baseurl={REPO_URL_BASE}/7.x/yum\n"
+    "enabled=1\n"
+    "gpgcheck=1\n"
+    f"gpgkey={KEY_URL}\n"
+)
 
 #: ``templates/elasticsearch.yml.j2`` rendered with every default, byte-for-
 #: byte: the frozen ``ansible_managed`` header (D3), the interpolated
@@ -270,12 +300,15 @@ def canned_fetch(monkeypatch):
 
 
 def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
-    """A two-host inventory: one Ubuntu target, one CentOS host that must be skipped.
+    """A two-host inventory: one Ubuntu target, one Alpine host that must be skipped.
 
     The role variables ride in the entry's ``roles`` mapping under
     ``"elasticsearch"``, bound by ``resolve_vars``. With no overrides every
     ``defaults/main.yml`` value applies, so the renders are
-    :data:`DEFAULT_YML` and :data:`DEFAULT_HEAP`.
+    :data:`DEFAULT_YML` and :data:`DEFAULT_HEAP`. The skipped host is Alpine --
+    the one family the role has no ``setup-*.yml`` branch for; the RedHat
+    target gets its own inventory (``make_redhat_inventory``) so each family's
+    global "only the wait changed" assertion stays trivially host-scoped.
     """
     entry: dict[str, Any] = {
         "host": "ubuntu",
@@ -297,11 +330,36 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
         entry,
         {
             "host": "web1",
-            "family": "RedHat",
+            "family": "Alpine",
             "connection": {"address": "192.0.2.11", "username": "admin"},
-            "group": "centos",
+            "group": "alpine",
         },
     ]
+
+
+def make_redhat_inventory(**overrides: Any) -> list[dict[str, Any]]:
+    """A one-host inventory: a single declared-RedHat target.
+
+    The ``setup-RedHat.yml`` twin of :func:`make_inventory`: same bare-field
+    role mapping, so an override binds exactly the way an operator writes it,
+    and a lone target host keeps the RedHat pass assertions host-global.
+    """
+    entry: dict[str, Any] = {
+        "host": "rocky1",
+        "family": "RedHat",
+        "connection": {
+            "address": "192.0.2.12",
+            "username": "supervisor",
+            "key_path": "~/.ssh/id_ed25519",
+        },
+        "group": "centos",
+        "roles": {
+            "elasticsearch": {
+            },
+        },
+    }
+    entry["roles"]["elasticsearch"].update(overrides)
+    return [entry]
 
 
 def seed(host: SimulatedHost) -> None:
@@ -336,13 +394,51 @@ def seed(host: SimulatedHost) -> None:
     }
 
 
+def seed_redhat(host: SimulatedHost) -> None:
+    """Pre-state: a stock minimal CentOS machine with no Elasticsearch installed.
+
+    The dnf-side counterpart of :func:`seed`: no package in the
+    ``DnfPackages``/``rpm_packages`` stores, no imported key in
+    ``rpm_gpg_keys``, no ``.repo`` file or ``/etc/elasticsearch`` content, the
+    service neither running nor enabled -- and the same two wait seams, since
+    the simulation never starts a daemon (the minio precedent).
+    """
+    host.packages = {}
+    host.rpm_packages = {}
+    host.rpm_gpg_keys = []
+    host.remote_files = {}
+    host.existing_files = set()
+    host.file_stats = {}
+    host.directory_stats = {
+        "/tmp": {"mode": 1777, "user": "root", "group": "root"},
+    }
+    host.existing_files |= set(host.directory_stats)
+    host.services = {}
+    host.enabled_services = set()
+    host.os_groups = ["root", "sudo"]
+    host.os_users = {}
+    host.listening_ports = {
+        ("tcp", 9200): PortInfo(listening=True, process="java", pid=4242)
+    }
+    host.tcp_endpoints = {
+        ("127.0.0.1", 9200): TcpEndpointInfo(reachable=True),
+    }
+
+
 def make_hosts(inventory: list[dict[str, Any]]) -> dict[str, SimulatedHost]:
-    """Materialize the inventory into persistent simulated hosts, seeded targets."""
+    """Materialize the inventory into persistent simulated hosts, seeded targets.
+
+    Both target families get their stock-machine seed; an Alpine (or otherwise
+    off-target) entry keeps its untouched default state, so a role that reached
+    it would be caught by the never-touched assertions.
+    """
     hosts: dict[str, SimulatedHost] = {}
     for entry in inventory:
         host = SimulatedHost.from_inventory(entry)
         if entry.get("family") == "Ubuntu":
             seed(host)
+        elif entry.get("family") == "RedHat":
+            seed_redhat(host)
         hosts[host.name] = host
     return hosts
 
@@ -373,6 +469,16 @@ def changed_entries(report: Any) -> list[Any]:
     return [entry for entry in report.merged().log if entry.changed]
 
 
+def changed_names(report: Any, host: str) -> list[str]:
+    """The changed log entry names of one pass on *host*, in log order."""
+    return [entry.name for entry in changed_entries(report) if entry.host == host]
+
+
+def host_log(report: Any, host: str) -> dict[str, Any]:
+    """*host*'s log entries of one pass, keyed by name."""
+    return {entry.name: entry for entry in report.merged().log if entry.host == host}
+
+
 def ubuntu_names(report: Any) -> set[str]:
     """Every Ubuntu log entry name of one pass."""
     return {entry.name for entry in report.merged().log if entry.host == "ubuntu"}
@@ -388,39 +494,41 @@ def ubuntu_log(report: Any) -> dict[str, Any]:
 def _kind(barrier: Any) -> tuple:
     """Classify one barrier record for the shape assertion.
 
-    A ``fact`` barrier names the fact class it reads; a ``checkpoint`` names
-    itself. An ``act``/``control`` barrier would fall through to a distinct
-    label, so a speculatively-added barrier breaks the shape test rather than
-    hiding.
+    A ``fact`` barrier names the fact class it reads; a ``checkpoint`` and a
+    ``control`` barrier name themselves (the control one through the fetched
+    function). An ``act`` barrier would fall through to a distinct label, so a
+    speculatively-added barrier breaks the shape test rather than hiding.
     """
     if isinstance(barrier, FactRequest):
         return ("fact", barrier.fact_cls)
     if isinstance(barrier, CheckpointRequest):
         return ("checkpoint", barrier.name)
+    if isinstance(barrier, ControlRequest):
+        return ("control", barrier.func.__name__)
     return ("other", type(barrier).__name__)
 
 
-def _barrier_shape(report: Any) -> list:
-    """The ubuntu host's ordered ``(wave, kind)`` barrier list for one pass."""
-    ubuntu = [r for r in report.records if r.host == "ubuntu"]
-    return [(r.wave, _kind(r.barrier)) for r in ubuntu if r.barrier is not None]
+def _barrier_shape(report: Any, host: str = "ubuntu") -> list:
+    """*host*'s ordered ``(wave, kind)`` barrier list for one pass."""
+    entries = [r for r in report.records if r.host == host]
+    return [(r.wave, _kind(r.barrier)) for r in entries if r.barrier is not None]
 
 
-def _request_waves(report: Any) -> set[int]:
-    """The set of wave numbers that carried at least one ubuntu request."""
+def _request_waves(report: Any, host: str = "ubuntu") -> set[int]:
+    """The set of wave numbers that carried at least one *host* request."""
     return {
         r.wave
         for r in report.records
-        if r.host == "ubuntu" and r.log is not None
+        if r.host == host and r.log is not None
     }
 
 
-def _wave_order(report: Any, wave: int) -> list[str]:
-    """The ubuntu host's request names in one wave, in stream order."""
+def _wave_order(report: Any, wave: int, host: str = "ubuntu") -> list[str]:
+    """*host*'s request names in one wave, in stream order."""
     return [
         entry.name
         for r in report.records
-        if r.host == "ubuntu" and r.wave == wave and r.log is not None
+        if r.host == host and r.wave == wave and r.log is not None
         for entry in ([r.log] if not isinstance(r.log, list) else r.log)
     ]
 
@@ -429,11 +537,12 @@ def _wave_order(report: Any, wave: int) -> list[str]:
 
 
 async def test_stream_is_one_checkpoint_and_two_waves(canned_fetch):
-    """The role's shape: the requests, one checkpoint, then the handler tail.
+    """The Ubuntu stream: the requests, one checkpoint, then the handler tail.
 
-    Exactly one ``checkpoint`` barrier and **no fact/act/control at all** --
-    the plan is entirely static, so anything else would be a barrier added
-    speculatively. Requests land in two waves (configure 0, tail 1).
+    Exactly one ``checkpoint`` barrier and **no fact/act/control at all** on
+    this family -- the plan is entirely static, so anything else would be a
+    barrier added speculatively (the RedHat control barrier is the RedHat
+    tests' claim). Requests land in two waves (configure 0, tail 1).
     """
     inventory = make_inventory()
     hosts = make_hosts(inventory)
@@ -589,14 +698,16 @@ async def test_package_drift_reinstalls_without_notifying(canned_fetch):
     assert [e.name for e in changed_entries(second)] == ["Install Elasticsearch", WAIT_NAME]
 
 
-async def test_non_ubuntu_host_is_never_touched(canned_fetch):
+async def test_off_family_host_is_never_touched(canned_fetch):
+    """The role has no Alpine branch (upstream ships none): the guard skips.
+
+    The family guard returns before the first yield, so the off-target host is
+    in no wave, emits no log line and its stores never move.
+    """
     inventory = make_inventory()
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
     skipped = hosts["web1"]
-
-    # The family guard returns before the first yield, so the off-target host is
-    # in no wave, emits no log line and its stores never move.
     assert not any(entry.host == "web1" for entry in report.merged().log)
     assert not any(r.host == "web1" for r in report.records)
     assert skipped.remote_files == {}
@@ -608,8 +719,9 @@ async def test_non_ubuntu_host_is_never_touched(canned_fetch):
 async def test_dry_preview_plans_the_requests_and_parks_at_the_checkpoint(canned_fetch):
     """``dry=True`` never runs a barrier, so the tail wave stays unplanned.
 
-    The role's first barrier is the checkpoint *after* the configure wave, so
-    the dry preview does plan all eight configure requests and stops there.
+    The *Ubuntu* role's first barrier is the checkpoint *after* the configure
+    wave, so the dry preview does plan all eight configure requests and stops
+    there (the RedHat dry parks earlier, at its opening control barrier).
     Nothing is applied and no notification is reported. The key fetch *does*
     run: dry mode drives the operation generators (their fact gates read the
     host) but never executes a command, and the control-side fetch happens
@@ -646,6 +758,163 @@ async def test_wait_fails_when_nothing_listens(canned_fetch):
 
     with pytest.raises(WaitTimeoutError, match="'listening': False"):
         await run_role(inventory, hosts)
+
+
+# --- the RedHat branch ----------------------------------------------------------
+
+
+async def test_redhat_stream_leads_with_one_control_barrier(canned_fetch):
+    """setup-RedHat.yml's shape: the key fetch closes an empty wave 0.
+
+    The ``control(files.fetch_url)`` barrier is the family's only addition to
+    the barrier surface (the repo_epel shape): wave 1 then carries the dnf
+    setup and the shared configure requests up to the checkpoint, and wave 2
+    is the same handler/service/wait tail. The rerun re-derives the same
+    barrier sequence -- the stream is static, only the change flags converge.
+    """
+    inventory = make_redhat_inventory()
+    hosts = make_hosts(inventory)
+    report = await run_role(inventory, hosts)
+
+    assert _barrier_shape(report, "rocky1") == [
+        (0, ("control", "fetch_url")),
+        (1, ("checkpoint", "configure done")),
+    ]
+    assert _request_waves(report, "rocky1") == {1, 2}
+    assert _wave_order(report, 1, "rocky1") == [
+        *REDHAT_INSTALL_NAMES,
+        *CONFIGURE_NAMES,
+    ]
+    assert _wave_order(report, 2, "rocky1") == [
+        HANDLER_NAME,
+        "Start Elasticsearch",
+        WAIT_NAME,
+    ]
+
+    second = await run_role(inventory, hosts)
+    assert _barrier_shape(second, "rocky1") == _barrier_shape(report, "rocky1")
+
+
+async def test_redhat_first_pass_imports_key_adds_repo_installs(canned_fetch):
+    """The setup tasks end to end: ``dnf.key``, the constructed ``dnf.repo``,
+    ``dnf.packages``, then the family-neutral config/service/wait tail.
+
+    The armored key arrives through the control barrier and the import is
+    pinned to ``ELASTIC_KEY_ID`` (D9); the repo file is ``dnf.repo``'s
+    construction of the upstream template's still-meaningful lines (D10).
+    Nothing apt-side moves and no shell action ever runs.
+    """
+    inventory = make_redhat_inventory()
+    hosts = make_hosts(inventory)
+    host = hosts["rocky1"]
+    report = await run_role(inventory, hosts)
+
+    assert canned_fetch == [KEY_URL]
+    # ``rpm --import`` ran on the fetched bytes and left one rpmdb entry --
+    # stub-keyed by content hash, bridged to the real id in the rerun (D9).
+    assert host.imported_keys == {FAKE_KEY}
+    assert len(host.rpm_gpg_keys) == 1
+
+    # The constructed repo file (D10): the section-id filename, the template's
+    # lines in the operation's fixed order, mode 0644, and no cache-refresh
+    # request anywhere -- upstream's RedHat path ran none either.
+    assert host.remote_files[REPO_FILE_PATH] == EXPECTED_REPO_TEXT.encode()
+    assert host.file_stats[REPO_FILE_PATH]["mode"] == 644
+
+    # The package landed through dnf, not apt.
+    assert "elasticsearch" in host.packages
+    assert host.apt_packages == {}
+    assert host.apt_sources == []
+
+    # The shared tail: both rendered configs, the started/enabled unit.
+    assert host.remote_files[CONF_PATH] == DEFAULT_YML.encode()
+    assert host.remote_files[HEAP_PATH] == DEFAULT_HEAP.encode()
+    assert host.services["elasticsearch.service"] == "active"
+    assert "elasticsearch.service" in host.enabled_services
+
+    log = host_log(report, "rocky1")
+    assert log["Add Elasticsearch GPG key"].changed
+    assert log["Add Elasticsearch repository"].changed
+    assert log["Configure Elasticsearch"].changed
+    assert log[HANDLER_NAME].changed
+    assert log[WAIT_NAME].changed
+    assert host.ran_shells == []
+
+
+async def test_redhat_second_pass_only_the_wait_changes(canned_fetch):
+    """The RedHat convergence claim, across the one documented simulation bridge.
+
+    The ``rpm --import`` stub records a content-hash keyid no OpenPGP tool
+    would name, so the test rewrites the entry to the pinned id -- what a
+    real rpmdb holds -- before the rerun. With that, ``dnf.key``
+    short-circuits through ``RpmGpgKeys``, the repo file and package are
+    state-equal, the configs converge, nobody notifies, and only the
+    stateless wait still reports changed (D6). The control fetch runs every
+    pass -- it feeds the import's gate; the converged import writes nothing.
+    """
+    inventory = make_redhat_inventory()
+    hosts = make_hosts(inventory)
+    host = hosts["rocky1"]
+    first = await run_role(inventory, hosts)
+    assert changed_names(first, "rocky1")
+
+    for entry in host.rpm_gpg_keys:  # the keyid bridge (D9's simulation limit)
+        entry["keyid"] = ELASTIC_KEY_ID
+
+    second = await run_role(inventory, hosts)
+    assert changed_names(second, "rocky1") == [WAIT_NAME]
+    assert HANDLER_NAME not in host_log(second, "rocky1")
+    assert canned_fetch == [KEY_URL, KEY_URL]
+    assert host.ran_shells == []
+
+
+async def test_redhat_repo_drift_readds_without_notifying(canned_fetch):
+    """A removed ``.repo`` is rewritten by the next pass -- and no restart.
+
+    ``dnf.repo``'s fact gate reads the destination back, so deleting the file
+    (content, existence and stat seams together) re-plans exactly the repo
+    request; its name is not a listener, so the handler stays away.
+    """
+    inventory = make_redhat_inventory()
+    hosts = make_hosts(inventory)
+    host = hosts["rocky1"]
+    await run_role(inventory, hosts)
+    del host.remote_files[REPO_FILE_PATH]
+    host.existing_files.discard(REPO_FILE_PATH)
+    host.file_stats.pop(REPO_FILE_PATH, None)
+    for entry in host.rpm_gpg_keys:
+        entry["keyid"] = ELASTIC_KEY_ID
+
+    second = await run_role(inventory, hosts)
+    log = host_log(second, "rocky1")
+    assert log["Add Elasticsearch repository"].changed
+    assert host.remote_files[REPO_FILE_PATH] == EXPECTED_REPO_TEXT.encode()
+    assert HANDLER_NAME not in log
+    assert changed_names(second, "rocky1") == ["Add Elasticsearch repository", WAIT_NAME]
+
+
+async def test_redhat_dry_preview_parks_at_the_control_barrier(canned_fetch):
+    """The RedHat dry fetches nothing: the body stops *before* any request.
+
+    Unlike the Ubuntu dry -- where the fetch rides the planned
+    ``files.download`` because it lives inside the operation -- the RedHat
+    barrier *is* the fetch, and ``dry=True`` never runs a barrier: no log, no
+    planned request, no fetch, no store mutation.
+    """
+    inventory = make_redhat_inventory()
+    hosts = make_hosts(inventory)
+    host = hosts["rocky1"]
+    report = await run_role(inventory, hosts, dry=True)
+
+    assert canned_fetch == []
+    assert _barrier_shape(report, "rocky1") == [(0, ("control", "fetch_url"))]
+    assert _request_waves(report, "rocky1") == set()
+    assert report.merged().log == []
+    assert changed_entries(report) == []
+    assert host.packages == {}
+    assert host.rpm_gpg_keys == []
+    assert host.remote_files == {}
+    assert host.services == {}
 
 
 # --- the version branch ---------------------------------------------------------
@@ -764,9 +1033,11 @@ def test_only_the_config_requests_notify():
 
 
 def test_frozen_constants_are_the_role_files():
-    """``defaults/main.yml`` + ``setup-Debian.yml``, collapsed to constants."""
+    """``defaults/main.yml`` + both ``setup-*.yml`` files, collapsed to constants."""
+    assert TARGET_FAMILIES == ("Ubuntu", "RedHat")
     assert DEPENDENCIES == ("apt-transport-https", "gnupg2")
     assert KEY_URL == "https://artifacts.elastic.co/GPG-KEY-elasticsearch"
+    assert ELASTIC_KEY_ID == "d88e42b4"
     assert KEY_PATH == "/etc/apt/trusted.gpg.d/elasticsearch.asc"
     assert KEY_MODE == "0644"
     assert REPO_URL_BASE == "https://artifacts.elastic.co/packages"
@@ -825,6 +1096,9 @@ def test_elasticsearch_plan_freezes_the_render_and_vars():
     assert plan.jvm_content == render_jvm_options(ElasticsearchVars(version="6.x"))
     assert plan.package == "elasticsearch-oss"
     assert plan.repo_src == f"deb {REPO_URL_BASE}/6.x/apt stable main"
+    assert plan.repo_section == "elasticsearch-6.x"
+    assert plan.repo_baseurl == f"{REPO_URL_BASE}/6.x/yum"
+    assert plan.repo_description == "Elasticsearch repository for 6.x packages"
     assert hash(plan) == hash(elasticsearch_plan(ElasticsearchVars(version="6.x", package="elasticsearch-oss", http_port=9201)))
 
 

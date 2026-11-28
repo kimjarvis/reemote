@@ -73,7 +73,7 @@ and outputs.
 | [ruby](ruby.md) | Ruby — the apt ruby packages, the rubygems package, the profile-script `$PATH` entry, Bundler and the gem list |
 | [composer](composer.md) | Composer — the signature-verified installer, the phar move, an optional `auth.json`, global packages, the `$PATH` entry |
 | [drush](drush.md) | Drush — the launcher phar and its executable bit |
-| [git](git.md) | Git — the apt-cache refresh and the `git_packages` install, as one request |
+| [git](git.md) | Git — the `git_packages` install as one request per host: the apt-cache refresh folded in on Ubuntu, the `enablerepo` carried additively on RedHat |
 | [kubectl](kubectl.md) | kubectl — the checksum-pinned release binary, installed version-suffixed with the bare name symlinked beside it |
 | [helm](helm.md) | helm — the checksum-pinned release tarball extracted into a versioned staging dir and the binary copied into place, gated on a `stat` and a version probe |
 | [mailhog](mailhog.md) | MailHog — the two release binaries downloaded into `/opt/mailhog` and the started, enabled `mailhog.service` unit |
@@ -86,11 +86,11 @@ and outputs.
 | --- | --- |
 | [repo_epel](repo_epel.md) | EPEL — installs the repository package and flips `enabled=` in the `[epel]` section alone |
 | [repo_remi](repo_remi.md) | Remi — imports the vendor key and installs the release RPM; `[remi]` ships disabled for per-transaction `--enablerepo=remi` use, while the RPM itself leaves `[remi-modular]` and `[remi-safe]` enabled |
-| [docker](docker.md) | Docker CE — the vendor repository with its URL-signed keyring, the edition packages, `daemon.json`, the service, the `docker_users` memberships |
+| [docker](docker.md) | Docker CE — the vendor repository with its signing key (the apt URL-signed keyring, or the `dnf.key` and `.repo` download behind the RedHat `FileExists` guard), the edition packages, `daemon.json`, the service, the `docker_users` memberships |
 | [datadog](datadog.md) | Datadog agent — the signing keys and repository, the package, `/etc/datadog-agent`, `conf.d` checks, two restart handlers |
 | [zabbix_agent](zabbix_agent.md) | Zabbix agent — the vendor keyring and repository lines with their stale-source purge, the agent packages, the rendered `zabbix_agentd.conf`, the service, one restart handler |
 | [kibana](kibana.md) | Kibana — the dependencies, the Elasticsearch signing key and Elastic apt repository, the `kibana` package, the service, the rendered `kibana.yml`, one restart handler |
-| [elasticsearch](elasticsearch.md) | Elasticsearch — the dependencies, the Elastic signing key and apt repository, the `elasticsearch` package, the rendered config and version-appropriate heap file, the service and port wait, one restart handler |
+| [elasticsearch](elasticsearch.md) | Elasticsearch — the dependencies, the Elastic signing key and repository (apt, or the rpm keyring and `dnf.repo` on RedHat), the `elasticsearch` package, the rendered config and version-appropriate heap file, the service and port wait, one restart handler |
 | [node_exporter](node_exporter.md) | node_exporter — the release tarball unpacked and the binary moved into place, the service group and account, the rendered systemd unit, the running/enabled unit, the restart handler and the metrics-endpoint check |
 | [gitlab](gitlab.md) | GitLab CE — the dependencies and the vendor repository run through its own `script.deb.sh`/`script.rpm.sh` (apt or dnf by family), the optional version pin, the fact-gated bootstrap reconfigure, the optional self-signed certificate, the rendered `/etc/gitlab/gitlab.rb` and one command handler |
 
@@ -139,13 +139,13 @@ and outputs.
 | [composer](composer.md) | [`geerlingguy.composer`](https://github.com/geerlingguy/ansible-role-composer) | Ubuntu | 5 + 2P fresh / 3 + P converged | none | no | 1 |
 | [drush](drush.md) | [`geerlingguy.drush`](https://github.com/geerlingguy/ansible-role-drush) | Ubuntu, RedHat | exactly 3 | none | no | 1 |
 | [ntp](ntp.md) | [`geerlingguy.ntp`](https://github.com/geerlingguy/ansible-role-ntp) | Ubuntu | 5 changed / 4 converged | none | **yes** | 1 |
-| [docker](docker.md) | [`geerlingguy.docker`](https://github.com/geerlingguy/ansible-role-docker) | Ubuntu | 5 changed / 4 converged | none | no | 1 |
+| [docker](docker.md) | [`geerlingguy.docker`](https://github.com/geerlingguy/ansible-role-docker) | Ubuntu, RedHat | 5 changed / 4 converged; RedHat 7 fresh / 6 converged | none | no | 1 |
 | [java](java.md) | [`geerlingguy.java`](https://github.com/geerlingguy/ansible-role-java) | Ubuntu | 2 | none | no | 1 |
 | [memcached](memcached.md) | [`geerlingguy.memcached`](https://github.com/geerlingguy/ansible-role-memcached) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
 | [nfs](nfs.md) | [`geerlingguy.nfs`](https://github.com/geerlingguy/ansible-role-nfs) | Ubuntu | 2 changed / 1 converged | none | no | 1 |
 | [nodejs](nodejs.md) | [`geerlingguy.nodejs`](https://github.com/geerlingguy/ansible-role-nodejs) | Ubuntu | exactly 1 | none | no | 1 |
 | [pip](pip.md) | [`geerlingguy.pip`](https://github.com/geerlingguy/ansible-role-pip) | Ubuntu | 2 | none | no | 1 |
-| [git](git.md) | [`geerlingguy.git`](https://github.com/geerlingguy/ansible-role-git) | Ubuntu | 1 | none | no | 1 |
+| [git](git.md) | [`geerlingguy.git`](https://github.com/geerlingguy/ansible-role-git) | Ubuntu, RedHat | 1 | none | no | 1 |
 | [security](security.md) | [`geerlingguy.security`](https://github.com/geerlingguy/ansible-role-security) | Ubuntu | 2 changed / 1 converged | none | no | 1 |
 | [certbot](certbot.md) | [`geerlingguy.certbot`](https://github.com/geerlingguy/ansible-role-certbot) | Ubuntu, RedHat | `2 + 2C` (`C` certs; Fedora too), `3 + 2C` Rocky/Alma; 2–3 install-only | none | no | 1 |
 | [redis](redis.md) | [`geerlingguy.redis`](https://github.com/geerlingguy/ansible-role-redis) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
@@ -155,13 +155,13 @@ and outputs.
 | [helm](helm.md) | [`geerlingguy.helm`](https://github.com/geerlingguy/ansible-role-helm) | Ubuntu | 2 fresh / 2 converged (3 with a stale binary) | none | no | 1 |
 | [systemd](systemd.md) | [`0x0I/systemd`](https://github.com/0x0I/ansible-role-systemd) | Ubuntu | 2 (3 with a per-user unit) | none | **yes** | 1 |
 | [glusterfs](glusterfs.md) | [`geerlingguy.glusterfs`](https://github.com/geerlingguy/ansible-role-glusterfs) | Ubuntu | 2 fresh / 2 converged | none | no | 1 |
-| [firewall](firewall.md) | [`geerlingguy.firewall`](https://github.com/geerlingguy/ansible-role-firewall) | Ubuntu | 4 first run / 2 converged | none | **yes** | 1 |
+| [firewall](firewall.md) | [`geerlingguy.firewall`](https://github.com/geerlingguy/ansible-role-firewall) | Ubuntu, RedHat | 4 first run / 2 converged (both families) | none | **yes** | 1 |
 | [zabbix_agent](zabbix_agent.md) | [`dj-wasabi/ansible-zabbix-agent`](https://github.com/ansible-community/ansible-zabbix-agent) | Ubuntu | 5 fresh / 4 converged | none | **yes** | 1 |
 | [swap](swap.md) | [`geerlingguy.swap`](https://github.com/geerlingguy/ansible-role-swap) | Ubuntu | 5 fresh / 2 converged | none | no | 1 |
 | [minio](minio.md) | [`wezhai/minio`](https://github.com/wezhai/minio) | Ubuntu | 8 changed / 8 converged on the full set (1 + handler + one per `mc` act + sync tail) | `MinioOutputs(service, install_dir, endpoint)` | **yes** | 1 |
 | [kibana](kibana.md) | [`geerlingguy.kibana`](https://github.com/geerlingguy/ansible-role-kibana) | Ubuntu | 2 changed / 1 converged | none | **yes** | 1 |
 | [repo_remi](repo_remi.md) | [`geerlingguy.repo-remi`](https://github.com/geerlingguy/ansible-role-repo-remi) | RedHat | 3–4 | none | no | 1 |
-| [elasticsearch](elasticsearch.md) | [`geerlingguy.elasticsearch`](https://github.com/geerlingguy/ansible-role-elasticsearch) | Ubuntu | 2 changed / 2 converged (the wait always reports) | none | **yes** | 1 |
+| [elasticsearch](elasticsearch.md) | [`geerlingguy.elasticsearch`](https://github.com/geerlingguy/ansible-role-elasticsearch) | Ubuntu, RedHat | 2 changed / 2 converged (the wait always reports); RedHat 3 fresh / 3 converged | none | **yes** | 1 |
 | [node_exporter](node_exporter.md) | [`geerlingguy.node_exporter`](https://github.com/geerlingguy/ansible-role-node_exporter) | Ubuntu | 3 fresh (4 resolving `latest`) / 3 converged | none | no | 1 |
 | [ruby](ruby.md) | [`geerlingguy.ruby`](https://github.com/geerlingguy/ansible-role-ruby) | Ubuntu | 2 | none | no | 1 |
 | [apache_php_fpm](apache_php_fpm.md) | [`geerlingguy.apache-php-fpm`](https://github.com/geerlingguy/ansible-role-apache-php-fpm) | Ubuntu | 2 fresh / 1 converged | none | no | 1 |
@@ -242,9 +242,12 @@ The template role, and the one whose wave count is host-dependent.
 - **[ntp](ntp.md)** — the NTP daemon, `tzdata`, the system timezone, the
   post-install `systemd-timesyncd` stop, the templated config, `restart ntp` and
   `restart cron`. Two checkpoints, read separately: two channels, two reports.
-- **[docker](docker.md)** — the Docker CE repository with its URL-signed keyring,
-  the edition packages, `daemon.json`, an ExecStart drop-in, the service, the
-  `docker_users` memberships. Two checkpoints unioned into one handler.
+- **[docker](docker.md)** — the Docker CE repository with its signing key (apt's
+  URL-signed keyring, or the `dnf.key`/`files.download` pair behind a
+  `fact(FileExists)` guard and a `control` fetch on RedHat), the obsolete-package
+  purge, the edition packages, `daemon.json`, an ExecStart drop-in, the service,
+  the `docker_users` memberships; on RedHat also the test/nightly section edits
+  and the RHEL 8 containerd block. Two checkpoints unioned into one handler.
 - **[java](java.md)** — the distribution's default OpenJDK and an optional
   `JAVA_HOME` profile script. The cheapest end-to-end role: one barrier, one
   request wave, no checkpoint.
@@ -261,9 +264,11 @@ The template role, and the one whose wave count is host-dependent.
 - **[pip](pip.md)** — the distro's pip package, the PEP 668 `EXTERNALLY-MANAGED`
   marker removed from the interpreter's own stdlib path, then the package list.
   One `fact(PythonVersion)` barrier, because that path varies by release.
-- **[git](git.md)** — the apt-cache refresh and the `git_packages` install, as one
-  request. The cheapest shape in the corpus: zero barriers, one wave, one
-  operation, so a dry pass plans the whole wave rather than parking.
+- **[git](git.md)** — the `git_packages` install as one request per host: the
+  apt-cache refresh folded in on Ubuntu, the `enablerepo` carried additively on
+  RedHat (inert on apt, as upstream never reads it there). The cheapest shape in
+  the corpus: zero barriers, one wave, one operation per host, so a dry pass
+  plans the whole wave rather than parking.
 - **[security](security.md)** — the eight `sshd_config` hardening directives and
   the two access lists, both sudoers loops, Fail2Ban and unattended-upgrades, then
   `reload systemd`, `restart ssh` and `reload fail2ban`. The one-checkpoint, three
@@ -355,10 +360,12 @@ The template role, and the one whose wave count is host-dependent.
   GPG key import, then the staged release RPM install. The EPEL twin minus the
   configure stage: two `fact` barriers and a `control` fetch, no checkpoint, and
   a converged host emits no request at all.
-- **[elasticsearch](elasticsearch.md)** — the `apt-transport-https`/`gnupg2`
-  dependencies, the Elasticsearch key downloaded into `trusted.gpg.d`, the
+- **[elasticsearch](elasticsearch.md)** — on Ubuntu, the `apt-transport-https`/`gnupg2`
+  dependencies, the Elasticsearch key downloaded into `trusted.gpg.d`, and the
   Elastic apt repository appended to `sources.list` with its change-gated
-  refresh, the package, the rendered `elasticsearch.yml` and the version-selected
+  refresh; on RedHat, the setup-RedHat twin — a `control` key fetch feeding
+  `dnf.key` and the version-sectioned file from `dnf.repo`. Then the package
+  (apt or dnf), the rendered `elasticsearch.yml` and the version-selected
   heap file with their metadata companions, then the restart handler, the
   service and the port wait. The `flush_handlers` tail role: the post-checkpoint
   wave never disappears, and the stateless wait — never a notifier — is its one
@@ -471,8 +478,8 @@ failing on the first `apt` call. The `family` field is a declaration the role
 trusts. Ten roles read `fact(LinuxDistribution)` for their own reasons —
 `certbot`, `docker`, `java`, `ntp`, `php`, `php_versions`, `postgresql`,
 `repo_epel`, `repo_remi`, `varnish` — and
-`certbot`, `java`, `ntp`, `postgresql`, `repo_epel` and `repo_remi` treat that
-read as the check
+`certbot`, `docker`, `java`, `ntp`, `postgresql`, `repo_epel` and `repo_remi`
+treat that read as the check
 that the machine matches the declaration, raising before any request is built
 when it does not.
 

@@ -3,10 +3,12 @@
 
 # """The Elasticsearch role (migrated from ``geerlingguy.elasticsearch``).
 #
-# Installs Elasticsearch on Ubuntu hosts: the ``apt-transport-https``/``gnupg2``
-# dependencies, the Elasticsearch signing key downloaded into
-# ``/etc/apt/trusted.gpg.d``, the ``artifacts.elastic.co`` apt repository (with
-# its change-gated index refresh), the ``elasticsearch`` package, the rendered
+# Installs Elasticsearch on Ubuntu and RedHat hosts: on Debian the
+# ``apt-transport-https``/``gnupg2`` dependencies, the Elasticsearch signing key
+# downloaded into ``/etc/apt/trusted.gpg.d``, the ``artifacts.elastic.co`` apt
+# repository (with its change-gated index refresh); on RedHat the ``rpm_key``
+# import and the ``dnf.repo`` file of ``setup-RedHat.yml``. Family-neutral from
+# there: the ``elasticsearch`` package, the rendered
 # ``/etc/elasticsearch/elasticsearch.yml`` and the version-appropriate JVM heap
 # file (root:elasticsearch, mode ``0660``, each with its metadata companion), the
 # started/enabled service, and a TCP wait for the HTTP port; a config change
@@ -15,14 +17,14 @@
 # ``defaults/main.yml``, bound from the inventory entry's ``elasticsearch`` role
 # mapping by :func:`~reemote.rolevars.resolve_vars`.
 #
-# Target: hosts in the ``"Ubuntu"`` OS family. The role's RedHat branch
-# (``setup-RedHat.yml``'s ``yum`` repository task) is out of scope, so the
-# ``include_tasks`` OS dispatch collapses to the Debian request set below and an
-# off-target host returns before its first ``yield``, emitting no requests, no
-# barriers and no log lines at all.
+# Target: hosts in the ``"Ubuntu"`` or ``"RedHat"`` OS family -- both
+# ``setup-*.yml`` branches of the role are mapped, the ``include_tasks`` OS
+# dispatch becoming the family branch inside :func:`install`. There is no
+# Alpine branch in the role, so an off-target host returns before its first
+# ``yield``, emitting no requests, no barriers and no log lines at all.
 #
-# The stream is two waves and one checkpoint (the kibana shape, plus the tail
-# the kibana role does not have):
+# The stream is two waves and one checkpoint on Ubuntu (the kibana shape, plus
+# the tail the kibana role does not have):
 #
 # 0. :func:`install` then :func:`configure` -- the dependency install, the key
 #    download, the repository (its ``update_cache`` refresh rides the change),
@@ -35,11 +37,18 @@
 #    host and the ``when=``-gated version branch lives inside the plan, not on
 #    the requests.
 #
-# **No facts, acts or controls at all**: nothing reads remote state between
-# tasks -- the ``get_url``/``apt_repository`` pair are operations whose own fact
-# gates (content equality, repository identity) live inside their commands, and
-# the version branch is decided by the :attr:`ElasticsearchVars.version`
-# string alone. The checkpoint is the entire barrier surface.
+# On RedHat one ``control`` barrier leads, so the stream is three waves: the
+# key fetch closes an empty wave 0 (the ``repo_epel`` shape), then the same
+# install/configure requests and ``checkpoint("configure done")`` fill wave 1,
+# and wave 2 is the same handler/service/wait tail.
+#
+# **No facts or acts at all**: nothing reads remote state between tasks -- the
+# ``get_url``/``apt_repository`` pair and the ``rpm_key``/repo-template pair are
+# operations whose own fact gates (content equality, repository identity,
+# keyring membership) live inside their commands, and the version branch is
+# decided by the :attr:`ElasticsearchVars.version` string alone. On Ubuntu the
+# checkpoint is the entire barrier surface; the RedHat path adds only the
+# control-side key fetch (D9), whose input is a frozen constant URL.
 #
 # Prerequisites: the config renders use Jinja2 (``{{ }}`` interpolation in
 # ``templates/elasticsearch.yml.j2`` and the two heap templates), imported only
@@ -88,10 +97,34 @@
 #   stateless (it always reports changed), the wait's request name is
 #   deliberately **absent** from :data:`NOTIFY_RESTART`: a converged pass still
 #   logs the wait as changed, and it must not restart the service forever.
-# * the RedHat path is scoped out (D7): a Phase 0 single-OS decision.
+# * ``setup-RedHat.yml`` is migrated as the family branch inside
+#   :func:`install` (D7): its ``rpm_key``/repo-template pair become
+#   ``dnf.key``/``dnf.repo`` (D9, D10 below), and ``main.yml``'s generic
+#   ``package`` task runs through ``dnf.packages`` on those hosts instead of
+#   ``apt.packages``. The configure, service and wait tasks need no branch --
+#   they were family-neutral in the role too.
 # * the Java prerequisite stays with the caller (D8), as in the README.
+# * Ansible's ``rpm_key: key=<URL>`` becomes a ``control`` fetch of the armored
+#   key plus ``dnf.key(src=stream, keyid="d88e42b4")`` (D9): reemote's
+#   ``dnf.key`` takes a control-side stream, not a URL the target reads -- the
+#   ``repo_epel`` recipe. The pinned short id is the *first* key of the
+#   published file (which actually carries two); it makes the import idempotent
+#   through the ``RpmGpgKeys`` fact, and both keys still land in the rpm
+#   keyring exactly as ``rpm --import`` put them there. Re-pinning is on the
+#   operator if Elastic rotates the signing key: the role never checksum-pins
+#   the artifact itself (D1).
+# * ``template elasticsearch.repo.j2`` becomes ``dnf.repo``'s constructed file
+#   (D10): ``dnf.repo`` couples the section id and the filename, so the file is
+#   ``/etc/yum.repos.d/elasticsearch-<version>.repo`` where upstream wrote
+#   ``elasticsearch.repo`` with an ``[elasticsearch-<version>]`` section -- the
+#   section id, what ``dnf repolist`` shows, is preserved. The template's
+#   ``type=rpm-md`` is dnf's default repo type and ``autorefresh=1`` a yum-era
+#   option dnf ignores, so neither line is rendered; and no metadata refresh is
+#   issued because the role's RedHat path ran none -- ``dnf`` picks the repo up
+#   on its next transaction on its own.
 # """
 
+import io
 from collections.abc import Generator
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -101,11 +134,16 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from ..core import op
 from ..handlers import changed_hosts, restart_handler
 from ..hosts import Host
-from ..modules import apt, files, server, systemd
+from ..modules import apt, dnf, files, server, systemd
 from ..rolevars import VarsSet
-from ..stages import Deploy, StageItem, checkpoint
+from ..stages import Deploy, StageItem, checkpoint, control
 
-# --- role constants (defaults/main.yml + tasks/setup-Debian.yml, Ubuntu path) --
+# --- role constants (defaults/main.yml + tasks/setup-Debian.yml / setup-RedHat.yml) --
+
+#: The families with a ``setup-*.yml`` branch in the role: both are migrated,
+#: and any other family (there is no Alpine branch) is skipped whole by the
+#: body's guard.
+TARGET_FAMILIES = ("Ubuntu", "RedHat")
 
 #: ``setup-Debian.yml``'s ``apt: name=[apt-transport-https, gnupg2]``: the
 #: https-transport and the ``gpg`` the Elastic key handling needs. One request.
@@ -128,6 +166,12 @@ KEY_MODE = "0644"
 #: unnamed ``apt_repository`` task appended to.
 REPO_URL_BASE = "https://artifacts.elastic.co/packages"
 SOURCES_PATH = "/etc/apt/sources.list"
+
+#: The short id of the *first* key in the published armored file (full
+#: fingerprint ``46095ACC8548582C1A2699A9D27D666CD88E42B4``; the file carries a
+#: second key too and ``rpm --import`` records both). Pinned so the RedHat
+#: ``dnf.key`` import is idempotent through the ``RpmGpgKeys`` fact (D9).
+ELASTIC_KEY_ID = "d88e42b4"
 
 #: The service unit the ``service`` task and the ``restart elasticsearch``
 #: handler act on -- the role hard-codes the name, so it is a constant.
@@ -507,11 +551,13 @@ class ElasticsearchPlan:
     """One host's resolved deploy target, built by the body.
 
     The role's resolved artifacts are the two rendered files -- the destination
-    of the JVM one already decided by the version branch -- plus the repository
-    line and the flags the package, service and wait requests read; the key
-    URL/path and the config modes are frozen constants. It replaces a per-host
-    plan dict: under a per-host body the plan is a local, rendered after ``hv``
-    resolves and before the request wave is built.
+    of the JVM one already decided by the version branch -- plus both families'
+    repository forms (the apt line, and the ``dnf.repo`` section id, baseurl and
+    description from ``elasticsearch.repo.j2``) and the flags the package,
+    service and wait requests read; the key URL/path and the config modes are
+    frozen constants. It replaces a per-host plan dict: under a per-host body
+    the plan is a local, rendered after ``hv`` resolves and before the request
+    wave is built.
     """
 
     config_content: str
@@ -524,6 +570,9 @@ class ElasticsearchPlan:
     network_host: str
     http_port: int
     repo_src: str
+    repo_section: str
+    repo_baseurl: str
+    repo_description: str
 
 
 # --- pure helpers ------------------------------------------------------------
@@ -592,7 +641,8 @@ def elasticsearch_plan(hv: ElasticsearchVars) -> ElasticsearchPlan:
     Control-side work inside the body, before the request wave is built: the
     Jinja2 templates become plain ``str``s (hashable, identical across waves)
     and the version string decides the JVM destination and becomes the concrete
-    repository line.
+    repository line and repo file (the ``{{ elasticsearch_version }}``
+    interpolations of ``setup-Debian.yml`` and ``elasticsearch.repo.j2``).
     """
     return ElasticsearchPlan(
         config_content=render_elasticsearch_yml(hv),
@@ -605,6 +655,9 @@ def elasticsearch_plan(hv: ElasticsearchVars) -> ElasticsearchPlan:
         network_host=hv.network_host,
         http_port=hv.http_port,
         repo_src=f"deb {REPO_URL_BASE}/{hv.version}/apt stable main",
+        repo_section=f"elasticsearch-{hv.version}",
+        repo_baseurl=f"{REPO_URL_BASE}/{hv.version}/yum",
+        repo_description=f"Elasticsearch repository for {hv.version} packages",
     )
 
 
@@ -612,51 +665,83 @@ def elasticsearch_plan(hv: ElasticsearchVars) -> ElasticsearchPlan:
 
 
 def install(plan: ElasticsearchPlan) -> Deploy:
-    """``tasks/setup-Debian.yml`` plus the ``Install Elasticsearch`` task.
+    """The family's ``setup-*.yml`` plus the ``Install Elasticsearch`` task.
 
-    Branch-free: the plan is entirely static, so this stage is one pure request
-    wave (the kibana precedent). The three Debian tasks run in the role's own
+    The plan is entirely static, so this stage is one pure request wave (the
+    kibana precedent) on Ubuntu: the three Debian tasks run in the role's own
     order -- dependencies, key, repository -- and the generic ``package`` task
     that follows them in ``main.yml`` lands in the same wave, since nothing
-    between them reads the machine. None of the four carries a ``notify`` in
-    the role, so none of the names is in :data:`NOTIFY_RESTART`.
+    between them reads the machine. On RedHat the stage opens with the
+    migration's one ``control`` barrier (D9) -- the key fetch feeding
+    ``dnf.key`` -- then the repo file (D10) and the package; the barrier closes
+    the empty wave 0 and these requests land in wave 1 with the configure
+    stage. No setup or package task carries a ``notify`` in either family, so
+    none of the names is in :data:`NOTIFY_RESTART`.
     """
 
     def deploy(host: Host) -> Generator[StageItem, Any]:
-        # setup-Debian.yml task 1: apt name=[apt-transport-https, gnupg2].
-        yield op(
-            apt.packages,
-            name="Ensure dependencies are installed",
-            packages=DEPENDENCIES,
-            sudo=True,
-        )
-        # setup-Debian.yml task 2: get_url of the armored Elastic key into
-        # trusted.gpg.d (D1: content-idempotent, control-side fetch; the key
-        # needs a login-readable 0644 so its read-back converges).
-        yield op(
-            files.download,
-            name="Add Elasticsearch apt key",
-            url=KEY_URL,
-            dest=KEY_PATH,
-            mode=KEY_MODE,
-            sudo=True,
-        )
-        # setup-Debian.yml task 3: apt_repository ... update_cache=true, with no
-        # name/filename -- faithfully the same file apt.repo manages when
-        # filename is None, /etc/apt/sources.list (D2); the refresh is
-        # change-gated inside the operation (issue #14).
-        yield op(
-            apt.repo,
-            name="Add Elasticsearch repository",
-            src=plan.repo_src,
-            update_cache=True,
-            sudo=True,
-        )
+        if host.family == "RedHat":
+            # setup-RedHat.yml task 1: rpm_key of the armored Elastic key into
+            # the rpm keyring (D9: control-side fetch, pinned short id so the
+            # import converges through RpmGpgKeys).
+            key_text = yield control(files.fetch_url, KEY_URL)
+            yield op(
+                dnf.key,
+                name="Add Elasticsearch GPG key",
+                src=io.BytesIO(key_text.encode("utf-8")),
+                keyid=ELASTIC_KEY_ID,
+                sudo=True,
+            )
+            # setup-RedHat.yml task 2: elasticsearch.repo.j2 becomes dnf.repo's
+            # constructed file (D10): the version-selected section id, baseurl
+            # and name, gpgcheck on and the key URL named, exactly the
+            # template's lines that dnf still honours.
+            yield op(
+                dnf.repo,
+                name="Add Elasticsearch repository",
+                src=plan.repo_section,
+                baseurl=plan.repo_baseurl,
+                description=plan.repo_description,
+                gpgkey=KEY_URL,
+                sudo=True,
+            )
+        else:
+            # setup-Debian.yml task 1: apt name=[apt-transport-https, gnupg2].
+            yield op(
+                apt.packages,
+                name="Ensure dependencies are installed",
+                packages=DEPENDENCIES,
+                sudo=True,
+            )
+            # setup-Debian.yml task 2: get_url of the armored Elastic key into
+            # trusted.gpg.d (D1: content-idempotent, control-side fetch; the key
+            # needs a login-readable 0644 so its read-back converges).
+            yield op(
+                files.download,
+                name="Add Elasticsearch apt key",
+                url=KEY_URL,
+                dest=KEY_PATH,
+                mode=KEY_MODE,
+                sudo=True,
+            )
+            # setup-Debian.yml task 3: apt_repository ... update_cache=true, with no
+            # name/filename -- faithfully the same file apt.repo manages when
+            # filename is None, /etc/apt/sources.list (D2); the refresh is
+            # change-gated inside the operation (issue #14).
+            yield op(
+                apt.repo,
+                name="Add Elasticsearch repository",
+                src=plan.repo_src,
+                update_cache=True,
+                sudo=True,
+            )
         # main.yml: package name={{ elasticsearch_package }} state={{ ... }}.
-        # present/latest map onto the two flags; the task carries no update
-        # because the repository request already refreshed the cache.
+        # present/latest map onto the two flags; the Debian task carries no
+        # update because the repository request already refreshed the cache,
+        # and the RedHat one because upstream's dnf path ran no refresh (D10).
+        # A version pin rides the package string on both families.
         yield op(
-            apt.packages,
+            dnf.packages if host.family == "RedHat" else apt.packages,
             name="Install Elasticsearch",
             packages=(plan.package,),
             present=True,
@@ -793,7 +878,7 @@ def start(plan: ElasticsearchPlan) -> Deploy:
 
 
 def elasticsearch(v: VarsSet[ElasticsearchVars]) -> Deploy:
-    """Install and configure Elasticsearch on Ubuntu hosts, and run its handler.
+    """Install and configure Elasticsearch on Ubuntu and RedHat hosts, and run its handler.
 
     Args:
         v: The role's resolved variables, one :class:`ElasticsearchVars` per
@@ -817,12 +902,13 @@ def elasticsearch(v: VarsSet[ElasticsearchVars]) -> Deploy:
 
     def deploy(host: Host) -> Generator[StageItem, Any]:
         hv = v.for_host(host)
-        if host.family != "Ubuntu":
+        if host.family not in TARGET_FAMILIES:
             return
 
-        # Wave 0: the Debian setup, the package and the rendered config --
-        # static plan, no fact barriers -- closed by the role's only barrier.
-        # The checkpoint must immediately follow the stage it reports on; the
+        # The Debian setup (or, on RedHat, the control key fetch that closes
+        # an empty wave 0 first), the package and the rendered config -- static
+        # plan, no fact barriers -- closed by the role's only checkpoint. The
+        # checkpoint must immediately follow the stage it reports on; the
         # handler wave's entries would be invisible to a second checkpoint,
         # and nothing after the restart reads a report.
         plan = elasticsearch_plan(hv)

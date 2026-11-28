@@ -10,9 +10,10 @@ The role is library code now, so it is imported (``from reemote.roles import
 called, not awaited.
 
 The load-bearing assertion is the migration's shape claim: **zero barriers and
-one request wave** -- nothing needs a read of the machine before the single
-install request can be built, so the whole role is one ``apt.packages`` record
-in wave 0 and no ``fact``/``act``/``checkpoint``/``control`` record exists. A
+one request wave per host** -- nothing needs a read of the machine before the
+single install request can be built, so each family's whole role is one
+package record in wave 0 (``apt.packages`` on Ubuntu, ``dnf.packages`` on
+RedHat) and no ``fact``/``act``/``checkpoint``/``control`` record exists. A
 speculatively-added barrier breaks the shape test rather than hiding.
 
 Because there is no barrier, ``dry=True`` does not park early the way the
@@ -22,31 +23,35 @@ carry ``planned`` but never ``log``, so the dry assertions filter on
 ``r.planned is not None``.
 
 No simulation bridge is needed for idempotence: the simulation's own mutators
-maintain every seam the second pass reads -- ``install_apt_packages`` records
-the packages and the ``AptUpdateCommand`` arm refreshes ``apt_update_stamp``,
-so the folded cache refresh (deviation D1) skips on the second apply.
+maintain every seam the second pass reads -- ``install_apt_packages``/``install_
+packages`` record the packages and the ``AptUpdateCommand`` arm refreshes
+``apt_update_stamp``, so the folded Ubuntu cache refresh (deviation D1) skips on
+the second apply and the RedHat install converges on the ``DnfPackages`` fact.
 """
 
 import pytest
 
 from reemote import run_waves
 from reemote.roles import GitVars, git
-from reemote.roles.git import APT_CACHE_VALID_TIME
+from reemote.roles.git import APT_CACHE_VALID_TIME, TARGET_FAMILIES
 from reemote.rolevars import RoleVarsError, resolve_vars
 from reemote.stages import CheckpointRequest, FactRequest
 from tests.simulated_host import SimulatedHost
 
+UBUNTU_NAME = "Ensure git is installed"
+REDHAT_NAME = "Ensure git is installed (RedHat)"
+
 
 def make_inventory(**overrides) -> list[dict]:
-    """A two-host inventory: one Ubuntu target, one CentOS host that must be skipped.
+    """A three-host inventory: an Ubuntu and a RedHat target, one Alpine host.
 
-    The role variables ride in the entry's ``roles`` mapping under ``"git"``,
-    bound by ``resolve_vars``. The base entry widens ``packages`` to
-    ``git``/``git-svn`` so the default path exercises the package-list variable;
-    the overrides drive the non-default branches (the empty list, the defaults,
-    the scoped-out source knob).
+    Both targets carry a ``git`` role mapping (``git``/``git-svn``) so each
+    family's package request is exercised; the overrides drive the non-default
+    branches (the empty list, the defaults, the scoped-out source knob) on the
+    Ubuntu entry. The Alpine host is off-target -- the role has no upstream
+    path there -- and must be skipped by the family guard.
     """
-    entry = {
+    ubuntu = {
         "host": "ubuntu",
         "family": "Ubuntu",
         "connection": {
@@ -62,14 +67,24 @@ def make_inventory(**overrides) -> list[dict]:
             },
         },
     }
-    entry["roles"]["git"].update(overrides)
+    ubuntu["roles"]["git"].update(overrides)
     return [
-        entry,
+        ubuntu,
         {
             "host": "web1",
             "family": "RedHat",
-            "connection": {"address": "192.0.2.11", "username": "admin"},
+            "connection": {
+                "address": "192.0.2.11",
+                "username": "admin",
+            },
             "group": "centos",
+            "roles": {"git": {"packages": ["git", "git-svn"]}},
+        },
+        {
+            "host": "db1",
+            "family": "Alpine",
+            "connection": {"address": "192.0.2.12", "username": "root"},
+            "group": "alpine",
         },
     ]
 
@@ -100,6 +115,11 @@ def make_hosts(inventory: list[dict]) -> dict[str, SimulatedHost]:
         host = SimulatedHost.from_inventory(entry)
         if entry.get("family") == "Ubuntu":
             seed(host)
+        elif entry.get("family") == "RedHat":
+            # A stock RHEL machine with no git installed: the dnf store is
+            # empty (so the install is a real change) and apt is never touched.
+            host.packages = {}
+            host.apt_packages = {}
         hosts[host.name] = host
     return hosts
 
@@ -130,6 +150,23 @@ def ubuntu_log(report) -> dict[str, object]:
     return {
         entry.name: entry for entry in report.merged().log if entry.host == "ubuntu"
     }
+
+
+def redhat_log(report) -> dict[str, object]:
+    """The RedHat host's log entries of one pass, keyed by name."""
+    return {entry.name: entry for entry in report.merged().log if entry.host == "web1"}
+
+
+def request_kwargs(report, host: str, name: str) -> dict:
+    """The forwarded keyword arguments of the one planned request *name* on *host*."""
+    record = next(
+        record
+        for record in report.records
+        if record.host == host
+        and record.planned is not None
+        and record.planned.request.name == name
+    )
+    return record.planned.request.kwargs
 
 
 def _kind(barrier) -> tuple:
@@ -211,8 +248,43 @@ async def test_first_pass_installs_git_and_refreshes_the_cache():
 
     # The single request changed on a virgin host; the role is all operations.
     log = ubuntu_log(report)
-    assert log["Ensure git is installed"].changed
+    assert log[UBUNTU_NAME].changed
     assert host.ran_shells == []
+
+
+async def test_first_pass_installs_git_via_dnf_on_redhat():
+    """The RedHat branch installs through ``dnf.packages``, not ``apt``."""
+    inventory = make_inventory()
+    hosts = make_hosts(inventory)
+    host = hosts["web1"]
+    report = await run_role(inventory, hosts)
+
+    # The two packages land in the dnf store; apt is never touched here.
+    assert "git" in host.packages
+    assert "git-svn" in host.packages
+    assert host.apt_packages == {}
+
+    # The RedHat request changed, and its upstream task refreshes no
+    # metadata, so there is no cache update on this family.
+    assert redhat_log(report)[REDHAT_NAME].changed
+    assert request_kwargs(report, "web1", REDHAT_NAME)["packages"] == (
+        "git",
+        "git-svn",
+    )
+    assert host.ran_shells == []
+
+
+async def test_redhat_stream_is_barrier_free():
+    """The RedHat host is the same zero-barrier, one-request stream as Ubuntu."""
+    inventory = make_inventory()
+    hosts = make_hosts(inventory)
+    report = await run_role(inventory, hosts)
+
+    web1 = [r for r in report.records if r.host == "web1"]
+    assert [r.barrier for r in web1 if r.barrier is not None] == []
+    assert {r.wave for r in web1 if r.log is not None} == {0}
+    # The upstream RedHat task refreshes no metadata, so apt is untouched.
+    assert hosts["web1"].apt_packages == {}
 
 
 async def test_second_pass_is_a_noop():
@@ -221,26 +293,37 @@ async def test_second_pass_is_a_noop():
     first = await run_role(inventory, hosts)
     assert changed_entries(first), "the first pass must actually deploy something"
 
-    # The migration's idempotence claim, with no bridge: the packages are
-    # installed and the cache stamp is fresh, so the folded refresh skips.
+    # The migration's idempotence claim, with no bridge: on Ubuntu the packages
+    # are installed and the cache stamp is fresh; on RedHat the dnf store
+    # already carries every package.
     second = await run_role(inventory, hosts)
     assert changed_entries(second) == []
     assert hosts["ubuntu"].ran_shells == []
+    assert hosts["web1"].ran_shells == []
 
 
-async def test_non_ubuntu_host_is_never_touched():
+async def test_alpine_host_is_never_touched():
+    """The family guard skips Alpine -- the one family with no upstream path.
+
+    RedHat is now a target (it installs through dnf); only the off-target
+    Alpine host returns before its first yield, so it is in no wave, emits no
+    log line, and mutates nothing.
+    """
     inventory = make_inventory()
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
-    skipped = hosts["web1"]
+    skipped = hosts["db1"]
 
-    # The family guard returns before the first yield, so the off-target host
-    # is in no wave, emits no log line, and mutates nothing.
-    assert not any(entry.host == "web1" for entry in report.merged().log)
-    assert not any(r.host == "web1" for r in report.records)
-    assert skipped.remote_files == {}
-    assert skipped.apt_packages == {}
+    assert not any(entry.host == "db1" for entry in report.merged().log)
+    assert not any(r.host == "db1" for r in report.records)
+    assert skipped.apk_packages == {}
+    assert skipped.packages == {}
     assert skipped.ran_shells == []
+
+
+async def test_target_families_are_ubuntu_and_redhat():
+    """The guard's family set mirrors ``tasks/main.yml``'s two branches."""
+    assert TARGET_FAMILIES == ("Ubuntu", "RedHat")
 
 
 async def test_dry_preview_plans_the_whole_wave():
@@ -305,17 +388,39 @@ def test_install_from_source_fails_at_resolution():
 
 
 def test_redhat_and_source_knobs_are_not_fields():
-    """D3: ``enablerepo`` and the source sub-knobs are not variables to bind.
+    """D2/D3: the source sub-knobs are not variables to bind.
 
-    A role mapping that sets one is a spelling mistake against this
-    migration's contract, so ``RoleVarsError`` names the valid fields instead
-    of silently ignoring the knob.
+    ``enablerepo`` **is** now a field (it feeds the RedHat request), so only
+    the build-from-source sub-knobs are rejected. A role mapping that sets one
+    is a spelling mistake against this migration's contract, so
+    ``RoleVarsError`` names the valid fields instead of silently ignoring the
+    knob.
     """
-    for key in ("enablerepo", "version", "workspace"):
+    for key in ("version", "workspace", "install_path"):
         inventory = make_inventory()
         inventory[0]["roles"]["git"][key] = "whatever"
         with pytest.raises(RoleVarsError, match=key):
             resolve_vars(GitVars, "git", inventory)
+
+
+async def test_redhat_enablerepo_reaches_dnf():
+    """``git_enablerepo`` is live on the RedHat request as additive ``enable_repos``.
+
+    The empty default is omitted entirely (Ansible's ``default(omit, true)``),
+    a set value arrives as a one-tuple -- never as ``repos=``, which would
+    replace the host's whole repository set.
+    """
+    inventory = make_inventory()
+    hosts = make_hosts(inventory)
+    report = await run_role(inventory, hosts)
+    assert request_kwargs(report, "web1", REDHAT_NAME)["enable_repos"] == ()
+
+    inventory[1]["roles"]["git"]["enablerepo"] = "powertools"
+    hosts = make_hosts(inventory)
+    report = await run_role(inventory, hosts)
+    assert request_kwargs(report, "web1", REDHAT_NAME)["enable_repos"] == (
+        "powertools",
+    )
 
 
 # --- tree snapshots (the migration's published shape) ----------------------------
@@ -346,20 +451,27 @@ def test_tree_snapshots():
         "        $ sudo apt-get update\n"
         "        $ sudo DEBIAN_FRONTEND=noninteractive apt-get -y "
         '-o Dpkg::Options::="--force-confdef" -o '
-        'Dpkg::Options::="--force-confold" install git git-svn'
+        'Dpkg::Options::="--force-confold" install git git-svn\n'
+        "    web1: Ensure git is installed (RedHat) "
+        "[changed: 2 package(s) to install]\n"
+        "        $ sudo dnf install -y git git-svn"
     )
     assert converged == (
         "(root)\n"
         "  wave 0\n"
         "    ubuntu: Ensure git is installed  "
-        "[no change: apt update skipped, cache is fresh; all packages present]"
+        "[no change: apt update skipped, cache is fresh; all packages present]\n"
+        "    web1: Ensure git is installed (RedHat) "
+        "[no change: all packages present]"
     )
     # Dry plans with the real change verdict and shows no command lines.
     assert dry == (
         "(root)\n"
         "  wave 0\n"
         "    ubuntu: Ensure git is installed  "
-        "[changed: apt update; 2 package(s) to install]"
+        "[changed: apt update; 2 package(s) to install]\n"
+        "    web1: Ensure git is installed (RedHat) "
+        "[changed: 2 package(s) to install]"
     )
 
 
@@ -385,9 +497,13 @@ def test_model_defaults_normalizes_and_stays_frozen():
     hv = GitVars()
     assert hv.packages == ("git",)  # the role's git_packages default
     assert hv.install_from_source is False
+    assert hv.enablerepo == ""  # git_enablerepo default: omitted on RedHat
 
-    normalized = GitVars.model_validate({"packages": ["git", "git-svn"]})
+    normalized = GitVars.model_validate(
+        {"packages": ["git", "git-svn"], "enablerepo": "powertools"}
+    )
     assert normalized.packages == ("git", "git-svn")  # a list becomes a tuple
+    assert normalized.enablerepo == "powertools"
 
     assert hash(normalized) is not None
     with pytest.raises(ValueError):  # pydantic frozen-instance error

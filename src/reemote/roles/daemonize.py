@@ -106,7 +106,7 @@ VERSION = "1.7.7"
 
 #: ``defaults/main.yml``'s ``daemonize_install_path``. It reaches the build
 #: only as ``./configure --prefix=<path>``, so ``make install`` lands the
-#: binary under ``<path>/bin``.
+#: binary under ``<path>/sbin`` (the upstream Makefile's installdir).
 INSTALL_PATH = "/usr"
 
 #: The tarball's home. The role interpolates the version into both the
