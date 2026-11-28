@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships twenty-four configuration roles as **library code**. Each one is the
+reemote ships twenty-five configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -30,7 +30,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The twenty-four roles group by what they configure. The [catalogue](#the-catalogue)
+The twenty-five roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -56,6 +56,7 @@ and outputs.
 | [memcached](memcached.md) | memcached — the package, `/etc/memcached.conf`, the service, one restart handler |
 | [redis](redis.md) | Redis — the setgid `/etc/redis` directory, the rendered `redis.conf`, the package, the service, one restart handler |
 | [nfs](nfs.md) | NFS — the packages, the export directories, `/etc/exports`, the gated service and an `exportfs -ra` command handler |
+| [glusterfs](glusterfs.md) | GlusterFS — the optional Gluster PPA with its reinstall split, the server/client packages and the `glusterd` unit started and enabled |
 
 ### Language runtimes and tooling
 
@@ -131,6 +132,7 @@ and outputs.
 | [hosts](hosts.md) | [`ajsalminen/ansible-role-hosts`](https://github.com/ajsalminen/ansible-role-hosts) | Ubuntu | 2 (1 with a content override) | none | no | 1 |
 | [kubectl](kubectl.md) | [`andrewrothstein.kubectl`](https://github.com/andrewrothstein/ansible-kubectl) | Ubuntu | exactly 2 | none | no | 1 |
 | [systemd](systemd.md) | [`0x0I/systemd`](https://github.com/0x0I/ansible-role-systemd) | Ubuntu | 2 (3 with a per-user unit) | none | **yes** | 1 |
+| [glusterfs](glusterfs.md) | [`geerlingguy.glusterfs`](https://github.com/geerlingguy/ansible-role-glusterfs) | Ubuntu | 2 fresh / 2 converged | none | no | 1 |
 
 ## Reading the columns
 
@@ -250,6 +252,12 @@ and outputs.
   gate on each item's own `changed`. Its one `fact(Users)` read — the unit
   owner's home and uid — appears only under a per-user unit, so two hosts on the
   same variables can run two and three waves.
+- **[glusterfs](glusterfs.md)** — the `dirmngr` and `software-properties-common`
+  prerequisites, the optional Gluster PPA, the reinstall-on-PPA-add removal
+  split, the server and client packages and the `glusterd` unit's
+  running/enabled state. The single-gate, no-fact role: one `checkpoint` feeds
+  the reinstall split, and the role has no handlers, so no second checkpoint
+  exists to read.
 
 ## Running one
 

@@ -191,6 +191,7 @@ nav:
           - hosts: roles/hosts.md
           - kubectl: roles/kubectl.md
           - systemd: roles/systemd.md
+          - glusterfs: roles/glusterfs.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md

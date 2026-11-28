@@ -47,6 +47,7 @@ from .datadog import DatadogVars, datadog
 from .docker import DockerVars, docker
 from .drush import DrushVars, drush
 from .git import GitVars, git
+from .glusterfs import GlusterfsVars, glusterfs
 from .hosts import HostsEntry, HostsVars, hosts
 from .java import JavaVars, java
 from .kubectl import KubectlChecksum, KubectlVars, kubectl
@@ -77,6 +78,7 @@ __all__: list[str] = [
     "DrushVars",
     "EpelVars",
     "GitVars",
+    "GlusterfsVars",
     "GroupSpec",
     "HostsEntry",
     "HostsVars",
@@ -108,6 +110,7 @@ __all__: list[str] = [
     "docker",
     "drush",
     "git",
+    "glusterfs",
     "hosts",
     "java",
     "kubectl",
