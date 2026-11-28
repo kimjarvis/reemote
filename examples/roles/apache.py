@@ -69,12 +69,20 @@ version-probe barrier and stops (``barrier: apache -v -> unknown until run``),
 gathering facts over SSH but applying nothing. A converged rerun is the honest
 preview: run the whole program a second time and it reports no change and queues
 no restart, because the packages are installed, the cache stamp is fresh,
-``ports.conf`` matches, every symlink is in place, the rendered vhosts file is
-byte-identical and the unit is running and enabled.
+``ports.conf`` (``httpd.conf`` on RedHat) matches, every mod stub and symlink is
+in place, the rendered vhosts file is byte-identical and the unit is running and
+enabled.
 
-Hosts outside the ``"Ubuntu"`` family emit nothing at all -- the role's family
-guard is its body's opening ``if``, so such a host returns before its first
-``yield`` and appears in no wave.
+The role targets both the ``"Ubuntu"`` and the ``"RedHat"`` families: an Ubuntu
+host gets the apt ``apache2`` branch, a RedHat host the dnf ``httpd`` branch
+(the ``LoadModule`` stubs, the ``conf.d`` vhosts file, and the RHEL 8+
+``httpd-ssl-gencerts`` step). Hosts outside both families -- Alpine, say --
+emit nothing at all: the role's family guard is its body's opening ``if``, so
+such a host returns before its first ``yield`` and appears in no wave. **The
+shipped ``inventory.json`` is live-demo data:** its ``web1``/``web2`` entries
+declare the ``"RedHat"`` family, so running this program against it installs
+and configures ``httpd`` on those machines -- they were inert while the role
+was Ubuntu-only.
 """
 
 import asyncio
@@ -153,8 +161,9 @@ async def main() -> None:
     except (ValueError, TypeError) as exc:
         # A rejected role variable (pydantic's ValidationError is a ValueError),
         # or the role body's own hard error: the apache -v probe exited non-zero,
-        # its output was not a version banner, or the probed version has no
-        # 2.2/2.4 variable table. Each is raised before the configure wave is
+        # its output was not a version banner, the probed version has no
+        # 2.2/2.4 variable table, or (RedHat, RHEL 8+) httpd-ssl-gencerts
+        # failed. Each is raised before the configure wave is
         # built, so nothing is half-applied.
         print(f"\nERROR: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

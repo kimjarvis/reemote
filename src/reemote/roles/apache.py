@@ -3,29 +3,36 @@
 
 # """The Apache role (migrated from ``geerlingguy.apache``).
 #
-# Installs and configures Apache 2.x on Ubuntu/Debian hosts: the apt cache
-# refresh and the ``apache2`` packages, the ``ports.conf`` listen lines, the
-# ``mods-enabled``/``conf-enabled`` symlinks, the rendered
-# ``sites-available/vhosts.conf`` and its ``sites-enabled`` symlink, the optional
-# default-vhost removal, the service's running/enabled state, and the role's
-# single ``restart apache`` handler. :func:`apache` is the whole task list, and
-# :class:`ApacheVars` is ``defaults/main.yml``, bound from the inventory
-# entry's ``apache`` role mapping by :func:`~reemote.rolevars.resolve_vars`.
+# Installs and configures Apache 2.x on Ubuntu and RHEL hosts: the apt cache
+# refresh and the ``apache2`` packages (Ubuntu) or the ``httpd`` quartet
+# (RedHat), the listen lines in ``ports.conf``/``httpd.conf``, the enabled mods
+# and confs, the rendered vhosts file, the service's running/enabled state, and
+# the role's single ``restart apache`` handler. :func:`apache` is the whole task
+# list, and :class:`ApacheVars` is ``defaults/main.yml``, bound from the
+# inventory entry's ``apache`` role mapping by
+# :func:`~reemote.rolevars.resolve_vars`.
 #
-# Target: hosts in the ``"Ubuntu"`` OS family. The role's RHEL, SLES, Solaris and
-# Amazon Linux branches are out of scope, so its ``include_vars`` OS dispatch
-# collapses to the frozen Debian constants below.
+# Target: hosts in the ``"Ubuntu"`` and ``"RedHat"`` OS families. The role's
+# SLES, Solaris and Amazon Linux branches are out of scope, so its
+# ``include_vars`` OS dispatch collapses to the two frozen constant tables
+# below, selected by the body's ``host.family`` switch.
 #
-# The stream carries three waves **plus one per SSL vhost** (design doc section
-# 5.7) -- four with a single certificate:
+# The Ubuntu stream carries three waves **plus one per SSL vhost** (design doc
+# section 5.7) -- four with a single certificate. The RedHat stream adds up to
+# three more ahead of configure: the ``LinuxDistribution`` read (the role's
+# ``distribution_major_version`` gate), the RHEL 8+ localhost-cert ``stat``, and
+# -- only while the cert is missing -- the ``httpd-ssl-gencerts`` command
+# barrier:
 #
-# 0. :func:`install` -- the apt cache refresh and the packages -- closed by the
-#    ``apache2 -v`` probe barrier, which only succeeds once the install applied.
+# 0. :func:`install` -- the apt cache refresh and the packages, or the plain
+#    ``dnf.packages`` install on RedHat -- closed by the version-probe barrier
+#    (``apache2 -v`` / ``httpd -v``), which only succeeds once the install
+#    applied.
 # 1..*n* one ``fact(FileExists, path=certificate_file)`` per SSL vhost. A host
 #    with no SSL vhost parks on nothing here, so hosts park asymmetrically and the
 #    wave count is host-dependent.
-# *n*+1 :func:`configure` -- ports, symlinks, the rendered vhosts file, the
-#    service state -- closed by ``checkpoint("configure done")``.
+# *n*+1 :func:`configure` -- ports, mods (and confs, on Debian), the rendered
+#    vhosts file, the service state -- closed by ``checkpoint("configure done")``.
 # *n*+2 :func:`handler` -- ``Restart``/``Reload apache2 (handler)``, only on the
 #    hosts that checkpoint selected.
 #
@@ -43,9 +50,9 @@
 # Deviations from the Ansible role, all deliberate:
 #
 # * the host-family guard is the body's opening ``if``, not a ``when=`` on every
-#   request: a host outside the ``"Ubuntu"`` family returns before it yields
-#   anything, so it emits no requests and no log entries at all (the old example
-#   logged each as ``[skipped: when guard ...]``).
+#   request: a host outside the ``"Ubuntu"`` and ``"RedHat"`` families returns
+#   before it yields anything, so it emits no requests and no log entries at all
+#   (the old example logged each as ``[skipped: when guard ...]``).
 # * the version probe is an :func:`~reemote.stages.act` barrier, not a fact:
 #   ``apache2 -v`` is a command whose answer depends on the install in the same
 #   wave, and a barrier never raises on a non-zero exit -- the result is data. The
@@ -60,10 +67,12 @@
 # * the role's ``mode: 0644`` on a *symlink* is dropped --
 #   :func:`~reemote.modules.files.link` owns no mode, and a Linux symlink's own
 #   mode is always ``0777`` and meaningless (Ansible cannot set it either).
-# * ``apache_ssl_no_log`` and ``apache_enablerepo`` are carried as variables and
-#   do nothing here: reemote has no per-request log redaction, and the repo knob
-#   belongs to the RHEL branch that is out of scope. Both are documented as inert
-#   rather than silently omitted, so an existing inventory still binds.
+# * ``apache_ssl_no_log`` is carried as a variable and does nothing: reemote has
+#   no per-request log redaction, so it is documented as inert rather than
+#   silently omitted. ``apache_enablerepo`` is inert on the Ubuntu path and live
+#   on the RedHat one, where it renders as ``dnf.packages(enable_repos=...)`` --
+#   the additive ``yum: enablerepo=`` spelling that leaves every other repo
+#   enabled.
 # * ``force={{ ansible_check_mode }}`` on the vhosts symlink becomes the default
 #   ``force=False``: a dry run stops before that wave, so check mode has no
 #   analogue to reproduce.
@@ -76,6 +85,23 @@
 #   enums are :data:`~typing.Literal` fields, ``servername`` and both certificate
 #   paths are required, and a bad value raises ``ValidationError`` (a
 #   ``ValueError``, so the runner still maps it) before any host is contacted.
+# * the RedHat branch keeps the role's own mechanisms: mods are enabled by
+#   *writing* ``LoadModule`` stubs into ``conf.modules.d`` (not symlinks), the
+#   vhosts file lands directly in ``conf.d`` (there is no sites-enabled pair on
+#   that root), and the final service task manages ``httpd``. Because
+#   ``configure-RedHat.yml`` has no such tasks, ``apache_conf_enabled`` /
+#   ``apache_conf_disabled`` and ``apache_remove_default_vhost`` are inert on the
+#   RedHat family; ``vars/AmazonLinux.yml`` (Amazon Linux 1 only) stays out of
+#   scope -- the ``packages`` variable covers its quartet.
+# * the RHEL 8+ ``httpd-ssl-gencerts`` step reads the major version through a
+#   ``fact(LinuxDistribution)`` barrier and the cert ``stat`` through a
+#   ``fact(FileExists)`` one; the command itself is an ``act`` barrier, because
+#   reemote has no command *operation*. It runs before the configure wave, not
+#   inside it: a barrier between configure's requests and its checkpoint would
+#   split the wave and silently drop the earlier notifications.
+# * ``packages_state: latest`` always reports a change on RedHat: dnf has no
+#   upgradable fact yet, so unlike ``apt.packages(latest=True)`` the upgrade is
+#   not gated on a pending delta. The default ``present`` converges.
 # """
 
 import re
@@ -90,14 +116,16 @@ from ..actions import Shell
 from ..core import op
 from ..handlers import changed_hosts, service_handler
 from ..hosts import Host
-from ..modules import apt, files, systemd
+from ..modules import apt, dnf, files, systemd
 from ..modules.files import FileExists
+from ..modules.server import LinuxDistribution
 from ..rolevars import VarsSet
 from ..stages import Deploy, StageItem, act, checkpoint, fact
 
-# --- role constants (defaults/main.yml + vars/Debian.yml, Ubuntu path only) ---
+# --- role constants (defaults/main.yml + vars/<OS>.yml, both target families) ---
 
 #: ``setup-Debian.yml``'s ``apt: update_cache=yes cache_valid_time=3600``.
+#: Ubuntu path only -- ``setup-RedHat.yml`` refreshes no metadata.
 CACHE_VALID_TIME = 3600
 
 #: ``vars/Debian.yml``, frozen to the single Ubuntu target. The daemon path and
@@ -111,6 +139,26 @@ CONF_PATH = "/etc/apache2"
 #: ``__apache_packages`` (Debian), used when :attr:`ApacheVars.packages` is null
 #: -- the role's ``set_fact`` fallback for an undefined ``apache_packages``.
 DEBIAN_PACKAGES = ("apache2", "apache2-utils")
+
+#: ``vars/RedHat.yml``, frozen to the RedHat target. The daemon path and name
+#: build the version probe; the two roots build every managed path; the quartet
+#: is that family's ``__apache_packages`` fallback.
+REDHAT_SERVICE = "httpd"
+REDHAT_DAEMON = "httpd"
+REDHAT_DAEMON_PATH = "/usr/sbin/"
+REDHAT_SERVER_ROOT = "/etc/httpd"
+REDHAT_CONF_PATH = "/etc/httpd/conf.d"
+REDHAT_PACKAGES = ("httpd", "httpd-devel", "mod_ssl", "openssh")
+
+#: The ``configure-RedHat.yml`` RHEL 8+ cert seam: the ``stat`` target, the
+#: regeneration command, and the major version its ``when`` gate starts from.
+LOCALHOST_CERT = "/etc/pki/tls/certs/localhost.crt"
+GENCERTS_COMMAND = "/usr/libexec/httpd-ssl-gencerts"
+GENCERTS_MIN_MAJOR = 8
+
+#: The families the role runs on; anything else returns before its first
+#: ``yield`` and emits no requests, no barriers and no log lines (D1).
+TARGET_FAMILIES = ("Ubuntu", "RedHat")
 
 #: ``vars/apache-24.yml`` / ``vars/apache-22.yml``, selected by the probed
 #: version's minor number exactly as the role's two ``include_vars`` tasks do.
@@ -276,8 +324,8 @@ class ApacheVars(BaseModel):
     Field names are bare -- :func:`~reemote.rolevars.resolve_vars` binds the
     inventory entry's ``apache`` role mapping, so ``listen_port`` there sets
     :attr:`listen_port`. Every Ansible default is carried over, including the
-    two inert ones (:attr:`enablerepo`, :attr:`ssl_no_log`) so such a key
-    still binds.
+    inert :attr:`ssl_no_log` and :attr:`enablerepo`, which is live only on the
+    RedHat path -- such a key still binds on either family.
 
     Sequences are ``tuple``, never ``list``: the model is frozen and hashable,
     and a value that reaches :func:`~reemote.core.op` must hash (design doc
@@ -286,7 +334,8 @@ class ApacheVars(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    #: RHEL-only, out of scope: kept so an existing inventory binds and noops.
+    #: ``apache_enablerepo``: the RedHat install passes it as
+    #: ``dnf.packages(enable_repos=...)``; the Ubuntu path ignores it (D5).
     enablerepo: str = ""
     listen_ip: str = "*"
     listen_port: int = 80
@@ -319,8 +368,9 @@ class ApacheVars(BaseModel):
     #: The verb the handler uses when a notifying request changed something.
     restart_state: Literal["restarted", "reloaded", "started"] = "restarted"
     packages_state: Literal["present", "latest", "absent"] = "present"
-    #: ``null`` falls back to :data:`DEBIAN_PACKAGES`, as the role's ``set_fact``
-    #: does for an undefined ``apache_packages``.
+    #: ``null`` falls back to the family's ``__apache_packages``
+    #: (:data:`DEBIAN_PACKAGES` or :data:`REDHAT_PACKAGES`), as the role's
+    #: ``set_fact`` does for an undefined ``apache_packages``.
     packages: tuple[str, ...] | None = None
 
 
@@ -329,8 +379,9 @@ class ApacheOutputs:
     """What :func:`apache` publishes to a composing role.
 
     ``version`` is the probed server version, empty on a host the role skipped;
-    ``service`` is the frozen Debian unit name. A return value, not a registry:
-    the cross-role channels in design doc sections 9 and 10.4 pass it by value.
+    ``service`` is the frozen per-family unit name (``apache2`` on Ubuntu,
+    ``httpd`` on RedHat). A return value, not a registry: the cross-role
+    channels in design doc sections 9 and 10.4 pass it by value.
     """
 
     version: str
@@ -368,6 +419,12 @@ class ApachePlan:
     service: str = DEBIAN_SERVICE
     server_root: str = SERVER_ROOT
     conf_path: str = CONF_PATH
+    #: The family branch the plan was built for; selects the configure deploy
+    #: and the notification set.
+    family: str = "Ubuntu"
+    #: The file the ports ``lineinfile`` items edit: ``ports.conf`` on Debian,
+    #: ``conf/httpd.conf`` on RedHat.
+    ports_path: str = f"{SERVER_ROOT}/ports.conf"
 
 
 # --- pure helpers ------------------------------------------------------------
@@ -436,6 +493,29 @@ def ports_items(v: ApacheVars, vhosts_version: str) -> tuple[tuple[str, str], ..
     )
 
 
+def ports_mode_name(plan: ApachePlan) -> str:
+    """The paired chmod request name, from the family's ports-file basename.
+
+    ``Set Apache ports.conf mode`` on Ubuntu, ``Set Apache httpd.conf mode`` on
+    RedHat -- the configure deploy and :func:`notifying_names` read the one
+    rule off the same frozen plan, so the notification channel cannot drift.
+    """
+    return f"Set Apache {Path(plan.ports_path).name} mode"
+
+
+def supports_httpd_ssl_gencerts(major: Any) -> bool:
+    """Ansible's ``distribution_major_version | int >= 8`` gate.
+
+    A non-numeric or missing major version (the ``"NA"`` of an old Amazon
+    Linux, a release file that names no version) reads as ``0`` for Ansible's
+    ``int`` filter, so the gate skips rather than raising.
+    """
+    try:
+        return int(major) >= GENCERTS_MIN_MAJOR
+    except (TypeError, ValueError):
+        return False
+
+
 def render_vhosts(v: ApacheVars, vhosts_version: str, ssl_exists: tuple[bool, ...]) -> str:
     """``templates/vhosts.conf.j2``, pre-rendered control-side.
 
@@ -478,14 +558,20 @@ def render_vhosts(v: ApacheVars, vhosts_version: str, ssl_exists: tuple[bool, ..
     )
 
 
-def configure_plan(v: ApacheVars, version: str, ssl_exists: tuple[bool, ...]) -> ApachePlan:
+def configure_plan(
+    v: ApacheVars,
+    version: str,
+    ssl_exists: tuple[bool, ...],
+    family: str = "Ubuntu",
+) -> ApachePlan:
     """Render the vhosts file and freeze every read the configure stage needs.
 
     Control-side work performed inside the body, after the probe and
     certificate barriers: the probed ``version`` selects the 2.2/2.4 variable
-    table (the role's two ``include_vars`` tasks), the ports ``lineinfile`` items
-    become stable pure transforms, and the Jinja2 template becomes a plain
-    ``str``.
+    table (the role's two ``include_vars`` tasks), the ``family`` selects the
+    ``vars/<OS>.yml`` constants (the service name, the two roots, the ports
+    file), the ports ``lineinfile`` items become stable pure transforms, and the
+    Jinja2 template becomes a plain ``str``.
 
     Raises:
         ValueError: The probed version is neither 2.2.x nor 2.4.x, so no
@@ -499,6 +585,16 @@ def configure_plan(v: ApacheVars, version: str, ssl_exists: tuple[bool, ...]) ->
         table = APACHE_24_VARS
     else:
         raise ValueError(f"unsupported Apache version {version!r}: expected 2.2.x or 2.4.x")
+    if family == "RedHat":
+        service = REDHAT_SERVICE
+        server_root = REDHAT_SERVER_ROOT
+        conf_path = REDHAT_CONF_PATH
+        ports_path = f"{REDHAT_SERVER_ROOT}/conf/{REDHAT_DAEMON}.conf"
+    else:
+        service = DEBIAN_SERVICE
+        server_root = SERVER_ROOT
+        conf_path = CONF_PATH
+        ports_path = f"{SERVER_ROOT}/ports.conf"
     vhosts_version = table["vhosts_version"]
     return ApachePlan(
         ports=tuple(
@@ -517,6 +613,11 @@ def configure_plan(v: ApacheVars, version: str, ssl_exists: tuple[bool, ...]) ->
         state=v.state,
         enabled=v.enabled,
         restart_state=v.restart_state,
+        service=service,
+        server_root=server_root,
+        conf_path=conf_path,
+        family=family,
+        ports_path=ports_path,
     )
 
 
@@ -525,12 +626,18 @@ def notifying_names(plan: ApachePlan) -> tuple[str, ...]:
 
     Enumerated from the same frozen plan the deploy was built from, so the
     notification set matches the requests exactly. The final service task
-    carries no ``notify`` in the role, so its name is deliberately absent.
+    carries no ``notify`` in the role, so its name is deliberately absent. The
+    RedHat set omits the names its branch has no task for: the conf symlinks,
+    the sites-enabled vhost link and the default-vhost removal.
     """
-    names = ["Set Apache ports.conf mode"]
+    names = [ports_mode_name(plan)]
     names.extend(f"Configure Apache ports ({regexp})" for regexp, _line, _t in plan.ports)
     names.extend(f"Enable Apache mod {mod}" for mod in plan.mods_enabled)
     names.extend(f"Disable Apache mod {mod}" for mod in plan.mods_disabled)
+    if plan.family == "RedHat":
+        if plan.create_vhosts:
+            names.append("Add apache vhosts configuration")
+        return tuple(names)
     names.extend(f"Enable Apache config {conf}" for conf in plan.conf_enabled)
     names.extend(f"Disable Apache config {conf}" for conf in plan.conf_disabled)
     if plan.create_vhosts:
@@ -544,16 +651,37 @@ def notifying_names(plan: ApachePlan) -> tuple[str, ...]:
 # --- helper deploys ----------------------------------------------------------
 
 
-def install(v: ApacheVars) -> Deploy:
-    """``tasks/setup-Debian.yml``: the apt cache refresh and the packages.
+def install(v: ApacheVars, family: str = "Ubuntu") -> Deploy:
+    """``tasks/setup-<OS>.yml``: the Debian apt pair, the RedHat dnf install.
 
     Branch-free with respect to facts: the package list and the
-    present/latest/absent flag come from the resolved variables. The cache
-    refresh is ``apt.update(cache_valid_time=3600)`` -- idempotent within the
-    window via the ``AptUpdateStamp`` fact, so a converged re-run reports no
-    change (Ansible's ``update_cache=yes cache_valid_time=3600``). Neither task
-    notifies in the role.
+    present/latest/absent flag come from the resolved variables. The Debian
+    cache refresh is ``apt.update(cache_valid_time=3600)`` -- idempotent within
+    the window via the ``AptUpdateStamp`` fact, so a converged re-run reports no
+    change (Ansible's ``update_cache=yes cache_valid_time=3600``).
+    ``setup-RedHat.yml`` refreshes no metadata, so the RedHat branch is the
+    single ``dnf.packages`` request, with ``enablerepo`` rendered additively as
+    ``enable_repos`` and omitted when empty (Ansible's ``default(omit)``).
+    The RedHat ``latest`` is not fact-gated -- dnf has no upgradable fact yet
+    -- so that state always reports a change there. Neither task notifies.
     """
+    if family == "RedHat":
+        packages = v.packages or REDHAT_PACKAGES
+        enable_repos = (v.enablerepo,) if v.enablerepo else ()
+
+        def deploy(host: Host) -> Generator[StageItem, Any]:
+            yield op(
+                dnf.packages,
+                name="Ensure Apache is installed on RHEL",
+                packages=packages,
+                present=v.packages_state != "absent",
+                latest=v.packages_state == "latest",
+                enable_repos=enable_repos,
+                sudo=True,
+            )
+
+        return deploy
+
     packages = v.packages or DEBIAN_PACKAGES
 
     def deploy(host: Host) -> Generator[StageItem, Any]:
@@ -576,6 +704,13 @@ def install(v: ApacheVars) -> Deploy:
 
 
 def configure(plan: ApachePlan) -> Deploy:
+    """The family's ``configure-<OS>.yml`` plus the final service task."""
+    if plan.family == "RedHat":
+        return configure_redhat(plan)
+    return configure_debian(plan)
+
+
+def configure_debian(plan: ApachePlan) -> Deploy:
     """``tasks/configure-Debian.yml`` plus the final service task.
 
     Every read the role takes mid-play (the version probe, the certificate
@@ -583,7 +718,7 @@ def configure(plan: ApachePlan) -> Deploy:
     function of the frozen plan. Each notifying request carries a stable
     ``name=`` enumerated by :func:`notifying_names`.
     """
-    ports_conf = f"{plan.server_root}/ports.conf"
+    ports_conf = plan.ports_path
 
     def deploy(host: Host) -> Generator[StageItem, Any]:
         # lineinfile ports.conf (with_items apache_ports_configuration_items).
@@ -601,7 +736,7 @@ def configure(plan: ApachePlan) -> Deploy:
             )
         yield op(
             files.file,
-            name="Set Apache ports.conf mode",
+            name=ports_mode_name(plan),
             path=ports_conf,
             mode="0644",
             sudo=True,
@@ -695,6 +830,92 @@ def configure(plan: ApachePlan) -> Deploy:
     return deploy
 
 
+def configure_redhat(plan: ApachePlan) -> Deploy:
+    """``tasks/configure-RedHat.yml`` plus the final service task.
+
+    The same pure function of the frozen plan as the Debian branch, with that
+    branch's own mechanisms: the ports lines land in ``conf/httpd.conf``, mods
+    are *written* as ``LoadModule`` stubs into ``conf.modules.d`` (the role's
+    ``copy content``, not ``a2enmod`` symlinks), and the rendered vhosts file
+    goes straight into ``conf.d`` -- no sites-available/sites-enabled pair, no
+    default-vhost removal, no conf stubs, so those three variables stay inert
+    here. The gencerts step is not part of this deploy: it is a barrier in the
+    body, ahead of the configure wave.
+    """
+    mods_dir = f"{plan.server_root}/conf.modules.d"
+
+    def deploy(host: Host) -> Generator[StageItem, Any]:
+        # lineinfile conf/httpd.conf (with_items apache_ports_configuration
+        # items), with the paired mode chmod, exactly as on Debian.
+        for regexp, _line, transform in plan.ports:
+            yield op(
+                files.transform,
+                name=f"Configure Apache ports ({regexp})",
+                path=plan.ports_path,
+                transform=transform,
+                mode="0644",
+                sudo=True,
+            )
+        yield op(
+            files.file,
+            name=ports_mode_name(plan),
+            path=plan.ports_path,
+            mode="0644",
+            sudo=True,
+        )
+
+        # Enable Apache mods: the role's `copy content:` writes one stub per
+        # mod; disable removes the same file (files.file present=False, since
+        # these are regular files, not links).
+        for mod in plan.mods_enabled:
+            yield op(
+                files.install,
+                name=f"Enable Apache mod {mod}",
+                content=f"LoadModule {mod}_module modules/mod_{mod}.so\n",
+                dest=f"{mods_dir}/99-ansible-{mod}.conf",
+                mode="0644",
+                user="root",
+                group="root",
+                sudo=True,
+            )
+        for mod in plan.mods_disabled:
+            yield op(
+                files.file,
+                name=f"Disable Apache mod {mod}",
+                path=f"{mods_dir}/99-ansible-{mod}.conf",
+                present=False,
+                sudo=True,
+            )
+
+        # The vhosts template straight into conf.d (no symlink, no removal).
+        if plan.create_vhosts:
+            yield op(
+                files.install,
+                name="Add apache vhosts configuration",
+                content=plan.vhosts_content,
+                dest=f"{plan.conf_path}/{plan.vhosts_filename}",
+                mode="0644",
+                user="root",
+                group="root",
+                sudo=True,
+            )
+
+        # The final main.yml service task (no notify), on httpd.
+        state = plan.state
+        yield op(
+            systemd.service,
+            name="Ensure Apache has selected state and enabled on boot",
+            service=plan.service,
+            running=state != "stopped",
+            restarted=state == "restarted",
+            reloaded=state == "reloaded",
+            enabled=plan.enabled,
+            sudo=True,
+        )
+
+    return deploy
+
+
 def handler(plan: ApachePlan, notified: frozenset[str]) -> Deploy:
     """``handlers/main.yml``: ``restart apache`` with ``state={{ apache_restart_state }}``.
 
@@ -717,7 +938,7 @@ def handler(plan: ApachePlan, notified: frozenset[str]) -> Deploy:
 
 
 def apache(v: VarsSet[ApacheVars]) -> Deploy:
-    """Install and configure Apache on Ubuntu hosts, and run its handler.
+    """Install and configure Apache on Ubuntu and RedHat hosts, and run its handler.
 
     Args:
         v: The role's resolved variables, one :class:`ApacheVars` per host
@@ -726,29 +947,35 @@ def apache(v: VarsSet[ApacheVars]) -> Deploy:
     Returns:
         A deploy for :func:`~reemote.run_waves` that returns
         :class:`ApacheOutputs` for every host it runs -- including a host outside
-        the target family, whose outputs carry an empty version.
+        the target families, whose outputs carry an empty version.
 
     Raises:
         ValueError: The version probe exited non-zero (the binary is missing or
-            unreadable), its output is not a version banner, or the probed
-            version has no variable table. Each is raised inside the body, after
-            the install wave applied and before the configure wave is built.
+            unreadable), its output is not a version banner, the probed version
+            has no variable table, or (RedHat, RHEL 8+) ``httpd-ssl-gencerts``
+            exited non-zero. Each is raised inside the body, after the install
+            wave applied and before the configure wave is built.
     """
 
     def deploy(host: Host) -> Generator[StageItem, Any, ApacheOutputs]:
         hv = v.for_host(host)
-        if host.family != "Ubuntu":
+        if host.family not in TARGET_FAMILIES:
             # The outputs still have to be published: a composing role captures
             # this return value with `yield from` (§18.2).
             return ApacheOutputs(version="")
+        family = host.family
 
         # Wave 0: the packages. The probe barrier below closes the wave, which
         # is what makes them installed before it runs.
-        yield from install(hv)(host)
+        yield from install(hv, family)(host)
 
+        if family == "RedHat":
+            daemon_path, daemon = REDHAT_DAEMON_PATH, REDHAT_DAEMON
+        else:
+            daemon_path, daemon = DEBIAN_DAEMON_PATH, DEBIAN_DAEMON
         result = yield act(
             Shell,
-            command=f"{DEBIAN_DAEMON_PATH}{DEBIAN_DAEMON} -v",
+            command=f"{daemon_path}{daemon} -v",
             name="apache -v",
         )
         # A barrier never raises on a non-zero exit -- the Result is data -- so
@@ -760,6 +987,30 @@ def apache(v: VarsSet[ApacheVars]) -> Deploy:
             )
         version = parse_apache_version(result["stdout"])
 
+        if family == "RedHat":
+            # The role's ``distribution_major_version`` read and the RHEL 8+
+            # localhost-cert ``stat``: one wave each, and both close before the
+            # configure wave so the gencerts command never splits it (D10).
+            distro = yield fact(LinuxDistribution)
+            if supports_httpd_ssl_gencerts(distro.get("major")):
+                cert_exists = yield fact(FileExists, path=LOCALHOST_CERT)
+                if not cert_exists:
+                    # The ``command: /usr/libexec/httpd-ssl-gencerts`` task --
+                    # an act barrier (there is no command operation), gated on
+                    # the failed play like Ansible's non-zero exit.
+                    gencerts = yield act(
+                        Shell,
+                        command=GENCERTS_COMMAND,
+                        name="Ensure httpd certs are installed",
+                        sudo=True,
+                    )
+                    if gencerts["exit_status"] != 0:
+                        raise ValueError(
+                            f"{host.name}: httpd-ssl-gencerts failed "
+                            f"(exit {gencerts['exit_status']}): "
+                            f"{gencerts['stderr'].strip()}"
+                        )
+
         # One wave per certificate. A generator expression cannot hold these
         # yields -- `yield` inside one is a SyntaxError -- so it is a loop.
         ssl_exists: list[bool] = []
@@ -767,7 +1018,7 @@ def apache(v: VarsSet[ApacheVars]) -> Deploy:
             exists = yield fact(FileExists, path=vhost.certificate_file)
             ssl_exists.append(bool(exists))
 
-        plan = configure_plan(hv, version, tuple(ssl_exists))
+        plan = configure_plan(hv, version, tuple(ssl_exists), family=family)
 
         # Wave n+1: configure, then read its own outcome. The checkpoint must
         # immediately follow the stage it reports on; one placed after the
@@ -780,7 +1031,7 @@ def apache(v: VarsSet[ApacheVars]) -> Deploy:
         # Wave n+2: the handler, only on the hosts the checkpoint selected.
         yield from handler(plan, notified)(host)
 
-        return ApacheOutputs(version=version)
+        return ApacheOutputs(version=version, service=plan.service)
 
     return deploy
 

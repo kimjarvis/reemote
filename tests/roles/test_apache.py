@@ -26,11 +26,12 @@ Two assertions carry the migration's claims, exactly as in the
 Seeding choices, none of them a bridge:
 
 * the version probe rides the first-class action seam (issue #16): ``seed()``
-  plants the canned ``apache2 -v`` record in ``host.shell_results`` and the
-  body's ``act`` barrier reads it through ``SimulatedHost._run_shell``.
-  ``host.ran_shells`` is what the exactly-once assertions read -- the point of
-  making the probe a barrier is that it can no longer run before the install
-  applied.
+  plants the canned ``apache2 -v`` (``httpd -v`` on the RedHat hosts) record in
+  ``host.shell_results`` and the body's ``act`` barrier reads it through
+  ``SimulatedHost._run_shell``. The sudo'd gencerts barrier reads the
+  ``"sudo …"`` rendering, and ``host.ran_shells`` is what the exactly-once
+  assertions read -- the point of making the probe a barrier is that it can no
+  longer run before the install applied.
 * the simulated apt install records package names only, so ``ports.conf``, the
   default-vhost symlink and the ``/etc/apache2`` tree are seeded as the
   package's post-install state: in a real run the configure wave follows the
@@ -50,6 +51,9 @@ from reemote import run_waves
 from reemote.roles import ApacheOutputs, ApacheVars, apache
 from reemote.roles.apache import (
     DEBIAN_PACKAGES,
+    GENCERTS_COMMAND,
+    LOCALHOST_CERT,
+    REDHAT_PACKAGES,
     ApachePlan,
     SslVHost,
     VHost,
@@ -58,7 +62,9 @@ from reemote.roles.apache import (
     notifying_names,
     parse_apache_version,
     ports_items,
+    ports_mode_name,
     render_vhosts,
+    supports_httpd_ssl_gencerts,
 )
 from reemote.rolevars import RoleVarsError, resolve_vars
 from reemote.stages import scoped
@@ -119,7 +125,7 @@ SSL_VHOST = {
 
 
 def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
-    """A two-host inventory: one Ubuntu target, one CentOS host to be skipped.
+    """A two-host inventory: one Ubuntu target, one Alpine host to be skipped.
 
     The role variables ride on the entry's ``roles`` mapping under ``"apache"``,
     written with the model's bare field names, which is what
@@ -127,7 +133,9 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
     test changes a variable exactly the way an operator does. The base entry
     exercises the non-default branches: a custom port, the default-vhost
     removal, a disabled mod, an enabled conf, and a vhost with the optional
-    alias/documentroot/extra-parameters fields.
+    alias/documentroot/extra-parameters fields. The skipped host is Alpine, not
+    RedHat: since the httpd extension, ``"RedHat"`` is a target family (the
+    RedHat section below runs one), so only a third family proves the guard.
     """
     entry: dict[str, Any] = {
         "host": "ubuntu",
@@ -163,9 +171,9 @@ def make_inventory(**overrides: Any) -> list[dict[str, Any]]:
         entry,
         {
             "host": "web1",
-            "family": "RedHat",
+            "family": "Alpine",
             "connection": {"address": "192.0.2.11", "username": "admin"},
-            "group": "centos",
+            "group": "alpine",
         },
     ]
 
@@ -222,7 +230,7 @@ def make_hosts(
 ) -> dict[str, SimulatedHost]:
     """Materialize the inventory into persistent simulated hosts, seeded target.
 
-    Only the Ubuntu entry is seeded, so the RedHat host keeps its stock empty
+    Only the Ubuntu entry is seeded, so the Alpine host keeps its stock empty
     stores and an accidental request on it is caught by the untouched-store
     assertions. ``cert_present`` plants the SSL vhost's certificate, which is the
     only fact the role reads that changes what it writes, and the two probe
@@ -429,12 +437,13 @@ async def test_the_probe_barrier_closes_the_install_wave():
 # --- the family guard ---------------------------------------------------------
 
 
-async def test_non_ubuntu_host_emits_nothing():
+async def test_off_target_host_emits_nothing():
     """The family guard is the body's opening ``if``, not a ``when`` on each op.
 
-    A host outside the ``"Ubuntu"`` family returns before it yields anything, so
-    it records no request and no barrier -- where the old example logged each of
-    its requests on that host as ``[skipped: when guard ...]``.
+    A host outside the target families returns before it yields anything, so it
+    records no request and no barrier -- where the old example logged each of
+    its requests on that host as ``[skipped: when guard ...]``. Alpine is the
+    off-target family now that RedHat deploys httpd.
     """
     inventory = make_inventory()
     hosts = make_hosts(inventory)
@@ -445,6 +454,7 @@ async def test_non_ubuntu_host_emits_nothing():
     assert [e for e in report.merged().log if e.host == "web1"] == []
     assert skipped.remote_files == {}
     assert skipped.apt_packages == {}
+    assert skipped.packages == {}
     assert skipped.links == {}
     assert skipped.services == {}
     assert skipped.ran_shells == []
@@ -819,16 +829,340 @@ async def test_custom_vhosts_template_is_read_controller_side(tmp_path):
 
 
 async def test_inert_variables_still_bind():
-    """``apache_enablerepo``/``apache_ssl_no_log`` are carried and do nothing.
+    """``ssl_no_log`` is carried and does nothing; ``enablerepo`` is Ubuntu-inert.
 
     Pinned as equality against the default tree: an inventory written for the
-    role keeps working, and the two knobs provably change no request.
+    role keeps working, and the two knobs provably change no request **on this
+    family** -- the RedHat section pins ``enablerepo`` doing its job there.
     """
     inventory = make_inventory(enablerepo="extra", ssl_no_log=False)
     hosts = make_hosts(inventory)
     report = await run_role(inventory, hosts)
 
     assert report.tree() == FIRST_PASS_TREE
+
+
+# --- the RedHat family --------------------------------------------------------
+
+RH_PROBE = "/usr/sbin/httpd -v"
+RH_VERSION_STDOUT = (
+    "Server version: Apache/2.4.62 (Red Hat Enterprise Linux)\n"
+    "Server built:   2026-01-01T00:00:00\n"
+)
+HTTPD_CONF = "/etc/httpd/conf/httpd.conf"
+CONF_MODULES_DIR = "/etc/httpd/conf.modules.d"
+CONF_D = "/etc/httpd/conf.d"
+RH_VHOSTS_FILE = f"{CONF_D}/vhosts.conf"
+#: The ``act(Shell, sudo=True)`` key: an escalated gather renders as the
+#: ``sudo``-prefixed shell string (no ``privilege`` section in the inventory).
+GENCERTS_SHELL = f"sudo {GENCERTS_COMMAND}"
+
+RH_INSTALL_NAME = "Ensure Apache is installed on RHEL"
+#: The configure wave of the RedHat inventory: the ports pair targets
+#: ``conf/httpd.conf``, the mods are ``LoadModule`` stubs, the vhosts file lands
+#: in ``conf.d``, then the (non-notifying) ``httpd`` service task. The entry
+#: also sets ``conf_enabled``/``remove_default_vhost``: they emit nothing here.
+RH_CONFIGURE_NAMES = (
+    "Configure Apache ports (^Listen )",
+    "Set Apache httpd.conf mode",
+    "Enable Apache mod rewrite",
+    "Enable Apache mod ssl",
+    "Disable Apache mod autoindex",
+    "Add apache vhosts configuration",
+    "Ensure Apache has selected state and enabled on boot",
+)
+#: Same paired-chmod no-op as on Ubuntu: httpd.conf is seeded at mode 0644.
+RH_UNCHANGED_FIRST_PASS = ("Set Apache httpd.conf mode",)
+RH_HANDLER_NAME = "Restart httpd (handler)"
+
+ROCKY_DISTRO = {
+    "name": "Rocky",
+    "family": "RedHat",
+    "major": 9,
+    "minor": 6,
+    "release_meta": {},
+}
+
+
+def make_redhat_inventory(**overrides: Any) -> list[dict[str, Any]]:
+    """A one-host RedHat inventory mirroring the Ubuntu entry's branches.
+
+    Same non-default knobs (custom port, disabled mod, one vhost) plus the two
+    Debian-owned variables ``conf_enabled`` and ``remove_default_vhost``, so
+    every RedHat test also pins that they stay inert on this family.
+    """
+    entry: dict[str, Any] = {
+        "host": "rocky",
+        "family": "RedHat",
+        "connection": {
+            "address": "192.0.2.12",
+            "username": "supervisor",
+            "key_path": "~/.ssh/id_ed25519",
+        },
+        "group": "rhel",
+        "roles": {
+            "apache": {
+                "listen_port": 8080,
+                "remove_default_vhost": True,
+                "mods_disabled": ["autoindex"],
+                "conf_enabled": ["security"],
+                "vhosts": [
+                    {
+                        "servername": "example.com",
+                        "documentroot": "/var/www/example",
+                    }
+                ],
+            },
+        },
+    }
+    entry["roles"]["apache"].update(overrides)
+    return [entry]
+
+
+def make_redhat_hosts(
+    inventory: list[dict[str, Any]],
+    *,
+    major: Any = 9,
+    cert_present: bool = False,
+    gencerts_exit: int = 0,
+) -> dict[str, SimulatedHost]:
+    """Materialize the RedHat entry as a stock RHEL 9 machine, httpd not yet installed.
+
+    ``httpd.conf`` and one ``99-ansible-autoindex.conf`` stub are seeded as the
+    post-install state the names-only dnf simulation cannot ship (the Ubuntu
+    ``seed()`` precedent). ``major`` steers the RHEL 8+ gencerts gate, the
+    ``cert_present`` flag is the cert ``stat`` answer, and ``gencerts_exit`` is
+    the command barrier's canned exit.
+    """
+    hosts: dict[str, SimulatedHost] = {}
+    for entry in inventory:
+        host = SimulatedHost.from_inventory(entry)
+        host.packages = {}
+        host.linux_distribution = {**ROCKY_DISTRO, "major": major}
+        host.remote_files = {
+            HTTPD_CONF: b"Listen 80\n",
+            f"{CONF_MODULES_DIR}/99-ansible-autoindex.conf": (
+                b"LoadModule autoindex_module modules/mod_autoindex.so\n"
+            ),
+        }
+        host.existing_files = set(host.remote_files)
+        host.file_stats = {
+            path: {"user": "root", "group": "root", "mode": 644, "size": len(data)}
+            for path, data in host.remote_files.items()
+        }
+        host.directory_stats = {
+            path: {"mode": 755, "user": "root", "group": "root"}
+            for path in ("/etc/httpd", "/etc/httpd/conf", CONF_MODULES_DIR, CONF_D)
+        }
+        host.services = {}
+        host.enabled_services = set()
+        if cert_present:
+            host.existing_files.add(LOCALHOST_CERT)
+        host.shell_results[RH_PROBE] = {
+            "exit_status": 0,
+            "stdout": RH_VERSION_STDOUT,
+            "stderr": "",
+        }
+        host.shell_results[GENCERTS_SHELL] = {
+            "exit_status": gencerts_exit,
+            "stdout": "",
+            "stderr": "generation failed" if gencerts_exit else "",
+        }
+        hosts[host.name] = host
+    return hosts
+
+
+async def test_redhat_first_pass_installs_and_configures_httpd():
+    inventory = make_redhat_inventory()
+    hosts = make_redhat_hosts(inventory)
+    report = await run_role(inventory, hosts)
+    host = hosts["rocky"]
+
+    # The dnf quartet installs into the dnf store; apt is never touched and
+    # setup-RedHat.yml refreshes no metadata, so there is no update request.
+    assert set(REDHAT_PACKAGES) <= set(host.packages)
+    assert host.apt_packages == {}
+    assert entry_named(report, RH_INSTALL_NAME, "rocky").changed
+
+    # The ports lines land in conf/httpd.conf, not a ports.conf.
+    assert host.remote_files[HTTPD_CONF] == b"Listen 8080\n"
+    assert host.file_stats[HTTPD_CONF]["mode"] == 644
+
+    # Mods are LoadModule stubs written into conf.modules.d; the disabled
+    # mod's stub is removed as the regular file it is (no links anywhere).
+    assert (
+        host.remote_files[f"{CONF_MODULES_DIR}/99-ansible-rewrite.conf"]
+        == b"LoadModule rewrite_module modules/mod_rewrite.so\n"
+    )
+    assert (
+        host.remote_files[f"{CONF_MODULES_DIR}/99-ansible-ssl.conf"]
+        == b"LoadModule ssl_module modules/mod_ssl.so\n"
+    )
+    assert f"{CONF_MODULES_DIR}/99-ansible-autoindex.conf" not in host.remote_files
+    assert host.links == {}
+
+    # The rendered vhosts file goes straight into conf.d.
+    content = host.remote_files[RH_VHOSTS_FILE].decode("utf-8")
+    assert "<VirtualHost *:8080>" in content
+    assert "ServerName example.com" in content
+    assert 'DocumentRoot "/var/www/example"' in content
+    assert host.file_stats[RH_VHOSTS_FILE]["mode"] == 644
+
+    # httpd is running and enabled on boot.
+    assert host.services["httpd.service"] == "active"
+    assert "httpd.service" in host.enabled_services
+
+    ordered = [entry.name for entry in report.merged().log if entry.host == "rocky"]
+    assert ordered == [RH_INSTALL_NAME, *RH_CONFIGURE_NAMES, RH_HANDLER_NAME]
+    assert [e.name for e in changed_entries(report)] == [
+        RH_INSTALL_NAME,
+        *[name for name in RH_CONFIGURE_NAMES if name not in RH_UNCHANGED_FIRST_PASS],
+        RH_HANDLER_NAME,
+    ]
+
+
+async def test_redhat_barriers_run_the_httpd_probe_and_the_cert_gate():
+    """Probe, distribution, cert stat, gencerts, checkpoint: five barrier waves.
+
+    The RedHat stream is the Ubuntu one plus the reads ``configure-RedHat.yml``
+    takes before it writes anything; the gencerts ``act`` sits ahead of the
+    configure wave, never inside it, so the checkpoint still reads configure.
+    """
+    inventory = make_redhat_inventory()
+    hosts = make_redhat_hosts(inventory)
+    report = await run_role(inventory, hosts)
+
+    assert [type(b).__name__ for b in barriers(report, "rocky")] == [
+        "ActionRequest",
+        "FactRequest",
+        "FactRequest",
+        "ActionRequest",
+        "CheckpointRequest",
+    ]
+    assert waves(report, "rocky") == [0, 1, 2, 3, 4, 5]
+    assert hosts["rocky"].ran_shells == [RH_PROBE, GENCERTS_SHELL]
+
+
+async def test_gencerts_gate_skips_on_rhel7():
+    """``distribution_major_version | int >= 8``: RHEL 7 never stats or commands."""
+    inventory = make_redhat_inventory()
+    hosts = make_redhat_hosts(inventory, major=7)
+    report = await run_role(inventory, hosts)
+
+    assert [type(b).__name__ for b in barriers(report, "rocky")] == [
+        "ActionRequest",
+        "FactRequest",
+        "CheckpointRequest",
+    ]
+    assert hosts["rocky"].ran_shells == [RH_PROBE]
+
+    second = await run_role(inventory, hosts)
+    assert changed_entries(second) == []
+
+
+async def test_gencerts_skipped_when_the_localhost_cert_exists():
+    """The cert ``stat`` answer gates the command, not the major version alone."""
+    inventory = make_redhat_inventory()
+    hosts = make_redhat_hosts(inventory, cert_present=True)
+    report = await run_role(inventory, hosts)
+
+    assert [type(b).__name__ for b in barriers(report, "rocky")] == [
+        "ActionRequest",
+        "FactRequest",
+        "FactRequest",
+        "CheckpointRequest",
+    ]
+    assert hosts["rocky"].ran_shells == [RH_PROBE]
+
+
+async def test_gencerts_failure_raises_before_configuring():
+    """The command barrier's non-zero exit is data, so the body raises.
+
+    Ansible's play fails on the non-zero ``command`` exit; the same gate moves
+    into the body as ``ValueError``, after the install applied and before the
+    first configure request is built.
+    """
+    inventory = make_redhat_inventory()
+    hosts = make_redhat_hosts(inventory, gencerts_exit=1)
+
+    with pytest.raises(ValueError, match="httpd-ssl-gencerts failed"):
+        await run_role(inventory, hosts)
+
+    host = hosts["rocky"]
+    assert "httpd" in host.packages
+    assert host.remote_files[HTTPD_CONF] == b"Listen 80\n"
+    assert RH_VHOSTS_FILE not in host.remote_files
+    assert host.services == {}
+
+
+async def test_redhat_enablerepo_reaches_dnf():
+    """``apache_enablerepo`` is live on this family: additive ``enable_repos``.
+
+    The empty default is omitted entirely (Ansible's ``default(omit)``), and a
+    set value arrives as a one-tuple -- never as ``repos=``, which would
+    replace the host's repository set.
+    """
+    inventory = make_redhat_inventory()
+    hosts = make_redhat_hosts(inventory)
+    report = await run_role(inventory, hosts)
+    assert request_kwargs(report, RH_INSTALL_NAME)["enable_repos"] == ()
+
+    inventory = make_redhat_inventory(enablerepo="powertools")
+    hosts = make_redhat_hosts(inventory)
+    report = await run_role(inventory, hosts)
+    kwargs = request_kwargs(report, RH_INSTALL_NAME)
+    assert kwargs["enable_repos"] == ("powertools",)
+    assert kwargs["packages"] == REDHAT_PACKAGES
+
+
+async def test_redhat_packages_variable_replaces_the_quartet():
+    inventory = make_redhat_inventory(packages=["httpd", "mod_ssl"])
+    hosts = make_redhat_hosts(inventory)
+    report = await run_role(inventory, hosts)
+
+    assert request_kwargs(report, RH_INSTALL_NAME)["packages"] == ("httpd", "mod_ssl")
+    assert set(hosts["rocky"].packages) == {"httpd", "mod_ssl"}
+
+
+async def test_redhat_second_pass_changes_nothing():
+    """Convergence on the httpd branch, stubs and all.
+
+    The probe and the cert stat re-read every pass, and so does the gencerts
+    command while the cert is absent -- faithful to the role's plain ``command``
+    task, which has no ``creates:`` either. A command barrier is not a request,
+    so it changes no report entry.
+    """
+    inventory = make_redhat_inventory()
+    hosts = make_redhat_hosts(inventory)
+    first = await run_role(inventory, hosts)
+    assert changed_entries(first), "the first pass must actually deploy something"
+
+    second = await run_role(inventory, hosts)
+    assert changed_entries(second) == []
+    assert [e.name for e in second.merged().log if e.host == "rocky"] == [
+        RH_INSTALL_NAME,
+        *RH_CONFIGURE_NAMES,
+    ]
+    assert hosts["rocky"].ran_shells == [RH_PROBE, GENCERTS_SHELL, RH_PROBE, GENCERTS_SHELL]
+
+
+async def test_redhat_outputs_publish_the_httpd_service():
+    """A composing role reads ``service="httpd"`` from a RedHat host."""
+    inventory = make_redhat_inventory()
+    hosts = make_redhat_hosts(inventory)
+    v = resolve_vars(ApacheVars, "apache", inventory)
+    captured: dict[str, ApacheOutputs] = {}
+
+    def parent(host):
+        outputs = yield from scoped("apache", apache(v))(host)
+        captured[host.name] = outputs
+
+    def factory(entry: dict[str, Any]) -> SimulatedHost:
+        return hosts[entry["host"]]
+
+    await run_waves(inventory, parent, host_factory=factory)
+
+    assert captured["rocky"] == ApacheOutputs(version="2.4.62", service="httpd")
 
 
 # --- the pure half, unit-tested directly --------------------------------------
@@ -880,6 +1214,8 @@ def test_configure_plan_freezes_the_reads_and_is_hashable():
     assert isinstance(plan, ApachePlan)
     assert plan.service == "apache2"
     assert plan.server_root == "/etc/apache2"
+    assert plan.ports_path == "/etc/apache2/ports.conf"
+    assert ports_mode_name(plan) == "Set Apache ports.conf mode"
     assert plan.default_vhost_filename == "000-default.conf"
     assert [(regexp, line) for regexp, line, _ in plan.ports] == [
         (r"^Listen ", "Listen 8080")
@@ -899,6 +1235,65 @@ def test_configure_plan_freezes_the_reads_and_is_hashable():
 def test_configure_plan_rejects_an_unsupported_version():
     with pytest.raises(ValueError, match="unsupported Apache version"):
         configure_plan(ApacheVars(), "2.0.65", ())
+
+
+def test_configure_plan_freezes_the_redhat_targets():
+    """The RedHat table: httpd names, the two roots, the httpd.conf ports file."""
+    plan = configure_plan(
+        ApacheVars(
+            listen_port=8080,
+            mods_disabled=("autoindex",),
+            conf_enabled=("security",),
+            remove_default_vhost=True,
+        ),
+        "2.4.62",
+        (),
+        family="RedHat",
+    )
+
+    assert plan.family == "RedHat"
+    assert plan.service == "httpd"
+    assert plan.server_root == "/etc/httpd"
+    assert plan.conf_path == "/etc/httpd/conf.d"
+    assert plan.ports_path == "/etc/httpd/conf/httpd.conf"
+    assert ports_mode_name(plan) == "Set Apache httpd.conf mode"
+    assert hash(plan)
+
+
+def test_notifying_names_on_redhat_omit_the_debian_only_tasks():
+    """The RedHat set drops the names its branch has no request for: the conf
+    symlinks, the sites-enabled vhost link and the default-vhost removal -- yet
+    the paired chmod keeps its family-specific file name."""
+    plan = configure_plan(
+        ApacheVars(
+            mods_enabled=("rewrite", "ssl"),
+            mods_disabled=("autoindex",),
+            conf_enabled=("security",),
+            conf_disabled=("timeout",),
+            remove_default_vhost=True,
+        ),
+        "2.4.62",
+        (),
+        family="RedHat",
+    )
+
+    assert notifying_names(plan) == (
+        "Set Apache httpd.conf mode",
+        "Configure Apache ports (^Listen )",
+        "Enable Apache mod rewrite",
+        "Enable Apache mod ssl",
+        "Disable Apache mod autoindex",
+        "Add apache vhosts configuration",
+    )
+
+
+def test_supports_httpd_ssl_gencerts_matches_the_ansible_gate():
+    """``>= 8`` on ints and digit strings; a non-numeric major reads as skip."""
+    assert supports_httpd_ssl_gencerts(9)
+    assert supports_httpd_ssl_gencerts("8")
+    assert not supports_httpd_ssl_gencerts(7)
+    assert not supports_httpd_ssl_gencerts("NA")
+    assert not supports_httpd_ssl_gencerts(None)
 
 
 def test_notifying_names_enumerate_the_plan():
@@ -958,11 +1353,12 @@ def test_render_vhosts_defaults_follow_the_version():
 # --- the variables model ------------------------------------------------------
 
 
-def test_packages_default_to_the_debian_pair():
+def test_packages_default_to_the_family_quartets():
     assert ApacheVars().packages is None
-    # The body's ``v.packages or DEBIAN_PACKAGES`` fallback, as the role's
-    # ``set_fact`` did for an undefined apache_packages.
+    # The body's ``v.packages or DEBIAN_PACKAGES`` / ``or REDHAT_PACKAGES``
+    # fallback, as the role's ``set_fact`` did for an undefined apache_packages.
     assert DEBIAN_PACKAGES == ("apache2", "apache2-utils")
+    assert REDHAT_PACKAGES == ("httpd", "httpd-devel", "mod_ssl", "openssh")
 
 
 def test_vhosts_sequence_binds_from_lists():
@@ -1155,3 +1551,77 @@ async def test_tree_snapshot():
 
     second = await run_role(inventory, hosts)
     assert second.tree() == CONVERGED_TREE
+
+
+# Pinned from a real simulated RedHat run, same convention as the trees above:
+# the httpd probe, the distribution/cert reads and the sudo'd gencerts barrier,
+# then the stub-writing configure wave and the ``httpd`` handler. The rerun
+# still shows all four barrier waves -- gencerts included, since the simulated
+# command creates no cert, exactly like the role's plain ``command`` task --
+# and only the handler wave disappears.
+RH_FIRST_PASS_TREE = """(root)
+  wave 0
+    rocky: Ensure Apache is installed on RHEL [changed: 4 package(s) to install]
+        $ sudo dnf install -y httpd httpd-devel mod_ssl openssh
+    barrier: apache -v → {'exit_status': 0, 'stdout': 'Server version: Apache/2.4.62 (Red Hat Enterprise Linux)\\nServer built:   2026-01-01T00:00:00\\n', 'stderr': ''}
+  wave 1
+    barrier: LinuxDistribution → {'name': 'Rocky', 'family': 'RedHat', 'major': 9, 'minor': 6, 'release_meta': {}}
+  wave 2
+    barrier: FileExists → False
+  wave 3
+    barrier: Ensure httpd certs are installed → {'exit_status': 0, 'stdout': '', 'stderr': ''}
+  wave 4
+    rocky: Configure Apache ports (^Listen ) [changed: content /etc/httpd/conf/httpd.conf differs, will install]
+        $ scp <files install> -> /tmp/reemote-install-255781a6bcf088e4/content
+        $ sudo sh -c 'mkdir -p /etc/httpd/conf && cp /tmp/reemote-install-255781a6bcf088e4/content /etc/httpd/conf/httpd.conf && chmod 644 /etc/httpd/conf/httpd.conf && rm -rf /tmp/reemote-install-255781a6bcf088e4'
+    rocky: Set Apache httpd.conf mode [no change: file /etc/httpd/conf/httpd.conf already exists]
+    rocky: Enable Apache mod rewrite [changed: content /etc/httpd/conf.modules.d/99-ansible-rewrite.conf is absent, will install]
+        $ scp <files install> -> /tmp/reemote-install-3f2f3fbe006d7944/content
+        $ sudo sh -c 'mkdir -p /etc/httpd/conf.modules.d && cp /tmp/reemote-install-3f2f3fbe006d7944/content /etc/httpd/conf.modules.d/99-ansible-rewrite.conf && chown root:root /etc/httpd/conf.modules.d/99-ansible-rewrite.conf && chmod 644 /etc/httpd/conf.modules.d/99-ansible-rewrite.conf && rm -rf /tmp/reemote-install-3f2f3fbe006d7944'
+    rocky: Enable Apache mod ssl    [changed: content /etc/httpd/conf.modules.d/99-ansible-ssl.conf is absent, will install]
+        $ scp <files install> -> /tmp/reemote-install-ad28bbd58bcc6bb5/content
+        $ sudo sh -c 'mkdir -p /etc/httpd/conf.modules.d && cp /tmp/reemote-install-ad28bbd58bcc6bb5/content /etc/httpd/conf.modules.d/99-ansible-ssl.conf && chown root:root /etc/httpd/conf.modules.d/99-ansible-ssl.conf && chmod 644 /etc/httpd/conf.modules.d/99-ansible-ssl.conf && rm -rf /tmp/reemote-install-ad28bbd58bcc6bb5'
+    rocky: Disable Apache mod autoindex [changed: /etc/httpd/conf.modules.d/99-ansible-autoindex.conf present, will remove]
+        $ sudo rm -f /etc/httpd/conf.modules.d/99-ansible-autoindex.conf
+    rocky: Add apache vhosts configuration [changed: content /etc/httpd/conf.d/vhosts.conf is absent, will install]
+        $ scp <files install> -> /tmp/reemote-install-a0a9d88b12e15e8c/content
+        $ sudo sh -c 'mkdir -p /etc/httpd/conf.d && cp /tmp/reemote-install-a0a9d88b12e15e8c/content /etc/httpd/conf.d/vhosts.conf && chown root:root /etc/httpd/conf.d/vhosts.conf && chmod 644 /etc/httpd/conf.d/vhosts.conf && rm -rf /tmp/reemote-install-a0a9d88b12e15e8c'
+    rocky: Ensure Apache has selected state and enabled on boot [changed: httpd.service not running (None), will start; httpd.service not enabled, will enable]
+        $ sudo systemctl start httpd.service
+        $ sudo systemctl enable httpd.service
+    barrier: configure done → 1 host notified
+  wave 5
+    rocky: Restart httpd (handler)  [changed: httpd.service already running; httpd.service will restart]
+        $ sudo systemctl restart httpd.service"""
+
+RH_CONVERGED_TREE = """(root)
+  wave 0
+    rocky: Ensure Apache is installed on RHEL [no change: all packages present]
+    barrier: apache -v → {'exit_status': 0, 'stdout': 'Server version: Apache/2.4.62 (Red Hat Enterprise Linux)\\nServer built:   2026-01-01T00:00:00\\n', 'stderr': ''}
+  wave 1
+    barrier: LinuxDistribution → {'name': 'Rocky', 'family': 'RedHat', 'major': 9, 'minor': 6, 'release_meta': {}}
+  wave 2
+    barrier: FileExists → False
+  wave 3
+    barrier: Ensure httpd certs are installed → {'exit_status': 0, 'stdout': '', 'stderr': ''}
+  wave 4
+    rocky: Configure Apache ports (^Listen ) [no change: content already up to date (/etc/httpd/conf/httpd.conf)]
+    rocky: Set Apache httpd.conf mode [no change: file /etc/httpd/conf/httpd.conf already exists]
+    rocky: Enable Apache mod rewrite [no change: content already up to date (/etc/httpd/conf.modules.d/99-ansible-rewrite.conf)]
+    rocky: Enable Apache mod ssl    [no change: content already up to date (/etc/httpd/conf.modules.d/99-ansible-ssl.conf)]
+    rocky: Disable Apache mod autoindex [no change: file /etc/httpd/conf.modules.d/99-ansible-autoindex.conf does not exist]
+    rocky: Add apache vhosts configuration [no change: content already up to date (/etc/httpd/conf.d/vhosts.conf)]
+    rocky: Ensure Apache has selected state and enabled on boot [no change: httpd.service already running; httpd.service already enabled]
+    barrier: configure done → 0 hosts notified"""
+
+
+async def test_redhat_tree_snapshot():
+    """The RedHat stream as one tree, and the converged rerun without the handler."""
+    inventory = make_redhat_inventory()
+    hosts = make_redhat_hosts(inventory)
+    first = await run_role(inventory, hosts)
+
+    assert first.tree() == RH_FIRST_PASS_TREE
+
+    second = await run_role(inventory, hosts)
+    assert second.tree() == RH_CONVERGED_TREE

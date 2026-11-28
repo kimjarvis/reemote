@@ -63,11 +63,17 @@ a ``dry=True`` preview first, then the real apply. The dry pass is one wave deep
 it does not publish outputs. Only the real apply populates them, which is why the
 "Captured role outputs" block prints after the second ``run_waves``.
 
-Hosts outside the ``"Ubuntu"`` family emit nothing from either role -- each
-role's family guard is its body's opening ``if`` -- but they still get an entry in
-each dict: apache's guard ``return``s ``ApacheOutputs(version="")``, and the
-parent, reading that empty version, stores ``PhpOutputs(version=None)`` for the
-host and skips php entirely.
+The two roles target different families: apache deploys on ``"Ubuntu"`` and
+``"RedHat"``, php only on ``"Ubuntu"`` -- each guard is its role body's opening
+``if``. A host outside *both* (an Alpine one, say) emits nothing and still gets
+an entry in each dict: apache's guard ``return``s ``ApacheOutputs(version="")``,
+and the parent, reading that empty version, stores ``PhpOutputs(version=None)``
+without even reaching php. A RedHat host shows the other half of the lesson:
+apache serves httpd and publishes a version, so the parent *does* embed php --
+and php's own guard returns ``PhpOutputs(version=None)`` before its first
+``yield``, so a stacked role never leaks onto the wrong family. Note the shipped
+``inventory.json``: its ``web1``/``web2`` entries declare ``"RedHat"``, so a live
+run now configures httpd on them.
 """
 
 import asyncio

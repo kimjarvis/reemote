@@ -39,7 +39,7 @@ and outputs.
 
 | Role | Purpose |
 | --- | --- |
-| [apache](apache.md) | Apache httpd — ports, module and conf symlinks, rendered vhosts and enable links, service state, one restart handler |
+| [apache](apache.md) | Apache httpd — apt or dnf install, ports, mods (Debian symlinks, RedHat `LoadModule` stubs), rendered vhosts, service state, one restart handler |
 | [apache_php_fpm](apache_php_fpm.md) | Apache PHP-FPM — the `proxy.load`/`proxy_fcgi.load` enable symlinks and the gated `restart apache` handler |
 | [nginx](nginx.md) | nginx — the optional official PPA, vhosts, a `nginx -t`-validated `nginx.conf`, service state, two handler channels |
 | [php](php.md) | PHP — packages, `php.ini` in every conf path, FPM pools, the `restart webserver` → `restart php-fpm` handler chain |
@@ -129,7 +129,7 @@ and outputs.
 | Role | Migrates | Target | Waves | Outputs | `reemote[templates]` | `run_waves` passes |
 | --- | --- | --- | --- | --- | --- | --- |
 | [repo_epel](repo_epel.md) | [`geerlingguy.repo-epel`](https://github.com/geerlingguy/ansible-role-repo-epel) | RedHat | 3–4 | none | no | 1 |
-| [apache](apache.md) | [`geerlingguy.apache`](https://github.com/geerlingguy/ansible-role-apache) | Ubuntu | 3 + one per SSL vhost | `ApacheOutputs(version, service)` | **yes** | 1 |
+| [apache](apache.md) | [`geerlingguy.apache`](https://github.com/geerlingguy/ansible-role-apache) | Ubuntu, RedHat | 3 + one per SSL vhost (RedHat: up to 3 more ahead of configure) | `ApacheOutputs(version, service)` | **yes** | 1 |
 | [php](php.md) | [`geerlingguy.php`](https://github.com/geerlingguy/ansible-role-php) | Ubuntu | 12 fresh / 11 converged | `PhpOutputs(version, extension_conf_paths, webserver_notified)` | no | 1 |
 | [php_versions](php_versions.md) | [`geerlingguy.php-versions`](https://github.com/geerlingguy/ansible-role-php-versions) | Ubuntu | 3 fresh / 2 converged | `PhpVersionsOutputs(version, packages, conf_paths, …)` | no | 1 |
 | [php_xdebug](php_xdebug.md) | [`geerlingguy.php-xdebug`](https://github.com/geerlingguy/ansible-role-php-xdebug) | Ubuntu (php's guard) | 15 fresh / 13 converged | none | no | 1 |
@@ -206,9 +206,11 @@ and outputs.
 - **[repo_epel](repo_epel.md)** — installs the EPEL repository and flips
   `enabled=` in the `[epel]` section alone, leaving the RPM's other sections
   byte-identical. Two `fact` barriers and a `control` fetch, no handler.
-- **[apache](apache.md)** — packages, `ports.conf` listen lines, module and conf
-  symlinks, rendered vhosts and their enable symlinks, service state, one restart
-  handler. The template role, and the one whose wave count is host-dependent.
+- **[apache](apache.md)** — packages (`apache2` via apt or the `httpd` quartet via
+dnf), the listen lines (`ports.conf` or `httpd.conf`), module and conf symlinks —
+or `LoadModule` stubs under `conf.modules.d` on RedHat, with the RHEL 8+
+`httpd-ssl-gencerts` gate — rendered vhosts, service state, one restart handler.
+The template role, and the one whose wave count is host-dependent.
 - **[php](php.md)** — packages, the packaged-ini cleanup, `php.ini` in every conf
   path, the stray-config sweep, FPM pools, the `restart webserver` → `restart
   php-fpm` chain. Three checkpoints, unioned: the role that carries Ansible's

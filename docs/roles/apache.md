@@ -5,20 +5,24 @@
 | Role | [`geerlingguy.apache`](https://github.com/geerlingguy/ansible-role-apache) |
 | Module | [`reemote.roles.apache`](https://github.com/kimjarvis/reemote/blob/main/src/reemote/roles/apache.py) |
 | Example | [`examples/roles/apache.py`](https://github.com/kimjarvis/reemote/blob/main/examples/roles/apache.py) |
-| Target | **Ubuntu** — hosts in the `"Ubuntu"` OS family |
+| Target | **Ubuntu, RedHat** — hosts in the `"Ubuntu"` and `"RedHat"` OS families |
 | Variables | the entry's `apache` role mapping → `ApacheVars` |
 
 <!---
-| Waves | 3 **+ one per SSL vhost** (4 with a single certificate) |
+| Waves | Ubuntu: 3 **+ one per SSL vhost** (4 with a single certificate); RedHat: +1–3 ahead of configure for the distribution/cert/gencerts reads |
 | Outputs | `ApacheOutputs(version, service)` — read by a composing role |
 | Extra deps | **`reemote[templates]`** (jinja2 renders `vhosts.conf.j2`) |
 | Offline test | [`tests/roles/test_apache.py`](https://github.com/kimjarvis/reemote/blob/main/tests/roles/test_apache.py) |
 
-`apache` installs and configures Apache 2.x on Debian-family hosts: the apt cache
-refresh and the `apache2` packages, `ports.conf`'s listen lines, the
+`apache` installs and configures Apache 2.x on both target families: the apt
+cache refresh and the `apache2` packages, `ports.conf`'s listen lines, the
 `mods-enabled`/`conf-enabled` symlinks, a rendered `sites-available/vhosts.conf`
 and its `sites-enabled` symlink, the optional default-vhost removal, the service's
-running/enabled state, and the role's single `restart apache` handler.
+running/enabled state, and the role's single `restart apache` handler — or, on
+RedHat, the plain `dnf` install of the `httpd` quartet, the listen lines in
+`conf/httpd.conf`, `LoadModule` stubs written into `conf.modules.d`, the same
+rendered vhosts file landing in `conf.d`, the RHEL 8+ `httpd-ssl-gencerts` step,
+and a `restart httpd` handler.
 
 This is the **template role** of the migration sequence: it is where a role stops
 being a list of requests and starts being a program that reads. The role's whole
@@ -39,7 +43,12 @@ yield from handler(plan, notified)(host)           # wave n+2
 ```
 
 Nothing is gathered into a module-level snapshot dict first, and no notifying-name
-set is unioned across the inventory: the per-host body *is* the plan.
+set is unioned across the inventory: the per-host body *is* the plan. On RedHat
+the body inserts up to three more reads ahead of `configure_plan` — the
+`fact(LinuxDistribution)` behind the RHEL 8 gate, the localhost-cert
+`fact(FileExists)` and, only while that cert is missing, the
+`act(Shell, "/usr/libexec/httpd-ssl-gencerts", sudo=True)` barrier — and the
+probe command is `/usr/sbin/httpd -v`.
 
 ## 1. What it is, and where it came from
 
@@ -59,12 +68,24 @@ set is unioned across the inventory: the per-host body *is* the plan.
 | `handlers/main.yml: restart apache` + the tasks' `notify` | `checkpoint("configure done")` → `changed_hosts` → `service_handler` | deviation (D7) |
 | `include_vars: vars/Debian.yml`, `when: ansible_os_family == "Debian"` | the frozen constants, one family guard | deviation (D1) |
 | the role's implicit value gates (`item.servername is defined`, the state strings) | pydantic validation on `ApacheVars` | deviation (D8) |
+| `yum: name={{ __apache_packages }} enablerepo=… state=…` | `dnf.packages(packages=…, enable_repos=…)` | covered (D5) |
+| `include_vars: vars/RedHat.yml`, `setup/configure-RedHat.yml` | the frozen RedHat constants, `install`/`configure_redhat` | deviation (D1) |
+| `command: distribution_major_version >= 8` gate | `yield fact(LinuxDistribution)` + `supports_httpd_ssl_gencerts` | barrier (D10) |
+| `stat: /etc/pki/tls/certs/localhost.crt` + `register` | `yield fact(FileExists, path=LOCALHOST_CERT)` | barrier (D10) |
+| `command: /usr/libexec/httpd-ssl-gencerts` | `yield act(Shell, …, sudo=True)` before the configure wave | barrier (D10) |
+| `copy: content=LoadModule …_module … dest=conf.modules.d/99-ansible-….conf` | `files.install(content=…)` | covered |
+| `file: conf.modules.d/99-ansible-….conf state=absent` | `files.file(present=False)` | covered |
+| `template: dest={{ apache_conf_path }}/vhosts.conf` (no enable link) | same control-side render → `files.install` into `conf.d` | covered |
+| `service: name=httpd …` | `systemd.service(service="httpd", …)` | covered |
 
-No library gap blocked this migration, so none was filed: `files.transform`
-already carries the `lineinfile` semantics, `FileExists` the `stat`, and the
-`act` barrier (issue [#16](https://github.com/kimjarvis/reemote/issues/16)) runs
-`Shell` as a command whose exit status is data. One **design-sketch** correction
-did come out of writing it: `yield` inside a generator expression is a
+No library gap blocked either branch of this migration, so none was filed:
+`files.transform` already carries the `lineinfile` semantics, `FileExists` the
+`stat`, the `act` barrier (issue
+[#16](https://github.com/kimjarvis/reemote/issues/16)) runs `Shell` as a command
+whose exit status is data, and `dnf.packages(enable_repos=…)` is the additive
+`yum: enablerepo=` spelling that leaves every other repo enabled. One
+**design-sketch**
+correction did come out of writing it: `yield` inside a generator expression is a
 `SyntaxError`, and so is `list.append(yield …)`, so the certificate loop is an
 explicit `for` (see D3).
 
@@ -110,7 +131,7 @@ mapping, so an inventory written for the role needs no key gymnastics.
 | `state` | `Literal["started","stopped","restarted","reloaded"]` | `started` | `apache_state` |
 | `enabled` | `bool` | `true` | `apache_enabled` |
 | `restart_state` | `Literal["restarted","reloaded","started"]` | `restarted` | `apache_restart_state` |
-| `packages` | `tuple[str, …] \| None` | `null` → `("apache2", "apache2-utils")` | `apache_packages` |
+| `packages` | `tuple[str, …] \| None` | `null` → per family: `(apache2, apache2-utils)` / `(httpd, httpd-devel, mod_ssl, openssh)` | `apache_packages` |
 | `packages_state` | `Literal["present","latest","absent"]` | `present` | `apache_packages_state` |
 | `create_vhosts` | `bool` | `true` | `apache_create_vhosts` |
 | `vhosts_filename` | `str` | `vhosts.conf` | `apache_vhosts_filename` |
@@ -118,26 +139,27 @@ mapping, so an inventory written for the role needs no key gymnastics.
 | `vhosts` | `tuple[VHost, …]` | one `local.dev` | `apache_vhosts` |
 | `vhosts_ssl` | `tuple[SslVHost, …]` | `()` | `apache_vhosts_ssl` |
 | `global_vhost_settings` | `str` | `DirectoryIndex index.php index.html\n` | `apache_global_vhost_settings` |
-| `remove_default_vhost` | `bool` | `false` | `apache_remove_default_vhost` |
+| `remove_default_vhost` | `bool` | `false` — **RedHat-inert** | `apache_remove_default_vhost` |
 | `allow_override` | `str` | `All` | `apache_allow_override` |
 | `options` | `str` | `-Indexes +FollowSymLinks` | `apache_options` |
 | `mods_enabled` | `tuple[str, …]` | `("rewrite", "ssl")` | `apache_mods_enabled` |
 | `mods_disabled` | `tuple[str, …]` | `()` | `apache_mods_disabled` |
-| `conf_enabled` | `tuple[str, …]` | `()` | `apache_conf_enabled` |
-| `conf_disabled` | `tuple[str, …]` | `()` | `apache_conf_disabled` |
+| `conf_enabled` | `tuple[str, …]` | `()` — **RedHat-inert** | `apache_conf_enabled` |
+| `conf_disabled` | `tuple[str, …]` | `()` — **RedHat-inert** | `apache_conf_disabled` |
 | `ignore_missing_ssl_certificate` | `bool` | `true` | `apache_ignore_missing_ssl_certificate` |
 | `ssl_protocol` | `str` | `All -SSLv2 -SSLv3` | `apache_ssl_protocol` |
 | `ssl_cipher_suite` | `str` | `AES256+EECDH:AES256+EDH` | `apache_ssl_cipher_suite` |
-| `enablerepo` | `str` | `""` — **inert** (RHEL-only) | `apache_enablerepo` |
+| `enablerepo` | `str` | `""` — Ubuntu-inert, **live on RedHat** (D5) | `apache_enablerepo` |
 | `ssl_no_log` | `bool` | `true` — **inert** (no log redaction) | `apache_ssl_no_log` |
 
 <!---
 
-Precedence is `model defaults < inventory role mapping < overrides>. Sequences are
-`tuple`, never `list`: the model is frozen and hashable, and a value that reaches
-`op()` must hash. The two inert knobs are carried rather than dropped so an
-existing inventory still binds — a test pins that setting them changes no
-request.
+Precedence is `model defaults < inventory role mapping < overrides>. Sequences
+are `tuple`, never `list`: the model is frozen and hashable, and a value that
+reaches `op()` must hash. The inert knobs are carried rather than dropped so an
+existing inventory still binds — tests pin that `ssl_no_log` changes no request on
+either family, that `enablerepo` changes none on Ubuntu, and that
+`conf_enabled`/`conf_disabled`/`remove_default_vhost` emit no RedHat request.
 
 `vhosts_template` follows the role's own convention: `vhosts.conf.j2` is the
 bundled template inlined in the module, and **any other value is a controller-side
@@ -210,18 +232,22 @@ over both the defaults and any key in the entry's `apache` role mapping
 pass is a one-wave preview: it plans the install requests, parks on the
 `apache -v` barrier and stops (`barrier:
 apache -v → unknown until run`), gathering facts over SSH but applying nothing. A
-converged rerun is the real preview.
+converged rerun is the real preview. Note that `web1`/`web2` in the shipped
+inventory declare the `"RedHat"` family: since the httpd extension a live run
+**installs and configures `httpd` on them**, where the Ubuntu-only role used to
+skip them.
 
 `main()` prints the wave tree and maps the role's failure modes (bad inventory,
 `ValueError` from a rejected variable, a failed probe or an unsupported version,
 `CommandError`, `HostConnectionError`, `PrivilegeError`, `OSError`, `TypeError`) to
 a one-line stderr message and exit 1.
 
-**Run the program twice.** The second run must report no change and queue no handler: the
-packages are installed, the cache stamp is fresh, `ports.conf` matches, every
-symlink is where it belongs, the rendered vhosts file is byte-identical, the unit is
-running and enabled. That is the migration's idempotence claim, and the offline
-suite asserts it.
+**Run the program twice.** The second run must report no change and queue no
+handler: the packages are installed, the cache stamp is fresh (Ubuntu),
+`ports.conf`/`httpd.conf` matches, every symlink and mod stub is where it
+belongs, the rendered vhosts file is byte-identical, the unit is running and
+enabled. That is the migration's idempotence claim, and the offline suite asserts
+it on both families.
 
 > **Shared demo host.** The `ubuntu` demo host also runs the nginx example. This
 > example's `overrides` move Apache to port `8080`, so it no longer collides with
@@ -252,10 +278,13 @@ barrier model:
 
 | Wave | Item | Why |
 | --- | --- | --- |
-| 0 | `install`: `apt.update(cache_valid_time=3600)`, `apt.packages(…)` — closed by `act(Shell, "…/apache2 -v")` | the probe can only answer once the package exists, so it *ends* the wave instead of starting one |
+| 0 | `install`: `apt.update(cache_valid_time=3600)` + `apt.packages(…)` on Ubuntu, the single `dnf.packages(…)` on RedHat — closed by the version-probe `act(Shell)` barrier (`…/apache2 -v` / `…/httpd -v`) | the probe can only answer once the package exists, so it *ends* the wave instead of starting one |
+| (RedHat) +1 | `fact(LinuxDistribution)` | the role's `distribution_major_version` read: the RHEL 8 gate below |
+| (RedHat, RHEL 8+) +1 | `fact(FileExists, path=/etc/pki/tls/certs/localhost.crt)` | the cert `stat`; skipped on RHEL 7 |
+| (RedHat, cert missing) +1 | `act(Shell, "/usr/libexec/httpd-ssl-gencerts", sudo=True)` | the `command:` task; a non-zero exit raises `ValueError` before configure is built — and it sits *ahead* of the configure wave, never inside it (D10) |
 | 1 … *n* | `fact(FileExists, path=vhost.certificate_file)` — **one wave each** | the role's `stat` loop over `apache_vhosts_ssl`; a host with no SSL vhost parks on nothing here |
-| *n*+1 | `configure`: the ports transform and its chmod, the mod/conf symlinks, the rendered `vhosts.conf` and its symlink, the optional default-vhost removal, the service state — closed by `checkpoint("configure done")` | the checkpoint **is** the role's `notify`: it reads the wave it just closed and names the hosts whose notifying requests changed |
-| *n*+2 | `handler`: `service_handler(notified, ("apache2",), action=…)` | only on the hosts that checkpoint selected |
+| *n*+1 | `configure`: on Ubuntu the ports transform and its chmod, the mod/conf symlinks, the rendered `vhosts.conf` and its symlink, the optional default-vhost removal; on RedHat the ports pair on `httpd.conf`, the `LoadModule` stubs, the `conf.d` vhosts file; then the service state — closed by `checkpoint("configure done")` | the checkpoint **is** the role's `notify`: it reads the wave it just closed and names the hosts whose notifying requests changed |
+| *n*+2 | `handler`: `service_handler(notified, (plan.service,), action=…)` — `apache2` or `httpd` | only on the hosts that checkpoint selected |
 
 Three ordering rules are load-bearing, and the layout above is what makes them hold
 without any extra machinery:
@@ -273,13 +302,13 @@ without any extra machinery:
   module, and why a converged host that *did* change something still shows a
   handler change.
 
-A host whose `host.family` is not `"Ubuntu"` returns before its first `yield`, so it
-emits no requests, no barriers and no report lines at all.
+A host whose `host.family` is neither `"Ubuntu"` nor `"RedHat"` returns before its
+first `yield`, so it emits no requests, no barriers and no report lines at all.
 
 ## 7. Transcript
 
 From `tests/roles/test_apache.py::test_tree_snapshot`, against the simulated Ubuntu
-host plus a RedHat host the role never touches. The inventory sets
+host plus an Alpine host the role never touches. The inventory sets
 `listen_port: 8080`, `remove_default_vhost: true`, `mods_disabled: [autoindex]`,
 `conf_enabled: [security]` in the `apache` role mapping and one vhost
 with an alias, a documentroot and `extra_parameters`. Fresh host, first pass:
@@ -356,28 +385,73 @@ With one SSL vhost the run is four waves, wave 1 being the certificate read:
     barrier: FileExists → True
 ```
 
-The RedHat host appears in no tree: no barrier record, no request line.
+The Alpine host appears in no tree: no barrier record, no request line.
+
+The RedHat branch, from `test_redhat_tree_snapshot` against a simulated Rocky 9
+host with the same port and mod knobs plus `remove_default_vhost` and
+`conf_enabled` (both inert here). Fresh host, first pass — five barrier waves,
+the stub-writing configure wave, and the `httpd` handler:
+
+```text
+(root)
+  wave 0
+    rocky: Ensure Apache is installed on RHEL [changed: 4 package(s) to install]
+        $ sudo dnf install -y httpd httpd-devel mod_ssl openssh
+    barrier: apache -v → {'exit_status': 0, 'stdout': 'Server version: Apache/2.4.62 (Red Hat Enterprise Linux)\nServer built:   2026-01-01T00:00:00\n', 'stderr': ''}
+  wave 1
+    barrier: LinuxDistribution → {'name': 'Rocky', 'family': 'RedHat', 'major': 9, 'minor': 6, 'release_meta': {}}
+  wave 2
+    barrier: FileExists → False
+  wave 3
+    barrier: Ensure httpd certs are installed → {'exit_status': 0, 'stdout': '', 'stderr': ''}
+  wave 4
+    rocky: Configure Apache ports (^Listen ) [changed: content /etc/httpd/conf/httpd.conf differs, will install]
+    rocky: Set Apache httpd.conf mode [no change: file /etc/httpd/conf/httpd.conf already exists]
+    rocky: Enable Apache mod rewrite [changed: content /etc/httpd/conf.modules.d/99-ansible-rewrite.conf is absent, will install]
+    rocky: Enable Apache mod ssl    [changed: content /etc/httpd/conf.modules.d/99-ansible-ssl.conf is absent, will install]
+    rocky: Disable Apache mod autoindex [changed: /etc/httpd/conf.modules.d/99-ansible-autoindex.conf present, will remove]
+    rocky: Add apache vhosts configuration [changed: content /etc/httpd/conf.d/vhosts.conf is absent, will install]
+    rocky: Ensure Apache has selected state and enabled on boot [changed: httpd.service not running (None), will start; httpd.service not enabled, will enable]
+    barrier: configure done → 1 host notified
+  wave 5
+    rocky: Restart httpd (handler)  [changed: httpd.service already running; httpd.service will restart]
+        $ sudo systemctl restart httpd.service
+```
+
+(The `scp`/`sh -c` command lines of the spool-installs are elided here; the test
+pins them, content-addressed spool hashes included.) On the rerun every request
+no-ops and the handler wave is gone; the four read barriers — probe,
+distribution, cert stat, gencerts command — still run, since the simulated
+command creates no cert, exactly like the role's plain `command:` task with no
+`creates:` either.
 
 ## 8. Deliberate deviations from the Ansible role
 
 
 | # | Deviation | Why |
 | --- | --- | --- |
-| D1 | A host outside the `"Ubuntu"` family emits **nothing at all** | the family guard is the body's opening `if`, not a `when=` on each request. The old example logged every request as `[skipped: when guard …]`; a return emits no records |
+| D1 | A host outside the `"Ubuntu"`/`"RedHat"` families emits **nothing at all** | the family guard is the body's opening `if`, not a `when=` on each request. The old example logged every request as `[skipped: when guard …]`; a return emits no records |
 | D2 | The version probe is an **`act` barrier**, not a fact | `apache2 -v` is a command, and its answer depends on the install in the same wave. A barrier never raises on a non-zero exit — the `Result` is data — so the body checks `exit_status` itself and raises `ValueError`, the error `main()` maps |
 | D3 | Each certificate read is **its own wave**, gathered by an explicit loop | faithful to the role's `stat` loop, and it makes the wave count host-dependent (3 + *n*). The design sketch wrote this as a generator expression, which Python forbids: `yield` inside one is a `SyntaxError`, and so is `list.append(yield …)` |
 | D4 | No `mode` on a **symlink** | the role asks for `mode: 0644` on `mods-enabled`/`sites-enabled` links. `files.link` owns no mode, and a Linux symlink's own mode is always `0777` and meaningless — Ansible cannot set it either |
-| D5 | `apache_enablerepo` and `apache_ssl_no_log` are **carried and inert** | the repo knob belongs to the RHEL branch that is out of scope, and reemote has no per-request log redaction. Documented rather than silently dropped, so such a key still binds |
+| D5 | `apache_enablerepo` is **Ubuntu-inert, RedHat-live**; `apache_ssl_no_log` is inert everywhere | on RedHat the knob renders as `dnf.packages(enable_repos=…)` — the additive `yum: enablerepo=` spelling, omitted when empty like Ansible's `default(omit)`; reemote has no per-request log redaction, so `ssl_no_log` stays carried and documented rather than silently dropped |
 | D6 | `force={{ ansible_check_mode }}` becomes the default `force=False` | in a real run `ansible_check_mode` is false; reemote's `dry` stops before that wave, so check mode has no analogue to reproduce |
 | D7 | One handler body, no `by_action` partition and no `compose` | the example had to split the notified set across actions and compose several deploys, because a shared deploy served every host. A per-host body has exactly one `restart_state`, so it yields one request |
 | D8 | The role's implicit gates become **pydantic validation** | the three enums are `Literal` fields, `servername` and both certificate paths are required, and a bad value raises `ValidationError` (a `ValueError`) while the inventory is resolved — before any host is contacted |
+| D9 | `conf_enabled`/`conf_disabled`/`remove_default_vhost` are **RedHat-inert** | `configure-RedHat.yml` simply has no such tasks — there is no `conf-enabled`/`sites-enabled` pair on that root. The knobs still bind, and a test pins that they emit no RedHat request |
+| D10 | The RHEL 8+ gencerts step is **three barriers ahead of configure** | reemote has no command *operation*, so the `command:` task is an `act(Shell, sudo=True)` whose non-zero exit the body raises as `ValueError`; and it must sit before the configure wave: a barrier between configure's requests and its checkpoint would split the wave and silently drop the earlier notifications |
+| D11 | `packages_state: latest` **always reports a change on RedHat** | dnf has no upgradable fact yet, so unlike `apt.packages(latest=True)` — which the `AptUpgradable` fact gates on a pending delta — the upgrade is not fact-gated. The default `present` converges; both passes still install |
+| D12 | The Amazon Linux branch is **out of scope** | `vars/AmazonLinux.yml` targets Amazon Linux 1 (its `init`-era paths and package quartet); an AL2 host reports family `RedHat` and takes the httpd branch, with `packages` covering any list it needs |
 
 ## 9. Scoped out
 
-* **Non-Ubuntu families.** The role's RHEL, SLES, Solaris and Amazon Linux branches
-  are not migrated: `vars/Debian.yml` becomes frozen constants and
-  `include_vars`' OS dispatch disappears. A RedHat host is skipped, not mapped to
-  `httpd` — that is a different role.
+* **Non-target families.** The role's SLES, Solaris and Amazon Linux 1 branches
+  are not migrated: `vars/Debian.yml` and `vars/RedHat.yml` become the two frozen
+  constant tables and `include_vars`' OS dispatch disappears into the body's
+  `host.family` switch. Alpine and SLES hosts are skipped, not mapped.
+* **`httpd` from source, mod packages.** The RedHat branch manages the stock
+  distro `httpd` and writes `LoadModule` stubs exactly as the role does; a mod
+  that needs a package is a `dnf.packages` request in the caller's own program.
 * **Installing modules.** `apache_mods_enabled`/`conf_enabled` manage symlinks only,
   exactly as the role does. A mod that needs a package (`libapache2-mod-php`) is an
   `apt.packages` request in the caller's own program.
