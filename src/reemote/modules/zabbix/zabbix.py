@@ -245,10 +245,6 @@ class ZabbixClient:
 async def connect(url: str, **kwargs: Any) -> ZabbixClient:
     """Build a :class:`ZabbixClient` and log it in, ready for API calls.
 
-    The one-shot form of ``client = ZabbixClient(...); await client.login()``
-    for a user/password session; with an ``api_token`` it is simply the
-    constructor (no login call fires).
-
     Args:
         url (str): The Zabbix ``api_jsonrpc.php`` endpoint.
         **kwargs: Forwarded to :class:`ZabbixClient` (``user``, ``password``,
@@ -264,6 +260,12 @@ async def connect(url: str, **kwargs: Any) -> ZabbixClient:
     ZabbixAPIError, OSError, ValueError
     ```
     """
+
+    # The one-shot form of ``client = ZabbixClient(...); await client.login()``
+    # for a user/password session; with an ``api_token`` it is simply the
+    # constructor (no login call fires).
+
+
     client = ZabbixClient(url, **kwargs)
     await client.login()
     return client
@@ -277,11 +279,6 @@ async def host_group(
 ) -> dict[str, Any]:
     """Create or remove Zabbix host groups idempotently (Ansible ``zabbix_group``).
 
-    Reads which of the requested groups already exist through
-    ``hostgroup.get`` before writing anything, then creates only the missing
-    ones (``hostgroup.create``) -- or, for ``state="absent"``, deletes only the
-    ones present (``hostgroup.delete``). Re-running with the same argument is a
-    no-op.
 
     Args:
         client (ZabbixClient): An authenticated client.
@@ -306,6 +303,15 @@ async def host_group(
         report = await host_group(client, ["Linux servers", "Databases"], state="absent")
         ```
     """
+
+    # Reads which of the requested groups already exist through
+    # ``hostgroup.get`` before writing anything, then creates only the missing
+    # ones (``hostgroup.create``) -- or, for ``state="absent"``, deletes only the
+    # ones present (``hostgroup.delete``). Re-running with the same argument is a
+    # no-op.
+
+
+
     if state not in ("present", "absent"):
         raise ValueError(f"state must be 'present' or 'absent', got: {state!r}")
     names = list(_as_names(group_names))
@@ -539,21 +545,6 @@ async def host(
 ) -> dict[str, Any]:
     """Create, update or delete a monitored Zabbix host (Ansible ``zabbix_host``).
 
-    Looks the host up by name with ``host.get`` (pulling back groups,
-    interfaces and the TLS/inventory columns it compares), then does the least:
-    a missing ``"present"`` host is created with ``host.create``, an existing one
-    whose desired fields differ is written with ``host.update``, a ``"absent"``
-    host is removed with ``host.delete``, and anything already matching is left
-    untouched -- so a second identical call reports ``changed=False``. Host
-    group and template *names* are resolved to ids first, and an unknown group
-    raises before any write.
-
-    The host's IP (Ansible's ``zabbix_agent_ip``, derived from
-    ``ansible_all_ipv4_addresses`` plus the ``ipaddr`` filter) is the caller's
-    job -- pass it in an ``interfaces`` entry. The default-route case is
-    ``hardware.DefaultIpv4Address`` (issue #64); a public/private partition of
-    *all* addresses still has no fact and is out of scope here.
-
     Args:
         client (ZabbixClient): An authenticated client.
         host_name (str): The technical host name.
@@ -604,6 +595,25 @@ async def host(
         await host(client, "web01", host_groups="Linux servers", status="disabled")
         ```
     """
+
+    # Looks the host up by name with ``host.get`` (pulling back groups,
+    # interfaces and the TLS/inventory columns it compares), then does the least:
+    # a missing ``"present"`` host is created with ``host.create``, an existing one
+    # whose desired fields differ is written with ``host.update``, a ``"absent"``
+    # host is removed with ``host.delete``, and anything already matching is left
+    # untouched -- so a second identical call reports ``changed=False``. Host
+    # group and template *names* are resolved to ids first, and an unknown group
+    # raises before any write.
+    #
+    # The host's IP (Ansible's ``zabbix_agent_ip``, derived from
+    # ``ansible_all_ipv4_addresses`` plus the ``ipaddr`` filter) is the caller's
+    # job -- pass it in an ``interfaces`` entry. The default-route case is
+    # ``hardware.DefaultIpv4Address`` (issue #64); a public/private partition of
+    # *all* addresses still has no fact and is out of scope here.
+
+
+
+
     if state not in ("present", "absent"):
         raise ValueError(f"state must be 'present' or 'absent', got: {state!r}")
 
@@ -731,13 +741,6 @@ async def host_macro(
 ) -> dict[str, Any]:
     """Create, update or delete host-level macros (Ansible ``zabbix_hostmacro``).
 
-    Reads the host's current macros with ``hostmacro.get`` and reconciles: a
-    ``"present"`` macro missing from the host is created, one present with a
-    different value/description/type is updated, and a ``"absent"`` macro is
-    deleted. ``macros`` accepts a single ``{"name": ..., "value": ...}``-style
-    mapping, a list of them, or (for the one-macro case) a bare macro name whose
-    ``value``/``description``/``type`` are read from the same mapping -- the
-    shape the role's ``zabbix_macros`` list already produces.
 
     Args:
         client (ZabbixClient): An authenticated client.
@@ -762,6 +765,16 @@ async def host_macro(
         await host_macro(client, hostid, zabbix_macros, state="absent")
         ```
     """
+
+    # Reads the host's current macros with ``hostmacro.get`` and reconciles: a
+    # ``"present"`` macro missing from the host is created, one present with a
+    # different value/description/type is updated, and a ``"absent"`` macro is
+    # deleted. ``macros`` accepts a single ``{"name": ..., "value": ...}``-style
+    # mapping, a list of them, or (for the one-macro case) a bare macro name whose
+    # ``value``/``description``/``type`` are read from the same mapping -- the
+    # shape the role's ``zabbix_macros`` list already produces.
+
+
     if state not in ("present", "absent"):
         raise ValueError(f"state must be 'present' or 'absent', got: {state!r}")
 

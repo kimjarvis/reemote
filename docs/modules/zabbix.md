@@ -4,8 +4,6 @@
     options:
       show_root_heading: false
       members:
-        - ZabbixAPIError
-        - ZabbixClient
         - connect
         - host
         - host_group
