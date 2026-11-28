@@ -1,6 +1,6 @@
 # Roles
 
-reemote ships thirty-four configuration roles as **library code**. Each one is the
+reemote ships thirty-five configuration roles as **library code**. Each one is the
 migration of a published Ansible role — the same tasks, the same variables, the
 same handlers — expressed in the library's own wave/barrier model instead of a
 YAML play. A role is a factory under `reemote.roles` that takes a typed variables
@@ -31,7 +31,7 @@ driver that understands barriers; `run()` is not.
 
 ## Roles by type
 
-The thirty-four roles group by what they configure. The [catalogue](#the-catalogue)
+The thirty-five roles group by what they configure. The [catalogue](#the-catalogue)
 below is the full reference, with each role's source, target family, wave count
 and outputs.
 
@@ -99,6 +99,7 @@ and outputs.
 | Role | Purpose |
 | --- | --- |
 | [security](security.md) | SSH and host hardening — the `sshd_config` directives and access lists, the sudoers loops, Fail2Ban and unattended-upgrades |
+| [clamav](clamav.md) | ClamAV — the antivirus packages, the install-gated `freshclam` run, the `clamd.conf` edits, both units and one restart handler |
 | [firewall](firewall.md) | iptables firewall — the once-per-machine flush gate, the rendered `/etc/firewall.bash` script and its unit, service state, one restart handler |
 | [certbot](certbot.md) | Certbot — the release-dispatched package, the configured certificates (standalone or webroot) and the renewal cron entry |
 
@@ -152,6 +153,7 @@ and outputs.
 | [repo_remi](repo_remi.md) | [`geerlingguy.repo-remi`](https://github.com/geerlingguy/ansible-role-repo-remi) | RedHat | 3–4 | none | no | 1 |
 | [elasticsearch](elasticsearch.md) | [`geerlingguy.elasticsearch`](https://github.com/geerlingguy/ansible-role-elasticsearch) | Ubuntu | 2 changed / 2 converged (the wait always reports) | none | **yes** | 1 |
 | [node_exporter](node_exporter.md) | [`geerlingguy.node_exporter`](https://github.com/geerlingguy/ansible-role-node_exporter) | Ubuntu | 3 fresh (4 resolving `latest`) / 3 converged | none | no | 1 |
+| [clamav](clamav.md) | [`geerlingguy.clamav`](https://github.com/geerlingguy/ansible-role-clamav) | Ubuntu | 4 fresh / 2 converged | none | no | 1 |
 
 ## Reading the columns
 
@@ -339,6 +341,13 @@ and outputs.
   the `checkpoint` reads the notification, and a `fact` verifies the running
   exporter — so the wave count moves with the host and the converged pass
   carries no download request rather than an unchanged one.
+- **[clamav](clamav.md)** — the `clamav` package trio, the install-gated
+  `freshclam` run, the two `clamd.conf` edits with their mode companion, the
+  optional `freshclam.conf` edits, both unit states, one restart handler. The
+  command-task-plus-notify case: the play's `register` + `failed_when` +
+  `notify` trio is one `act` barrier whose `Result` the body interprets — and
+  whose successful run queues the restart itself, because a barrier is not a
+  request.
 
 ## Running one
 

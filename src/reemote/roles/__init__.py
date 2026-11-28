@@ -44,6 +44,7 @@ stays in lockstep with the role modules on disk.
 
 from .apache import ApacheOutputs, ApacheVars, apache
 from .certbot import Cert, CertbotVars, certbot
+from .clamav import ClamavVars, ConfigChange, clamav
 from .composer import ComposerVars, composer
 from .datadog import DatadogVars, datadog
 from .docker import DockerVars, docker
@@ -82,7 +83,9 @@ __all__: list[str] = [
     "ApacheVars",
     "Cert",
     "CertbotVars",
+    "ClamavVars",
     "ComposerVars",
+    "ConfigChange",
     "DatadogVars",
     "DeletedUserSpec",
     "DockerVars",
@@ -128,6 +131,7 @@ __all__: list[str] = [
     "ZabbixAgentVars",
     "apache",
     "certbot",
+    "clamav",
     "composer",
     "datadog",
     "docker",

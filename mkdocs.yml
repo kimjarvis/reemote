@@ -201,6 +201,7 @@ nav:
           - kibana: roles/kibana.md
           - elasticsearch: roles/elasticsearch.md
           - node_exporter: roles/node_exporter.md
+          - clamav: roles/clamav.md
 #  - Examples:
 #      - Overview: examples.md
 #      - Actions: examples/actions.md
